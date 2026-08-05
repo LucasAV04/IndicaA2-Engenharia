@@ -4,16 +4,11 @@ namespace Application.Interfaces.Services
 {
     public interface IUsuarioService
     {
-        Task<UsuarioResponseDto> CriarAsync(CreateUsuarioDto dto);
-
-        Task<UsuarioResponseDto?> ObterPorIdAsync(Guid id);
-
-        Task<IReadOnlyCollection<UsuarioResponseDto>> ObterTodosAsync();
-
-        Task AtualizarAsync(UpdateUsuarioDto dto);
-
-        Task AlterarSenhaAsync(AlterarSenhaUsuarioDto dto);
-
-        Task RemoverAsync(Guid id);
+        Task<UsuarioResponseDto> CriarAsync(CreateUsuarioDto dto, CancellationToken cancellationToken = default);
+        Task<UsuarioResponseDto> ObterPorIdAsync(Guid id, CancellationToken cancellationToken = default);
+        Task<IReadOnlyCollection<UsuarioResponseDto>> ObterTodosAsync(CancellationToken cancellationToken = default);
+        Task AtualizarAsync(UpdateUsuarioDto dto, CancellationToken cancellationToken = default);
+        Task AlterarSenhaAsync(AlterarSenhaUsuarioDto dto, CancellationToken cancellationToken = default);
+        Task RemoverAsync(Guid id, CancellationToken cancellationToken = default);
     }
 }

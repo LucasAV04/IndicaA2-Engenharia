@@ -54,7 +54,7 @@ namespace Domain.Entities
         public void AlterarEmail(string email)
         {
             if (string.IsNullOrWhiteSpace(email))
-                throw new DomainException("O e-mail é obrigatório.");
+                throw new EmailObrigatorioException();
 
             if (!email.Contains("@"))
                 throw new EmailInvalidoException();

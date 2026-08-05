@@ -1,4 +1,4 @@
-﻿namespace Domain.Exceptions
+﻿namespace Domain.Exceptions.Usuario
 {
     public sealed class UsuarioNaoEncontradoException:DomainException
     {

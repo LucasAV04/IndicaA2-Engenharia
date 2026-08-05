@@ -1,4 +1,4 @@
-﻿namespace Domain.Exceptions
+﻿namespace Domain.Exceptions.Email
 {
     public class EmailInvalidoException:DomainException
     {

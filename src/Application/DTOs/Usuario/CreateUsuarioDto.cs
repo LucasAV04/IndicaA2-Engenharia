@@ -1,4 +1,6 @@
-﻿namespace Application.DTOs.Usuario
+﻿using Domain.Enums;
+
+namespace Application.DTOs.Usuario
 {
     public sealed class CreateUsuarioDto
     {
