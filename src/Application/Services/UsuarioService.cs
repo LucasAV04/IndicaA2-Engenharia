@@ -5,6 +5,8 @@ using Application.Mapping;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.Exceptions;
+using Domain.Exceptions.Senha;
+using Domain.Exceptions.Usuario;
 using Domain.Interfaces;
 
 namespace IndicA2.Application.Services;
@@ -43,7 +45,9 @@ public sealed class UsuarioService : IUsuarioService
             .Trim()
             .ToLowerInvariant();
 
-        if (await _usuarioRepository.ExistePorEmailAsync(emailNormalizado,cancellationToken))
+        if (await _usuarioRepository.ExistePorEmailAsync(
+                emailNormalizado,
+                cancellationToken: cancellationToken))
         {
             throw new UsuarioJaExisteException();
         }

@@ -1,6 +1,9 @@
 ﻿using Domain.Enums;
 using Domain.Exceptions;
 
+using Domain.Exceptions.Email;
+using Domain.Exceptions.Senha;
+
 namespace Domain.Entities
 {
     public class Usuario:BaseEntity
