@@ -29,3 +29,20 @@
 - Repository concreto, MySQL, API, controller e registro de Dependency Injection.
 - Validação da existência real da vistoria na futura integração com o módulo de Vistorias.
 - Cashback, Pix, pagamentos e o módulo próprio de código de indicação.
+
+## Testes automatizados do módulo de Indicações
+
+**Data:** 2026-08-07
+
+### Implementado
+
+- Projetos `Domain.Tests` e `Application.Tests` integrados à solução.
+- Testes xUnit para construção, vínculos, transições de status, cancelamento e idempotência de `Indicacao`.
+- Testes xUnit com Moq para os casos de uso de `IndicacaoService`, incluindo consultas, persistência, exceções e `CancellationToken`.
+- Correção técnica: a invariável de autoindicação passou a ser validada somente pela entidade; o service apenas orquestra o caso de uso.
+
+### Pendente
+
+- Repository concreto, MySQL, Dependency Injection, API/controllers e validação real de `VistoriaId`.
+- Módulos de Vistorias, cashback, Pix, pagamentos e código de indicação.
+- `docs/Readme.md` e `docs/Arquitetura.md` não foram atualizados nesta tarefa, pois possuem extensão Markdown com conteúdo Word binário interno; os arquivos foram preservados sem conversão ou substituição.

@@ -4,6 +4,7 @@ using Application.Mapping;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.Exceptions;
+using Domain.Exceptions.Usuario;
 using Domain.Interfaces;
 
 namespace Application.Services
@@ -78,9 +79,6 @@ namespace Application.Services
                 cancellationToken);
 
             await ObterUsuarioOuLancarExceptionAsync(dto.UsuarioIndicadoId, cancellationToken);
-
-            if (indicacao.UsuarioIndicadorId == dto.UsuarioIndicadoId)
-                throw new DomainException("Um usuário não pode indicar a si mesmo.");
 
             indicacao.VincularUsuarioIndicado(dto.UsuarioIndicadoId);
 

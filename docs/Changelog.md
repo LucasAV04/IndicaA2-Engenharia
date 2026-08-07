@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-08-07 — Testes automatizados do módulo de Indicações
+
+### Adicionado
+
+- Solução `IndicA2.slnx` com projetos Domain, Application, Infrastructure e testes.
+- Projetos `Domain.Tests` e `Application.Tests` com xUnit e Moq.
+- Cobertura dos comportamentos da entidade `Indicacao` e dos casos de uso de `IndicacaoService`.
+
+### Corrigido
+
+- Removida a validação duplicada de autoindicação no service, preservando a invariável no Domain.
+- Padronizadas as assinaturas de `IIndicacaoRepository`.
+- Corrigidos imports de exceções e uma chamada compatível com o contrato de `IUsuarioRepository`.
+
+### Pendente
+
+- Repository concreto, MySQL, Dependency Injection, API/controllers e validação real de `VistoriaId`.
+- Vistorias, cashback, Pix, pagamentos e código de indicação.
+- `docs/Readme.md` e `docs/Arquitetura.md` foram preservados sem alteração nesta tarefa devido à inconsistência entre a extensão `.md` e o formato Word binário interno.
+
 ## 2026-08-05 — Implementação controlada do módulo de Indicações
 
 ### Adicionado
