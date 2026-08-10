@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-10 — Correção de invariantes de reidratação de indicações
+
+### Corrigido
+
+- `Indicacao.Reidratar` passou a rejeitar valores `Guid.Empty` em `UsuarioIndicadoId` e `VistoriaId`.
+- O status `Pendente` passou a ser incompatível com uma vistoria vinculada durante a reidratação.
+- Adicionada cobertura automatizada para as novas invariantes e para a reidratação válida de uma indicação cancelada com vistoria vinculada.
+
 ## 2026-08-10 — Persistência MySQL de Indicações
 
 ### Adicionado

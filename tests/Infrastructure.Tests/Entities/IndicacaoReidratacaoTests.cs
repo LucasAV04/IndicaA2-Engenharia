@@ -52,4 +52,73 @@ public sealed class IndicacaoReidratacaoTests
             DateTime.UtcNow,
             DateTime.UtcNow));
     }
+
+    [Fact]
+    public void Reidratar_QuandoUsuarioIndicadoForGuidEmpty_DeveLancarArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => Indicacao.Reidratar(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.Empty,
+            "Ana Indicada",
+            "11999999999",
+            "A2-123",
+            null,
+            StatusIndicacao.Pendente,
+            DateTime.UtcNow,
+            DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void Reidratar_QuandoVistoriaForGuidEmpty_DeveLancarArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => Indicacao.Reidratar(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            null,
+            "Ana Indicada",
+            "11999999999",
+            "A2-123",
+            Guid.Empty,
+            StatusIndicacao.VistoriaVinculada,
+            DateTime.UtcNow,
+            DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void Reidratar_QuandoStatusPendentePossuirVistoria_DeveLancarArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => Indicacao.Reidratar(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            null,
+            "Ana Indicada",
+            "11999999999",
+            "A2-123",
+            Guid.NewGuid(),
+            StatusIndicacao.Pendente,
+            DateTime.UtcNow,
+            DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void Reidratar_QuandoCanceladaPossuirVistoria_DevePreservarEstado()
+    {
+        var vistoriaId = Guid.NewGuid();
+
+        var indicacao = Indicacao.Reidratar(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            null,
+            "Ana Indicada",
+            "11999999999",
+            "A2-123",
+            vistoriaId,
+            StatusIndicacao.Cancelada,
+            DateTime.UtcNow,
+            DateTime.UtcNow);
+
+        Assert.Equal(StatusIndicacao.Cancelada, indicacao.Status);
+        Assert.Equal(vistoriaId, indicacao.VistoriaId);
+    }
 }
