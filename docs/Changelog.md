@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-10 — Persistência MySQL de Indicações
+
+### Adicionado
+
+- MySqlConnector e Infrastructure para persistência de `Indicacao`.
+- `MySqlConnectionFactory`, `IndicacaoMySqlRepository` e registros iniciais de Dependency Injection.
+- Script idempotente `database/001_create_indicacoes.sql`.
+- Reidratação interna e validada da entidade persistida.
+- Projeto `Infrastructure.Tests` com testes unitários sem banco externo.
+
+### Removido
+
+- `src/Infrastructure/Class1.cs`, placeholder sem uso do template.
+
+### Pendente
+
+- Connection string real e composition root na API.
+- Testes de integração MySQL, Vistorias, validação real de `VistoriaId`, cashback, Pix, pagamentos e código de indicação.
+
 ## 2026-08-07 — Testes automatizados do módulo de Indicações
 
 ### Adicionado

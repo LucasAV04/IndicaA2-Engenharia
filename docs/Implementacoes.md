@@ -46,3 +46,24 @@
 - Repository concreto, MySQL, Dependency Injection, API/controllers e validação real de `VistoriaId`.
 - Módulos de Vistorias, cashback, Pix, pagamentos e código de indicação.
 - `docs/Readme.md` e `docs/Arquitetura.md` não foram atualizados nesta tarefa, pois possuem extensão Markdown com conteúdo Word binário interno; os arquivos foram preservados sem conversão ou substituição.
+
+## Infrastructure — Persistência MySQL de Indicações
+
+**Data:** 2026-08-10
+
+### Implementado
+
+- `MySqlConnector` como acesso direto ao MySQL, sem Entity Framework Core ou Dapper.
+- `MySqlConnectionFactory`, que recebe a connection string por injeção e cria conexões isoladas sob demanda.
+- `IndicacaoMySqlRepository`, com consultas parametrizadas, persistência, atualização e propagação de `CancellationToken`.
+- Reidratação controlada de `Indicacao`, interna ao Domain e acessível apenas à Infrastructure e aos testes de Infrastructure.
+- Script `database/001_create_indicacoes.sql`, compatível com MySQL 8 e sem colunas financeiras.
+- Extensão `AddInfrastructure`, que registra a factory e `IIndicacaoRepository` a partir de `ConnectionStrings:DefaultConnection`.
+- Projeto `Infrastructure.Tests`, com testes sem servidor MySQL para a factory e a reidratação.
+
+### Pendente
+
+- Configuração da connection string na futura composition root/API, sem credenciais versionadas.
+- Testes de integração reais contra MySQL.
+- API/controllers, Vistorias e validação real de `VistoriaId`.
+- Cashback, Pix, pagamentos e módulo de código de indicação.
