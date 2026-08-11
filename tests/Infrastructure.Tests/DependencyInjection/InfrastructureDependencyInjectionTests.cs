@@ -28,4 +28,24 @@ public sealed class InfrastructureDependencyInjectionTests
 
         Assert.IsType<UsuarioMySqlRepository>(repository);
     }
+
+    [Fact]
+    public void AddInfrastructure_DeveRegistrarIVistoriaRepositoryComoScoped()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Server=localhost;Database=indica_a2;User ID=test;Password=test;"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddInfrastructure(configuration);
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IVistoriaRepository>();
+
+        Assert.IsType<VistoriaMySqlRepository>(repository);
+    }
 }
