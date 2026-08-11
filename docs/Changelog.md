@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-08-11 — API HTTP de Indicações
+
+### Adicionado
+
+- Composition root com Controllers, `AddInfrastructure`, `IIndicacaoService`, ProblemDetails e handler global de exceções.
+- `IndicacoesController` e exemplos de todos os endpoints em `API.http`.
+- Projeto `API.Tests` com testes de controller, handler de exceções e resolução de Dependency Injection sem MySQL externo.
+
+### Alterado
+
+- `Microsoft.AspNetCore.OpenApi` foi alinhado de 10.0.10 para 9.0.10, mantendo a API em `net9.0`.
+- O endpoint e os tipos auxiliares de `weatherforecast` foram removidos.
+
+### Configuração
+
+- `ConnectionStrings:DefaultConnection` deve ser fornecida por `ConnectionStrings__DefaultConnection` ou user-secrets; nenhuma credencial foi versionada.
+
+### Pendente
+
+- JWT, autenticação, Vistorias, validação real de `VistoriaId`, integração real com MySQL, código de indicação, estratégia de exclusão/inativação, cashback, Pix e pagamentos.
+
 ## 2026-08-11 — Persistência MySQL de Usuários
 
 ### Adicionado
