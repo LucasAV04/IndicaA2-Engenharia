@@ -44,6 +44,50 @@ namespace Domain.Entities
             EmailConfirmado = false;
         }
 
+        internal static Usuario Reidratar(
+            Guid id,
+            string nome,
+            string email,
+            string senhaHash,
+            string? telefone,
+            StatusUsuario status,
+            TipoUsuario tipoUsuario,
+            bool emailConfirmado,
+            DateTime? ultimoLogin,
+            DateTime createdAt,
+            DateTime updatedAt)
+        {
+            if (id == Guid.Empty)
+                throw new ArgumentException("O identificador persistido é obrigatório.", nameof(id));
+            if (string.IsNullOrWhiteSpace(nome))
+                throw new ArgumentException("O nome persistido é obrigatório.", nameof(nome));
+            if (string.IsNullOrWhiteSpace(email) || !email.Contains("@"))
+                throw new ArgumentException("O e-mail persistido é inválido.", nameof(email));
+            if (string.IsNullOrWhiteSpace(senhaHash))
+                throw new ArgumentException("O hash de senha persistido é obrigatório.", nameof(senhaHash));
+            if (!Enum.IsDefined(status))
+                throw new ArgumentOutOfRangeException(nameof(status), "O status persistido é inválido.");
+            if (!Enum.IsDefined(tipoUsuario))
+                throw new ArgumentOutOfRangeException(nameof(tipoUsuario), "O tipo de usuário persistido é inválido.");
+            if (updatedAt < createdAt)
+                throw new ArgumentException("A data de atualização não pode ser anterior à data de criação.", nameof(updatedAt));
+
+            return new Usuario
+            {
+                Id = id,
+                Nome = nome,
+                Email = email,
+                SenhaHash = senhaHash,
+                Telefone = telefone,
+                Status = status,
+                TipoUsuario = tipoUsuario,
+                EmailConfirmado = emailConfirmado,
+                UltimoLogin = ultimoLogin,
+                CreatedAt = createdAt,
+                UpdatedAt = updatedAt
+            };
+        }
+
         public void AlterarNome(string novoNome)
         {
             if (string.IsNullOrWhiteSpace(novoNome))

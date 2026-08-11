@@ -99,13 +99,6 @@ public sealed class UsuarioService : IUsuarioService
         await _usuarioRepository.AtualizarAsync(usuario, cancellationToken);
     }
 
-    public async Task RemoverAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        // TODO: Revisar futuramente se a remoção será física ou por inativação lógica.
-        var usuario = await ObterUsuarioOuLancarExceptionAsync(id, cancellationToken);
-        await _usuarioRepository.RemoverAsync(usuario, cancellationToken);
-    }
-
     #endregion
 
     #region Métodos Privados

@@ -1,5 +1,30 @@
 # Implementações
 
+## Infrastructure — Persistência MySQL de Usuários
+
+**Data:** 2026-08-11
+
+### Implementado
+
+- `UsuarioMySqlRepository` com MySqlConnector, consultas parametrizadas e propagação de `CancellationToken` nos métodos cujo contrato o recebe.
+- Script incremental `database/002_create_usuarios.sql`, limitado aos campos atuais da entidade `Usuario`, com unicidade de e-mail.
+- Reidratação interna e validada de `Usuario`, preservando estado, enums, datas, hash de senha e informações de autenticação sem executar métodos de negócio.
+- Registro scoped de `IUsuarioRepository` em `AddInfrastructure`.
+- Testes unitários para reidratação e registro de Dependency Injection, sem conexão MySQL externa.
+- Consolidação de `IUsuarioRepository` para as capacidades suportadas pelo domínio atual.
+
+### Decisões registradas
+
+- `ObterPorCodigoIndicacaoAsync` foi removido do contrato: o código de indicação pertence a módulo ainda pendente e não gerou coluna, query ou comportamento especulativo.
+- `RemoverAsync` foi removido dos contratos de repository e service: a estratégia entre exclusão e inativação ainda não foi definida. Nenhum `DELETE` físico foi introduzido.
+
+### Pendente
+
+- API/controllers, JWT, Vistorias e validação real de `VistoriaId`.
+- Testes de integração contra MySQL.
+- Definição formal da estratégia de exclusão ou inativação de usuários.
+- Código de indicação, cashback, Pix e pagamentos.
+
 ## Módulo de Indicações — Refatoração de Modelo
 
 **Data:** 2026-08-05
