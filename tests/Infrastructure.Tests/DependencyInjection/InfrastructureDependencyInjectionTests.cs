@@ -16,6 +16,10 @@ public sealed class InfrastructureDependencyInjectionTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = "Server=localhost;Database=indica_a2;User ID=test;Password=test;"
+                , ["Jwt:Issuer"] = "IndicA2.Tests"
+                , ["Jwt:Audience"] = "IndicA2.Tests"
+                , ["Jwt:Key"] = "chave-ficticia-de-testes-com-mais-de-trinta-e-dois-bytes"
+                , ["Jwt:ExpirationMinutes"] = "60"
             })
             .Build();
         var services = new ServiceCollection();
@@ -36,6 +40,10 @@ public sealed class InfrastructureDependencyInjectionTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = "Server=localhost;Database=indica_a2;User ID=test;Password=test;"
+                , ["Jwt:Issuer"] = "IndicA2.Tests"
+                , ["Jwt:Audience"] = "IndicA2.Tests"
+                , ["Jwt:Key"] = "chave-ficticia-de-testes-com-mais-de-trinta-e-dois-bytes"
+                , ["Jwt:ExpirationMinutes"] = "60"
             })
             .Build();
         var services = new ServiceCollection();
