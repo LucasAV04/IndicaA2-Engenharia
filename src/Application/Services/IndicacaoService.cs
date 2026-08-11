@@ -13,13 +13,16 @@ namespace Application.Services
     {
         private readonly IIndicacaoRepository _indicacaoRepository;
         private readonly IUsuarioRepository _usuarioRepository;
+        private readonly IVistoriaRepository _vistoriaRepository;
 
         public IndicacaoService(
             IIndicacaoRepository indicacaoRepository,
-            IUsuarioRepository usuarioRepository)
+            IUsuarioRepository usuarioRepository,
+            IVistoriaRepository vistoriaRepository)
         {
             _indicacaoRepository = indicacaoRepository;
             _usuarioRepository = usuarioRepository;
+            _vistoriaRepository = vistoriaRepository;
         }
 
         #region Consultas
@@ -80,6 +83,9 @@ namespace Application.Services
 
             await ObterUsuarioOuLancarExceptionAsync(dto.UsuarioIndicadoId, cancellationToken);
 
+            if (indicacao.UsuarioIndicadorId == dto.UsuarioIndicadoId)
+                throw new DomainException("Um usuário não pode indicar a si mesmo.");
+
             indicacao.VincularUsuarioIndicado(dto.UsuarioIndicadoId);
 
             await _indicacaoRepository.AtualizarAsync(indicacao, cancellationToken);
@@ -95,6 +101,19 @@ namespace Application.Services
                 dto.IndicacaoId,
                 cancellationToken);
 
+            var vistoria = await ObterVistoriaOuLancarExceptionAsync(
+                dto.VistoriaId,
+                cancellationToken);
+
+            if (indicacao.UsuarioIndicadoId is null)
+            {
+                throw new DomainException(
+                    "A indicação deve possuir um usuário indicado vinculado antes de associar uma vistoria.");
+            }
+
+            if (vistoria.UsuarioId != indicacao.UsuarioIndicadoId.Value)
+                throw new DomainException("A vistoria pertence a um usuário diferente do usuário indicado.");
+
             indicacao.VincularVistoria(dto.VistoriaId);
 
             await _indicacaoRepository.AtualizarAsync(indicacao, cancellationToken);
@@ -107,6 +126,16 @@ namespace Application.Services
             var indicacao = await ObterIndicacaoOuLancarExceptionAsync(
                 indicacaoId,
                 cancellationToken);
+
+            if (indicacao.VistoriaId is not Guid vistoriaId)
+            {
+                indicacao.MarcarVistoriaConcluida();
+                return;
+            }
+
+            var vistoria = await ObterVistoriaOuLancarExceptionAsync(vistoriaId, cancellationToken);
+            if (vistoria.Status != StatusVistoria.Concluida)
+                throw new DomainException("A vistoria vinculada ainda não foi concluída.");
 
             indicacao.MarcarVistoriaConcluida();
 
@@ -147,6 +176,14 @@ namespace Application.Services
         {
             var usuario = await _usuarioRepository.ObterPorIdAsync(id, cancellationToken);
             return usuario ?? throw new UsuarioNaoEncontradoException();
+        }
+
+        private async Task<Vistoria> ObterVistoriaOuLancarExceptionAsync(
+            Guid id,
+            CancellationToken cancellationToken)
+        {
+            var vistoria = await _vistoriaRepository.ObterPorIdAsync(id, cancellationToken);
+            return vistoria ?? throw new VistoriaNaoEncontradaException();
         }
 
         #endregion
