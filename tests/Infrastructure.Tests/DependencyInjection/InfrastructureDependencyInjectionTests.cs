@@ -1,0 +1,31 @@
+using Domain.Interfaces;
+using Infrastructure.DependencyInjection;
+using Infrastructure.Repositories;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
+namespace Infrastructure.Tests.DependencyInjection;
+
+public sealed class InfrastructureDependencyInjectionTests
+{
+    [Fact]
+    public void AddInfrastructure_DeveRegistrarIUsuarioRepositoryComoScoped()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Server=localhost;Database=indica_a2;User ID=test;Password=test;"
+            })
+            .Build();
+        var services = new ServiceCollection();
+
+        services.AddInfrastructure(configuration);
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IUsuarioRepository>();
+
+        Assert.IsType<UsuarioMySqlRepository>(repository);
+    }
+}
