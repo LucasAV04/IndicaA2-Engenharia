@@ -9,6 +9,5 @@ namespace Application.Interfaces.Services
         Task<IReadOnlyCollection<UsuarioResponseDto>> ObterTodosAsync(CancellationToken cancellationToken = default);
         Task AtualizarAsync(UpdateUsuarioDto dto, CancellationToken cancellationToken = default);
         Task AlterarSenhaAsync(AlterarSenhaUsuarioDto dto, CancellationToken cancellationToken = default);
-        Task RemoverAsync(Guid id, CancellationToken cancellationToken = default);
     }
 }
