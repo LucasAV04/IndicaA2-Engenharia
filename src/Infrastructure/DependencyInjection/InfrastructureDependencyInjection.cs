@@ -25,6 +25,7 @@ public static class InfrastructureDependencyInjection
         services.AddSingleton(new MySqlConnectionFactory(connectionString));
         services.AddScoped<IIndicacaoRepository, IndicacaoMySqlRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioMySqlRepository>();
+        services.AddScoped<IVistoriaRepository, VistoriaMySqlRepository>();
 
         return services;
     }
