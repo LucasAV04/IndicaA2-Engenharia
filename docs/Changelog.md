@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-11 — Módulo inicial de Vistorias
+
+### Adicionado
+
+- Domain e Application de Vistorias: entidade, enums, contrato de repository, DTOs, mapper manual, service e exceção específica.
+- Ciclo de Vistoria: Agendada → Realizada → Concluida, com cancelamento permitido apenas enquanto Agendada.
+- Testes unitários de invariantes, transições, idempotência, casos de uso e `CancellationToken` onde o contrato suporta.
+
+### Decisões
+
+- `UsuarioId` identifica o usuário contratante da vistoria.
+- `TipoPlanta` permanece textual e nenhum cálculo financeiro foi adicionado.
+- Não foram implementados MySQL, DI, API de Vistorias nem a integração com `IndicacaoService`.
+
 ## 2026-08-11 — API HTTP de Indicações
 
 ### Adicionado
