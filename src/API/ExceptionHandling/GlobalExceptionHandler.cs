@@ -27,6 +27,14 @@ public sealed class GlobalExceptionHandler(
                 StatusCodes.Status404NotFound,
                 "Usuário não encontrado",
                 exception.Message),
+            CredenciaisInvalidasException => (
+                StatusCodes.Status401Unauthorized,
+                "Credenciais inválidas",
+                exception.Message),
+            UsuarioSemAcessoException => (
+                StatusCodes.Status403Forbidden,
+                "Acesso negado",
+                exception.Message),
             DomainException => (
                 StatusCodes.Status422UnprocessableEntity,
                 "Regra de domínio violada",

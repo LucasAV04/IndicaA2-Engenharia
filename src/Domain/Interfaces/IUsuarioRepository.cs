@@ -8,6 +8,8 @@ namespace Domain.Interfaces
 
         Task<Usuario?> ObterPorIdAsync(Guid id,CancellationToken cancellationToken = default);
 
+        Task<Usuario?> ObterPorEmailAsync(string email, CancellationToken cancellationToken = default);
+
         Task<bool> ExistePorEmailAsync(string email, Guid? ignorarUsuarioId = null, CancellationToken cancellationToken = default);
 
         Task<IReadOnlyCollection<Usuario>> ObterTodosAsync(CancellationToken cancellationToken = default);

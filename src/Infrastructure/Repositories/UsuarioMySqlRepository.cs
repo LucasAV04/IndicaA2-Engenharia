@@ -45,6 +45,21 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
             : null;
     }
 
+    public async Task<Usuario?> ObterPorEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        const string sql = $"SELECT {Colunas} FROM usuarios WHERE email = @email LIMIT 1;";
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = CriarComando(connection, sql);
+        command.Parameters.Add("@email", MySqlDbType.VarChar).Value = email;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        return await reader.ReadAsync(cancellationToken)
+            ? Materializar(reader)
+            : null;
+    }
+
     public async Task<bool> ExistePorEmailAsync(
         string email,
         Guid? ignorarUsuarioId = null,

@@ -79,6 +79,22 @@ public sealed class GlobalExceptionHandlerTests
         Assert.Equal("Usuário não encontrado", problemDetails.Title);
     }
 
+    [Fact]
+    public async Task TryHandleAsync_QuandoCredenciaisForemInvalidas_DeveRetornar401()
+    {
+        var context = CriarContexto();
+        await CriarHandler().TryHandleAsync(context, new CredenciaisInvalidasException(), CancellationToken.None);
+        Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_QuandoUsuarioSemAcesso_DeveRetornar403()
+    {
+        var context = CriarContexto();
+        await CriarHandler().TryHandleAsync(context, new UsuarioSemAcessoException(), CancellationToken.None);
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+    }
+
     private static DefaultHttpContext CriarContexto()
     {
         var context = new DefaultHttpContext();

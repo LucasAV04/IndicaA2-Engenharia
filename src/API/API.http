@@ -1,4 +1,15 @@
 @API_HostAddress = http://localhost:5209
+@AccessToken = INSIRA_TOKEN_AQUI
+
+POST {{API_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "usuario@exemplo.com",
+  "senha": "SenhaExemplo"
+}
+
+###
 
 POST {{API_HostAddress}}/api/indicacoes
 Content-Type: application/json
