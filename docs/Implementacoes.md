@@ -1,5 +1,29 @@
 # Implementações
 
+## API HTTP — Módulo de Indicações
+
+**Data:** 2026-08-11
+
+### Implementado
+
+- Composition root da API com Controllers, OpenAPI nativo, ProblemDetails, handler global de exceções, `AddInfrastructure` e `IIndicacaoService` scoped.
+- `IndicacoesController` com criação, consultas, vínculos, conclusão de vistoria e cancelamento, delegando todos os casos de uso à Application.
+- Respostas HTTP semânticas: 201 para criação, 200 para consultas, 204 para comandos concluídos, 400 para entradas inválidas, 404 para indicação não encontrada e 422 para violações de domínio.
+- OpenAPI alinhado ao `net9.0` com `Microsoft.AspNetCore.OpenApi` 9.0.10; o endpoint de template `weatherforecast` foi removido.
+- Projeto `API.Tests` com cobertura dos endpoints, CancellationToken, ProblemDetails e resolução de DI sem MySQL externo.
+- Exemplos fictícios de chamadas HTTP em `src/API/API.http`.
+
+### Configuração
+
+- A API espera `ConnectionStrings:DefaultConnection` em variável de ambiente (`ConnectionStrings__DefaultConnection`) ou user-secrets.
+- A connection string não é versionada e a inicialização não abre conexão com MySQL nem executa scripts de banco.
+
+### Pendente
+
+- JWT, autenticação, autorização, Vistorias e validação real de `VistoriaId`.
+- Testes de integração reais contra MySQL.
+- Código de indicação, estratégia de exclusão/inativação de usuários, cashback, Pix e pagamentos.
+
 ## Infrastructure — Persistência MySQL de Usuários
 
 **Data:** 2026-08-11
@@ -51,7 +75,7 @@
 
 ### Pendente
 
-- Repository concreto, MySQL, API, controller e registro de Dependency Injection.
+- Repository concreto, MySQL, registro de Dependency Injection, API e controller foram implementados em etapas posteriores; este registro permanece como histórico de 2026-08-05.
 - Validação da existência real da vistoria na futura integração com o módulo de Vistorias.
 - Cashback, Pix, pagamentos e o módulo próprio de código de indicação.
 
@@ -88,7 +112,7 @@
 
 ### Pendente
 
-- Configuração da connection string na futura composition root/API, sem credenciais versionadas.
+- A composition root/API foi implementada em etapa posterior; o valor real da connection string continua configurado externamente, sem credenciais versionadas.
 - Testes de integração reais contra MySQL.
-- API/controllers, Vistorias e validação real de `VistoriaId`.
+- Vistorias e validação real de `VistoriaId`.
 - Cashback, Pix, pagamentos e módulo de código de indicação.
