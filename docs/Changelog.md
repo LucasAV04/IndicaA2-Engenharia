@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-08-11 — Persistência MySQL de Vistorias
+
+### Adicionado
+
+- `Vistoria.Reidratar`, `VistoriaMySqlRepository`, script `003_create_vistorias.sql` e registro scoped de `IVistoriaRepository`.
+- Tabela `vistorias` com FK restritiva para `usuarios(id)`, enums como `INT`, área como `DECIMAL(10,2)` e índice em `usuario_id`.
+- Testes unitários de reidratação de Vistoria e de resolução de DI, sem depender de MySQL externo.
+
+### Decisões
+
+- `AtualizarAsync` persiste somente `status` e `updated_at`; não foi introduzido `DELETE` nem `ON DELETE CASCADE`.
+- `DataAgendada` mantém seu significado de data/hora de negócio e é materializada sem conversão arbitrária de timezone.
+
+### Pendente
+
+- Testes de integração reais contra MySQL, API de Vistorias, integração com `IndicacaoService` e validação real de `VistoriaId`.
+- JWT, autenticação, preços, cashback, Pix e pagamentos.
+
 ## 2026-08-11 — Módulo inicial de Vistorias
 
 ### Adicionado

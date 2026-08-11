@@ -1,5 +1,30 @@
 # Implementações
 
+## Infrastructure — Persistência MySQL de Vistorias
+
+**Data:** 2026-08-11
+
+### Implementado
+
+- Reidratação interna e controlada de `Vistoria`, preservando o estado persistido sem reproduzir transições de domínio.
+- Script incremental `database/003_create_vistorias.sql` para MySQL 8, limitado aos campos atuais da entidade e com FK restritiva para `usuarios(id)`.
+- `VistoriaMySqlRepository` com MySqlConnector, SQL parametrizado, colunas explícitas e persistência dos enums `PacoteVistoria` e `StatusVistoria` como `INT`.
+- Registro scoped de `IVistoriaRepository` em `AddInfrastructure`.
+- `AtualizarAsync` restrito a `status` e `updated_at`; não há operação de `DELETE`.
+- Testes sem MySQL externo para reidratação e resolução do repository pelo container de DI.
+
+### Decisões registradas
+
+- `area_m2` é persistida como `DECIMAL(10,2)`.
+- `created_at` e `updated_at` são materializados como UTC. `DataAgendada` é data/hora de negócio e é preservada como lida, sem conversão arbitrária de timezone.
+- A reidratação rejeita IDs, enums, datas e valores estruturais inválidos, mas permite reconstituir diretamente os status válidos `Realizada`, `Concluida` e `Cancelada`.
+
+### Pendente
+
+- Testes reais de integração contra MySQL.
+- API/controller de Vistorias, integração com `IndicacaoService` e validação real de `VistoriaId`.
+- JWT, autenticação, preços, cashback, Pix e pagamentos.
+
 ## Módulo de Vistorias — Domain e Application
 
 **Data:** 2026-08-11
@@ -22,7 +47,6 @@
 
 ### Pendente
 
-- `VistoriaMySqlRepository`, tabela MySQL e registro de `IVistoriaRepository` na Infrastructure.
 - API/controller de Vistorias e registro de `IVistoriaService` na composition root.
 - Validação real de `VistoriaId` em `IndicacaoService`.
 - Preços, tabela comercial, pagamentos, cashback, Pix, JWT e autenticação.
