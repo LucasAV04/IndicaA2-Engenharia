@@ -1,5 +1,24 @@
 # Implementações
 
+## Autenticação JWT
+
+**Data:** 2026-08-11
+
+### Implementado
+
+- `BCryptPasswordHasher` como implementação concreta de `IPasswordHasher`.
+- Busca normalizada de usuário por e-mail, `AuthService` e endpoint público `POST /api/auth/login`.
+- JWT Bearer configurado externamente por `Jwt:Issuer`, `Jwt:Audience`, `Jwt:Key` e `Jwt:ExpirationMinutes`, com HMAC-SHA256 e claims `sub`, `email`, `name` e `role`.
+- OpenAPI nativo registra o esquema `Bearer` (`http`, `bearer`, `JWT`) por transformer de documento, sem requisito global de segurança enquanto a autorização dos endpoints não for formalizada.
+- Login atualiza `UltimoLogin` apenas após credenciais válidas e persiste o usuário.
+- Credenciais inválidas retornam 401 sem revelar existência do e-mail; usuário inativo ou bloqueado retorna 403.
+
+### Decisões registradas
+
+- `EmailConfirmado` não bloqueia login enquanto o fluxo de confirmação de e-mail não existir.
+- Chaves JWT, senhas e tokens não são versionados; devem ser fornecidos por variáveis de ambiente ou user-secrets.
+- Refresh token, autorização por roles e ownership por recurso permanecem fora deste escopo.
+
 ## API HTTP de Vistorias e integração com Indicações
 
 **Data:** 2026-08-11
@@ -20,7 +39,7 @@
 ### Pendente
 
 - Testes reais de integração contra MySQL.
-- JWT, autenticação, preços, tabela comercial, cashback, Pix, pagamentos, código de indicação e estratégia de exclusão/inativação de usuários.
+- Autorização por roles/ownership, preços, tabela comercial, cashback, Pix, pagamentos, código de indicação e estratégia de exclusão/inativação de usuários.
 
 ## Infrastructure — Persistência MySQL de Vistorias
 

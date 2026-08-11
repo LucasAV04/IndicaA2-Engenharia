@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-11 — Autenticação JWT
+
+### Adicionado
+
+- BCrypt, busca de usuário por e-mail, `AuthService`, JWT Bearer e endpoint de login.
+- Transformer OpenAPI para documentar o esquema HTTP Bearer/JWT, sem adicionar requisito global de autorização.
+- Claims de identidade e role, atualização de `UltimoLogin` e tratamento HTTP 401/403 para falhas de autenticação.
+
+### Decisões
+
+- Configuração JWT é externa; nenhuma senha, token ou chave real foi versionada.
+- `EmailConfirmado` ainda não bloqueia login. Refresh token e autorização por recurso permanecem pendentes.
+
 ## 2026-08-11 — API de Vistorias e integração real com Indicações
 
 ### Adicionado
