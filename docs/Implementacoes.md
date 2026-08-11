@@ -1,5 +1,27 @@
 # Implementações
 
+## API HTTP de Vistorias e integração com Indicações
+
+**Data:** 2026-08-11
+
+### Implementado
+
+- `VistoriasController` com criação, consultas, consulta por usuário, realização, conclusão e cancelamento, sempre delegando à `IVistoriaService`.
+- Registro scoped de `IVistoriaService` e `VistoriaService` na composition root; repositories continuam registrados exclusivamente por `AddInfrastructure`.
+- `IndicacaoService` passou a consultar `IVistoriaRepository` para validar a existência de `VistoriaId`, a correspondência entre `Vistoria.UsuarioId` e `Indicacao.UsuarioIndicadoId` e o status `Concluida` antes de concluir uma indicação.
+- `GlobalExceptionHandler` mapeia `VistoriaNaoEncontradaException` e `UsuarioNaoEncontradoException` para 404, preservando 422 para `DomainException` e 400 para `ArgumentException`.
+- Exemplos HTTP e testes diretos de controller, DI, exceções e integração de Application atualizados.
+
+### Decisões registradas
+
+- Não há sincronização automática entre `VistoriaService.ConcluirAsync` e `IndicacaoService`; a indicação só muda mediante seu caso de uso explícito.
+- A validação do vínculo é feita na Application; não foram criadas FKs, triggers, cascades ou alterações de schema entre `indicacoes` e `vistorias`.
+
+### Pendente
+
+- Testes reais de integração contra MySQL.
+- JWT, autenticação, preços, tabela comercial, cashback, Pix, pagamentos, código de indicação e estratégia de exclusão/inativação de usuários.
+
 ## Infrastructure — Persistência MySQL de Vistorias
 
 **Data:** 2026-08-11
@@ -22,7 +44,6 @@
 ### Pendente
 
 - Testes reais de integração contra MySQL.
-- API/controller de Vistorias, integração com `IndicacaoService` e validação real de `VistoriaId`.
 - JWT, autenticação, preços, cashback, Pix e pagamentos.
 
 ## Módulo de Vistorias — Domain e Application
@@ -47,8 +68,6 @@
 
 ### Pendente
 
-- API/controller de Vistorias e registro de `IVistoriaService` na composition root.
-- Validação real de `VistoriaId` em `IndicacaoService`.
 - Preços, tabela comercial, pagamentos, cashback, Pix, JWT e autenticação.
 
 ## API HTTP — Módulo de Indicações
@@ -71,7 +90,7 @@
 
 ### Pendente
 
-- JWT, autenticação, autorização, Vistorias e validação real de `VistoriaId`.
+- JWT, autenticação e autorização.
 - Testes de integração reais contra MySQL.
 - Código de indicação, estratégia de exclusão/inativação de usuários, cashback, Pix e pagamentos.
 

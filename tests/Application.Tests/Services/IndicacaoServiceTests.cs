@@ -214,68 +214,168 @@ public sealed class IndicacaoServiceTests
     }
 
     [Fact]
-    public async Task VincularVistoriaAsync_QuandoIndicacaoExiste_DeveVincularAtualizarESemConsultarVistoria()
+    public async Task VincularVistoriaAsync_QuandoVistoriaExisteEUsuarioCorresponde_DeveVincularAtualizarEPropagarToken()
     {
         var indicacaoRepository = new Mock<IIndicacaoRepository>();
         var usuarioRepository = new Mock<IUsuarioRepository>();
+        var vistoriaRepository = new Mock<IVistoriaRepository>();
         var indicacao = CriarIndicacao();
+        var usuarioIndicadoId = Guid.NewGuid();
         var vistoriaId = Guid.NewGuid();
         var cancellationToken = new CancellationTokenSource().Token;
+        indicacao.VincularUsuarioIndicado(usuarioIndicadoId);
         indicacaoRepository
             .Setup(repository => repository.ObterPorIdAsync(indicacao.Id, cancellationToken))
             .ReturnsAsync(indicacao);
+        vistoriaRepository
+            .Setup(repository => repository.ObterPorIdAsync(vistoriaId, cancellationToken))
+            .ReturnsAsync(CriarVistoria(usuarioIndicadoId));
         indicacaoRepository
             .Setup(repository => repository.AtualizarAsync(indicacao, cancellationToken))
             .Returns(Task.CompletedTask);
 
-        await CriarService(indicacaoRepository, usuarioRepository).VincularVistoriaAsync(
+        await CriarService(indicacaoRepository, usuarioRepository, vistoriaRepository).VincularVistoriaAsync(
             new VincularVistoriaDto { IndicacaoId = indicacao.Id, VistoriaId = vistoriaId },
             cancellationToken);
 
         Assert.Equal(vistoriaId, indicacao.VistoriaId);
         indicacaoRepository.Verify(repository => repository.AtualizarAsync(indicacao, cancellationToken), Times.Once);
-        usuarioRepository.Verify(repository => repository.ObterPorIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        vistoriaRepository.Verify(repository => repository.ObterPorIdAsync(vistoriaId, cancellationToken), Times.Once);
     }
 
     [Fact]
-    public async Task VincularVistoriaAsync_QuandoIndicacaoInvalida_DeveDeixarEntidadeBloquearSemAtualizar()
+    public async Task VincularVistoriaAsync_QuandoVistoriaNaoExiste_DeveLancarVistoriaNaoEncontradaException()
     {
         var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var vistoriaRepository = new Mock<IVistoriaRepository>();
         var indicacao = CriarIndicacao();
+        var vistoriaId = Guid.NewGuid();
         indicacaoRepository
             .Setup(repository => repository.ObterPorIdAsync(indicacao.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(indicacao);
-        var service = CriarService(indicacaoRepository, new Mock<IUsuarioRepository>());
+        vistoriaRepository
+            .Setup(repository => repository.ObterPorIdAsync(vistoriaId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Vistoria?)null);
 
-        await Assert.ThrowsAsync<DomainException>(() => service.VincularVistoriaAsync(
-            new VincularVistoriaDto { IndicacaoId = indicacao.Id, VistoriaId = Guid.Empty }));
-
-        indicacao.VincularVistoria(Guid.NewGuid());
-        await Assert.ThrowsAsync<DomainException>(() => service.VincularVistoriaAsync(
-            new VincularVistoriaDto { IndicacaoId = indicacao.Id, VistoriaId = Guid.NewGuid() }));
+        await Assert.ThrowsAsync<VistoriaNaoEncontradaException>(() =>
+            CriarService(indicacaoRepository, new Mock<IUsuarioRepository>(), vistoriaRepository).VincularVistoriaAsync(
+                new VincularVistoriaDto { IndicacaoId = indicacao.Id, VistoriaId = vistoriaId }));
 
         indicacaoRepository.Verify(repository => repository.AtualizarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task MarcarVistoriaConcluidaAsync_QuandoVinculada_DeveConcluirEAtualizar()
+    public async Task VincularVistoriaAsync_QuandoIndicacaoNaoPossuiUsuarioIndicado_DeveLancarDomainException()
     {
         var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var vistoriaRepository = new Mock<IVistoriaRepository>();
         var indicacao = CriarIndicacao();
-        indicacao.VincularVistoria(Guid.NewGuid());
+        var vistoriaId = Guid.NewGuid();
+        indicacaoRepository
+            .Setup(repository => repository.ObterPorIdAsync(indicacao.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(indicacao);
+        vistoriaRepository
+            .Setup(repository => repository.ObterPorIdAsync(vistoriaId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CriarVistoria());
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            CriarService(indicacaoRepository, new Mock<IUsuarioRepository>(), vistoriaRepository).VincularVistoriaAsync(
+                new VincularVistoriaDto { IndicacaoId = indicacao.Id, VistoriaId = vistoriaId }));
+
+        indicacaoRepository.Verify(repository => repository.AtualizarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task VincularVistoriaAsync_QuandoVistoriaPertenceAOutroUsuario_DeveLancarDomainException()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var vistoriaRepository = new Mock<IVistoriaRepository>();
+        var indicacao = CriarIndicacao();
+        indicacao.VincularUsuarioIndicado(Guid.NewGuid());
+        var vistoriaId = Guid.NewGuid();
+        indicacaoRepository
+            .Setup(repository => repository.ObterPorIdAsync(indicacao.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(indicacao);
+        vistoriaRepository
+            .Setup(repository => repository.ObterPorIdAsync(vistoriaId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CriarVistoria());
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            CriarService(indicacaoRepository, new Mock<IUsuarioRepository>(), vistoriaRepository).VincularVistoriaAsync(
+                new VincularVistoriaDto { IndicacaoId = indicacao.Id, VistoriaId = vistoriaId }));
+
+        indicacaoRepository.Verify(repository => repository.AtualizarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MarcarVistoriaConcluidaAsync_QuandoVistoriaRealEstaConcluida_DeveConcluirEAtualizar()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var vistoriaRepository = new Mock<IVistoriaRepository>();
+        var indicacao = CriarIndicacao();
+        var vistoria = CriarVistoria();
+        vistoria.MarcarRealizada();
+        vistoria.Concluir();
+        indicacao.VincularVistoria(vistoria.Id);
         var cancellationToken = new CancellationTokenSource().Token;
         indicacaoRepository
             .Setup(repository => repository.ObterPorIdAsync(indicacao.Id, cancellationToken))
             .ReturnsAsync(indicacao);
+        vistoriaRepository
+            .Setup(repository => repository.ObterPorIdAsync(vistoria.Id, cancellationToken))
+            .ReturnsAsync(vistoria);
         indicacaoRepository
             .Setup(repository => repository.AtualizarAsync(indicacao, cancellationToken))
             .Returns(Task.CompletedTask);
 
-        await CriarService(indicacaoRepository, new Mock<IUsuarioRepository>())
+        await CriarService(indicacaoRepository, new Mock<IUsuarioRepository>(), vistoriaRepository)
             .MarcarVistoriaConcluidaAsync(indicacao.Id, cancellationToken);
 
         Assert.Equal(StatusIndicacao.VistoriaConcluida, indicacao.Status);
         indicacaoRepository.Verify(repository => repository.AtualizarAsync(indicacao, cancellationToken), Times.Once);
+        vistoriaRepository.Verify(repository => repository.ObterPorIdAsync(vistoria.Id, cancellationToken), Times.Once);
+    }
+
+    [Fact]
+    public async Task MarcarVistoriaConcluidaAsync_QuandoVistoriaNaoExiste_DeveLancarVistoriaNaoEncontradaException()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var vistoriaRepository = new Mock<IVistoriaRepository>();
+        var indicacao = CriarIndicacao();
+        var vistoriaId = Guid.NewGuid();
+        indicacao.VincularVistoria(vistoriaId);
+        indicacaoRepository
+            .Setup(repository => repository.ObterPorIdAsync(indicacao.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(indicacao);
+        vistoriaRepository
+            .Setup(repository => repository.ObterPorIdAsync(vistoriaId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Vistoria?)null);
+
+        await Assert.ThrowsAsync<VistoriaNaoEncontradaException>(() =>
+            CriarService(indicacaoRepository, new Mock<IUsuarioRepository>(), vistoriaRepository)
+                .MarcarVistoriaConcluidaAsync(indicacao.Id));
+    }
+
+    [Fact]
+    public async Task MarcarVistoriaConcluidaAsync_QuandoVistoriaAindaNaoFoiConcluida_DeveLancarDomainException()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var vistoriaRepository = new Mock<IVistoriaRepository>();
+        var indicacao = CriarIndicacao();
+        var vistoria = CriarVistoria();
+        indicacao.VincularVistoria(vistoria.Id);
+        indicacaoRepository
+            .Setup(repository => repository.ObterPorIdAsync(indicacao.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(indicacao);
+        vistoriaRepository
+            .Setup(repository => repository.ObterPorIdAsync(vistoria.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(vistoria);
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            CriarService(indicacaoRepository, new Mock<IUsuarioRepository>(), vistoriaRepository)
+                .MarcarVistoriaConcluidaAsync(indicacao.Id));
+
+        indicacaoRepository.Verify(repository => repository.AtualizarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -340,8 +440,9 @@ public sealed class IndicacaoServiceTests
 
     private static IndicacaoService CriarService(
         Mock<IIndicacaoRepository> indicacaoRepository,
-        Mock<IUsuarioRepository> usuarioRepository) =>
-        new(indicacaoRepository.Object, usuarioRepository.Object);
+        Mock<IUsuarioRepository> usuarioRepository,
+        Mock<IVistoriaRepository>? vistoriaRepository = null) =>
+        new(indicacaoRepository.Object, usuarioRepository.Object, (vistoriaRepository ?? new Mock<IVistoriaRepository>()).Object);
 
     private static CreateIndicacaoDto CriarDto(Guid usuarioIndicadorId) => new()
     {
@@ -353,6 +454,13 @@ public sealed class IndicacaoServiceTests
 
     private static Indicacao CriarIndicacao(Guid? usuarioIndicadorId = null) =>
         new(usuarioIndicadorId ?? Guid.NewGuid(), "Ana Indicada", "11999999999", "A2-123");
+
+    private static Vistoria CriarVistoria(Guid? usuarioId = null) => new(
+        usuarioId ?? Guid.NewGuid(),
+        "Apartamento",
+        70m,
+        PacoteVistoria.Simples,
+        DateTime.UtcNow);
 
     private static Usuario CriarUsuario() =>
         new("Usuário", "usuario@a2.com", "hash");

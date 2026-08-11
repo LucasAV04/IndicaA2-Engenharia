@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-08-11 — API de Vistorias e integração real com Indicações
+
+### Adicionado
+
+- `VistoriasController`, endpoints HTTP do módulo e registro scoped de `IVistoriaService` na API.
+- Mapeamento HTTP 404 para `VistoriaNaoEncontradaException` e `UsuarioNaoEncontradoException`.
+- Validação de existência da vistoria, correspondência entre usuário indicado e contratante e conclusão real da vistoria no `IndicacaoService`.
+- Exemplos em `API.http` e testes de Application/API para integração, DI, exceções e `CancellationToken`.
+
+### Decisões
+
+- Não há sincronização automática entre os módulos: concluir uma vistoria não altera uma indicação até a execução explícita de `MarcarVistoriaConcluidaAsync`.
+- Nenhum schema, trigger, cascade ou regra financeira foi acrescentado.
+
+### Pendente
+
+- Testes reais com MySQL, JWT/autenticação, preços, cashback, Pix, pagamentos, código de indicação e estratégia de exclusão/inativação de usuários.
+
 ## 2026-08-11 — Persistência MySQL de Vistorias
 
 ### Adicionado
