@@ -17,6 +17,10 @@ public sealed class Vistoria : BaseEntity
 
     public StatusVistoria Status { get; private set; }
 
+    private Vistoria()
+    {
+    }
+
     public Vistoria(
         Guid usuarioId,
         string tipoPlanta,
@@ -41,6 +45,52 @@ public sealed class Vistoria : BaseEntity
         Pacote = pacote;
         DataAgendada = dataAgendada;
         Status = StatusVistoria.Agendada;
+    }
+
+    internal static Vistoria Reidratar(
+        Guid id,
+        Guid usuarioId,
+        string tipoPlanta,
+        decimal areaM2,
+        PacoteVistoria pacote,
+        DateTime dataAgendada,
+        StatusVistoria status,
+        DateTime createdAt,
+        DateTime updatedAt)
+    {
+        if (id == Guid.Empty)
+            throw new ArgumentException("O identificador persistido é obrigatório.", nameof(id));
+        if (usuarioId == Guid.Empty)
+            throw new ArgumentException("O usuário contratante persistido é obrigatório.", nameof(usuarioId));
+        if (string.IsNullOrWhiteSpace(tipoPlanta))
+            throw new ArgumentException("O tipo de planta persistido é obrigatório.", nameof(tipoPlanta));
+        if (areaM2 <= 0)
+            throw new ArgumentOutOfRangeException(nameof(areaM2), "A área persistida deve ser maior que zero.");
+        if (!Enum.IsDefined(pacote))
+            throw new ArgumentOutOfRangeException(nameof(pacote), "O pacote persistido é inválido.");
+        if (dataAgendada == default)
+            throw new ArgumentException("A data agendada persistida é obrigatória.", nameof(dataAgendada));
+        if (!Enum.IsDefined(status))
+            throw new ArgumentOutOfRangeException(nameof(status), "O status persistido é inválido.");
+        if (createdAt == default)
+            throw new ArgumentException("A data de criação persistida é obrigatória.", nameof(createdAt));
+        if (updatedAt == default)
+            throw new ArgumentException("A data de atualização persistida é obrigatória.", nameof(updatedAt));
+        if (updatedAt < createdAt)
+            throw new ArgumentException("A data de atualização não pode ser anterior à data de criação.", nameof(updatedAt));
+
+        return new Vistoria
+        {
+            Id = id,
+            UsuarioId = usuarioId,
+            TipoPlanta = tipoPlanta,
+            AreaM2 = areaM2,
+            Pacote = pacote,
+            DataAgendada = dataAgendada,
+            Status = status,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt
+        };
     }
 
     public void MarcarRealizada()
