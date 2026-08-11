@@ -1,6 +1,8 @@
 using Domain.Interfaces;
 using Infrastructure.Database;
 using Infrastructure.Repositories;
+using Infrastructure.Security;
+using Application.Interfaces.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -21,8 +23,13 @@ public static class InfrastructureDependencyInjection
             throw new InvalidOperationException(
                 "A connection string 'ConnectionStrings:DefaultConnection' é obrigatória.");
         }
+        var jwtOptions = configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
+        jwtOptions.Validate();
 
         services.AddSingleton(new MySqlConnectionFactory(connectionString));
+        services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
+        services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
+        services.AddScoped<IAccessTokenGenerator, JwtAccessTokenGenerator>();
         services.AddScoped<IIndicacaoRepository, IndicacaoMySqlRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioMySqlRepository>();
         services.AddScoped<IVistoriaRepository, VistoriaMySqlRepository>();
