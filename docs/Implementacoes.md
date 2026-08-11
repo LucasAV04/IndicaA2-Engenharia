@@ -1,5 +1,32 @@
 # Implementações
 
+## Módulo de Vistorias — Domain e Application
+
+**Data:** 2026-08-11
+
+### Implementado
+
+- Entidade `Vistoria`, pertencente obrigatoriamente ao `Usuario` que contratou o serviço por meio de `UsuarioId`.
+- Dados iniciais: `TipoPlanta` textual, `AreaM2`, `PacoteVistoria` e `DataAgendada`; nenhum valor ou regra financeira é calculado pelo módulo.
+- `StatusVistoria` com ciclo mínimo: `Agendada`, `Realizada`, `Concluida` e `Cancelada`.
+- Transições: Agendada → Realizada, Agendada → Cancelada e Realizada → Concluida. Os estados finais não aceitam novas transições incompatíveis.
+- Idempotência para repetições de marcar realizada, concluir e cancelar quando a vistoria já está no respectivo estado.
+- `IVistoriaRepository`, DTOs específicos, mapper manual, `IVistoriaService`, `VistoriaService` e `VistoriaNaoEncontradaException`.
+- Validação da existência do usuário contratante antes da criação e testes de Domain/Application.
+
+### Decisões registradas
+
+- `TipoPlanta` permanece texto até que a tabela comercial e suas categorias sejam formalizadas.
+- A futura integração com Indicações deverá validar a correspondência entre `Vistoria.UsuarioId` e `Indicacao.UsuarioIndicadoId`, mas não foi implementada nesta etapa.
+- `IUsuarioRepository.ExistePorIdAsync` não recebe `CancellationToken`; a limitação foi preservada para não ampliar o contrato nesta tarefa.
+
+### Pendente
+
+- `VistoriaMySqlRepository`, tabela MySQL e registro de `IVistoriaRepository` na Infrastructure.
+- API/controller de Vistorias e registro de `IVistoriaService` na composition root.
+- Validação real de `VistoriaId` em `IndicacaoService`.
+- Preços, tabela comercial, pagamentos, cashback, Pix, JWT e autenticação.
+
 ## API HTTP — Módulo de Indicações
 
 **Data:** 2026-08-11
