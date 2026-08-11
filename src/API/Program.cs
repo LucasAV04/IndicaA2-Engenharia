@@ -12,6 +12,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IIndicacaoService, IndicacaoService>();
+builder.Services.AddScoped<IVistoriaService, VistoriaService>();
 
 var app = builder.Build();
 

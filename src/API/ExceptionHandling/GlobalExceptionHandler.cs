@@ -1,4 +1,5 @@
 using Domain.Exceptions;
+using Domain.Exceptions.Usuario;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,6 +18,14 @@ public sealed class GlobalExceptionHandler(
             IndicacaoNaoEncontradaException => (
                 StatusCodes.Status404NotFound,
                 "Indicação não encontrada",
+                exception.Message),
+            VistoriaNaoEncontradaException => (
+                StatusCodes.Status404NotFound,
+                "Vistoria não encontrada",
+                exception.Message),
+            UsuarioNaoEncontradoException => (
+                StatusCodes.Status404NotFound,
+                "Usuário não encontrado",
                 exception.Message),
             DomainException => (
                 StatusCodes.Status422UnprocessableEntity,
