@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-11 — Persistência MySQL de Usuários
+
+### Adicionado
+
+- `UsuarioMySqlRepository`, script `002_create_usuarios.sql`, reidratação controlada de `Usuario` e registro scoped de `IUsuarioRepository`.
+- Testes sem MySQL externo para reidratação de usuários e registro de Dependency Injection.
+
+### Alterado
+
+- `IUsuarioRepository` foi consolidado, removendo o overload redundante de `ExistePorEmailAsync` e `ObterPorCodigoIndicacaoAsync`, cujo módulo permanece pendente.
+- `RemoverAsync` foi removido dos contratos de repository e service até a definição formal da estratégia de exclusão ou inativação.
+
+### Observações
+
+- Nenhuma coluna de código de indicação e nenhum `DELETE` físico foram introduzidos.
+
 ## 2026-08-10 — Correção de invariantes de reidratação de indicações
 
 ### Corrigido
