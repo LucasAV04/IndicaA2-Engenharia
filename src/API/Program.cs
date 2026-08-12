@@ -1,9 +1,12 @@
 using API.ExceptionHandling;
+using API.Authorization;
 using API.OpenApi;
+using API.Security;
 using Application.Interfaces.Services;
 using Application.Services;
 using Infrastructure.DependencyInjection;
 using Infrastructure.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -14,6 +17,7 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<AuthorizationOperationTransformer>();
 });
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -38,7 +42,29 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             RoleClaimType = "role"
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+builder.Services.AddScoped<IAuthorizationHandler, IndicacaoOwnerOrAdminHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, VistoriaOwnerOrAdminHandler>();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicies.Administrador, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.RequireRole(AuthorizationRoles.Administrador);
+        policy.RequireAssertion(context => CurrentUserClaims.TryGetUserId(context.User, out _));
+    });
+    options.AddPolicy(AuthorizationPolicies.IndicacaoOwnerOrAdmin, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new IndicacaoOwnerOrAdminRequirement());
+    });
+    options.AddPolicy(AuthorizationPolicies.VistoriaOwnerOrAdmin, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new VistoriaOwnerOrAdminRequirement());
+    });
+});
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IIndicacaoService, IndicacaoService>();
@@ -59,3 +85,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program;

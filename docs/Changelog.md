@@ -1,17 +1,33 @@
 # Changelog
 
+## 2026-08-12 — Autorização por Roles e Ownership
+
+### Adicionado
+
+- A autorizacao administrativa agora tambem exige `sub` presente, conversivel em `Guid` e diferente de `Guid.Empty`; identidade ausente ou invalida retorna `403 Forbidden`.
+
+- Policies centralizadas, `ICurrentUser` por request e handlers OwnerOrAdmin para Indicações e Vistorias.
+- Proteção Bearer para controllers de negócio, acesso administrativo e ownership de recursos por `sub`.
+- Requisitos Bearer por operação protegida no OpenAPI, sem proteger o login.
+- Cobertura de handlers, controllers e pipeline HTTP para 401, 403, roles, ownership e mitigação de IDOR.
+
+### Decisões
+
+- Autorização é responsabilidade exclusiva da API; Domain e Application continuam independentes de JWT e ASP.NET Core Authorization.
+- `401` representa ausência ou invalidez de autenticação; `403`, autenticação válida sem permissão.
+
 ## 2026-08-11 — Autenticação JWT
 
 ### Adicionado
 
 - BCrypt, busca de usuário por e-mail, `AuthService`, JWT Bearer e endpoint de login.
-- Transformer OpenAPI para documentar o esquema HTTP Bearer/JWT, sem adicionar requisito global de autorização.
+- Transformer OpenAPI para documentar o esquema HTTP Bearer/JWT, inicialmente sem requisito global de autorização.
 - Claims de identidade e role, atualização de `UltimoLogin` e tratamento HTTP 401/403 para falhas de autenticação.
 
 ### Decisões
 
 - Configuração JWT é externa; nenhuma senha, token ou chave real foi versionada.
-- `EmailConfirmado` ainda não bloqueia login. Refresh token e autorização por recurso permanecem pendentes.
+- `EmailConfirmado` ainda não bloqueia login. Refresh token permanece pendente; autorização por recurso foi implementada posteriormente.
 
 ## 2026-08-11 — API de Vistorias e integração real com Indicações
 

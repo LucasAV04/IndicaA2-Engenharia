@@ -1,14 +1,24 @@
+using API.Security;
 using Application.DTOs.Vistoria;
 using Application.Interfaces.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
 [ApiController]
 [Route("api/vistorias")]
-public sealed class VistoriasController(IVistoriaService vistoriaService) : ControllerBase
+[Authorize]
+[ProducesResponseType(StatusCodes.Status401Unauthorized)]
+[ProducesResponseType(StatusCodes.Status403Forbidden)]
+public sealed class VistoriasController(
+    IVistoriaService vistoriaService,
+    IAuthorizationService authorizationService,
+    ICurrentUser currentUser)
+    : AuthorizedControllerBase(authorizationService, currentUser)
 {
     [HttpPost]
+    [Authorize(Policy = AuthorizationPolicies.Administrador)]
     [ProducesResponseType(typeof(VistoriaResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -28,10 +38,15 @@ public sealed class VistoriasController(IVistoriaService vistoriaService) : Cont
         CancellationToken cancellationToken)
     {
         var vistoria = await vistoriaService.ObterPorIdAsync(id, cancellationToken);
+
+        if (!await IsAuthorizedAsync(vistoria, AuthorizationPolicies.VistoriaOwnerOrAdmin))
+            return Forbid();
+
         return Ok(vistoria);
     }
 
     [HttpGet]
+    [Authorize(Policy = AuthorizationPolicies.Administrador)]
     [ProducesResponseType(typeof(IReadOnlyCollection<VistoriaResponseDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<VistoriaResponseDto>>> ObterTodasAsync(
         CancellationToken cancellationToken)
@@ -46,11 +61,15 @@ public sealed class VistoriasController(IVistoriaService vistoriaService) : Cont
         Guid usuarioId,
         CancellationToken cancellationToken)
     {
+        if (!CanAccessUser(usuarioId))
+            return Forbid();
+
         var vistorias = await vistoriaService.ObterPorUsuarioIdAsync(usuarioId, cancellationToken);
         return Ok(vistorias);
     }
 
     [HttpPatch("{id:guid}/realizar")]
+    [Authorize(Policy = AuthorizationPolicies.Administrador)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -61,6 +80,7 @@ public sealed class VistoriasController(IVistoriaService vistoriaService) : Cont
     }
 
     [HttpPatch("{id:guid}/concluir")]
+    [Authorize(Policy = AuthorizationPolicies.Administrador)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -71,6 +91,7 @@ public sealed class VistoriasController(IVistoriaService vistoriaService) : Cont
     }
 
     [HttpPatch("{id:guid}/cancelar")]
+    [Authorize(Policy = AuthorizationPolicies.Administrador)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
