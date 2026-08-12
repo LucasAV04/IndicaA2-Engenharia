@@ -1,5 +1,28 @@
 # Implementações
 
+## Autorização por Roles e Ownership
+
+**Data:** 2026-08-12
+
+### Implementado
+
+- `IndicacoesController` e `VistoriasController` exigem autenticação Bearer; `POST /api/auth/login` permanece público.
+- `ICurrentUser` interpreta exclusivamente `sub` como `Guid` do usuário atual e `role` como papel. Claims ausentes ou inválidas não concedem acesso.
+- A policy centralizada `Administrador` protege as consultas e comandos operacionais globais.
+- Handlers sem I/O aplicam ownership por `Indicacao.UsuarioIndicadorId` e `Vistoria.UsuarioId`, mitigando IDOR.
+- Usuário comum cria indicação apenas para si, consulta/cancela suas indicações e consulta suas vistorias. Administrador possui o acesso operacional global definido.
+- O OpenAPI aplica Bearer somente às operações protegidas; login não recebe requisito de segurança.
+- Testes unitários de handlers, testes de controllers e smoke tests HTTP cobrem 401, 403, roles, ownership e OpenAPI.
+
+### Semântica HTTP
+
+- `401 Unauthorized`: token ausente, inválido ou expirado.
+- `403 Forbidden`: usuário autenticado sem permissão para a operação ou recurso.
+
+### Pendente
+
+- Testes de integração reais contra MySQL, confirmação de e-mail, refresh token, código de indicação, estratégia de exclusão/inativação, preços, cashback, Pix e pagamentos.
+
 ## Autenticação JWT
 
 **Data:** 2026-08-11
@@ -9,7 +32,7 @@
 - `BCryptPasswordHasher` como implementação concreta de `IPasswordHasher`.
 - Busca normalizada de usuário por e-mail, `AuthService` e endpoint público `POST /api/auth/login`.
 - JWT Bearer configurado externamente por `Jwt:Issuer`, `Jwt:Audience`, `Jwt:Key` e `Jwt:ExpirationMinutes`, com HMAC-SHA256 e claims `sub`, `email`, `name` e `role`.
-- OpenAPI nativo registra o esquema `Bearer` (`http`, `bearer`, `JWT`) por transformer de documento, sem requisito global de segurança enquanto a autorização dos endpoints não for formalizada.
+- OpenAPI nativo registra o esquema `Bearer` (`http`, `bearer`, `JWT`) e os requisitos por operação protegida.
 - Login atualiza `UltimoLogin` apenas após credenciais válidas e persiste o usuário.
 - Credenciais inválidas retornam 401 sem revelar existência do e-mail; usuário inativo ou bloqueado retorna 403.
 
@@ -17,7 +40,7 @@
 
 - `EmailConfirmado` não bloqueia login enquanto o fluxo de confirmação de e-mail não existir.
 - Chaves JWT, senhas e tokens não são versionados; devem ser fornecidos por variáveis de ambiente ou user-secrets.
-- Refresh token, autorização por roles e ownership por recurso permanecem fora deste escopo.
+- Refresh token permanece fora deste escopo.
 
 ## API HTTP de Vistorias e integração com Indicações
 
@@ -39,7 +62,7 @@
 ### Pendente
 
 - Testes reais de integração contra MySQL.
-- Autorização por roles/ownership, preços, tabela comercial, cashback, Pix, pagamentos, código de indicação e estratégia de exclusão/inativação de usuários.
+- Preços, tabela comercial, cashback, Pix, pagamentos, código de indicação e estratégia de exclusão/inativação de usuários.
 
 ## Infrastructure — Persistência MySQL de Vistorias
 
@@ -109,7 +132,7 @@
 
 ### Pendente
 
-- JWT, autenticação e autorização.
+- Autenticação e autorização foram implementadas em etapas posteriores; este registro permanece como histórico.
 - Testes de integração reais contra MySQL.
 - Código de indicação, estratégia de exclusão/inativação de usuários, cashback, Pix e pagamentos.
 
