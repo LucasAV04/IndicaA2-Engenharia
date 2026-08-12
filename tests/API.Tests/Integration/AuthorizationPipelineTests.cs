@@ -1,6 +1,12 @@
+using Application.DTOs.Indicacao;
+using Application.Interfaces.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
+using Moq;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Claims;
@@ -57,6 +63,45 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("sub-invalido")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task EndpointAdministrativo_ComAdministradorSemSubValido_DeveRetornarForbidden(string? subject)
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new(
+            "Bearer",
+            CriarToken("Administrador", subject, includeSubject: subject is not null));
+
+        var response = await client.GetAsync("/api/indicacoes");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task EndpointAdministrativo_ComAdministradorESubValido_DeveAutorizarSemConectarAoMySql()
+    {
+        var service = new Mock<IIndicacaoService>();
+        service.Setup(item => item.ObterTodasAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<IndicacaoResponseDto>());
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IIndicacaoService>();
+                services.AddScoped(_ => service.Object);
+            });
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
+
+        var response = await client.GetAsync("/api/indicacoes");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        service.Verify(item => item.ObterTodasAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task Login_SemBearer_DevePermanecerForaDaExigenciaDeAutenticacao()
     {
@@ -98,14 +143,15 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
         Assert.True(security[0].TryGetProperty("Bearer", out _));
     }
 
-    private static string CriarToken(string role)
+    private static string CriarToken(string role, string? subject = null, bool includeSubject = true)
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, Guid.NewGuid().ToString()),
             new Claim("name", "Usuário de teste"),
             new Claim("role", role)
         };
+        if (includeSubject)
+            claims.Insert(0, new Claim(JwtRegisteredClaimNames.Sub, subject ?? Guid.NewGuid().ToString()));
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Key)),
             SecurityAlgorithms.HmacSha256);

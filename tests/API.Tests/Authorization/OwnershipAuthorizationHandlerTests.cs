@@ -63,6 +63,20 @@ public sealed class OwnershipAuthorizationHandlerTests
         Assert.False(context.HasSucceeded);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("sub-invalido")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task IndicacaoOwnerOrAdmin_QuandoAdministradorNaoPossuirSubValido_DeveNegar(string? subject)
+    {
+        var currentUser = CriarCurrentUser(subject, AuthorizationRoles.Administrador);
+        var context = CriarContexto(new IndicacaoOwnerOrAdminRequirement(), CriarIndicacao(Guid.NewGuid()), currentUser);
+
+        await new IndicacaoOwnerOrAdminHandler(currentUser).HandleAsync(context);
+
+        Assert.False(context.HasSucceeded);
+    }
+
     [Fact]
     public async Task VistoriaOwnerOrAdmin_QuandoUsuarioForOwner_DeveAutorizar()
     {
@@ -108,6 +122,20 @@ public sealed class OwnershipAuthorizationHandlerTests
         Assert.False(context.HasSucceeded);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("sub-invalido")]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    public async Task VistoriaOwnerOrAdmin_QuandoAdministradorNaoPossuirSubValido_DeveNegar(string? subject)
+    {
+        var currentUser = CriarCurrentUser(subject, AuthorizationRoles.Administrador);
+        var context = CriarContexto(new VistoriaOwnerOrAdminRequirement(), CriarVistoria(Guid.NewGuid()), currentUser);
+
+        await new VistoriaOwnerOrAdminHandler(currentUser).HandleAsync(context);
+
+        Assert.False(context.HasSucceeded);
+    }
+
     private static AuthorizationHandlerContext CriarContexto<TRequirement>(
         TRequirement requirement,
         object resource,
@@ -115,11 +143,14 @@ public sealed class OwnershipAuthorizationHandlerTests
         where TRequirement : IAuthorizationRequirement =>
         new([requirement], CriarPrincipal(currentUser), resource);
 
-    private static ICurrentUser CriarCurrentUser(Guid? userId, string role)
+    private static ICurrentUser CriarCurrentUser(Guid userId, string role) =>
+        CriarCurrentUser(userId.ToString(), role);
+
+    private static ICurrentUser CriarCurrentUser(string? subject, string role)
     {
         var claims = new List<Claim> { new("role", role) };
-        if (userId is Guid id)
-            claims.Add(new Claim(JwtRegisteredClaimNames.Sub, id.ToString()));
+        if (subject is not null)
+            claims.Add(new Claim(JwtRegisteredClaimNames.Sub, subject));
 
         var context = new DefaultHttpContext
         {

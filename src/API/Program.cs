@@ -52,6 +52,7 @@ builder.Services.AddAuthorization(options =>
     {
         policy.RequireAuthenticatedUser();
         policy.RequireRole(AuthorizationRoles.Administrador);
+        policy.RequireAssertion(context => CurrentUserClaims.TryGetUserId(context.User, out _));
     });
     options.AddPolicy(AuthorizationPolicies.IndicacaoOwnerOrAdmin, policy =>
     {

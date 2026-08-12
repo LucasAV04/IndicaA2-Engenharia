@@ -171,17 +171,6 @@ public sealed class IndicacoesControllerTests
         service.Verify(s => s.CancelarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Fact]
-    public async Task ObterTodasAsync_QuandoNaoForAdministrador_DeveRetornarForbidden()
-    {
-        var service = new Mock<IIndicacaoService>();
-        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object, authorizationSucceeded: false);
-
-        var resultado = await controller.ObterTodasAsync(CancellationToken.None);
-
-        Assert.IsType<ForbidResult>(resultado.Result);
-    }
-
     private static CreateIndicacaoDto CriarDto() => new()
     {
         UsuarioIndicadorId = Guid.NewGuid(),

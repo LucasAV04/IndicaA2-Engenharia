@@ -26,9 +26,6 @@ public sealed class VistoriasController(
         [FromBody] CreateVistoriaDto dto,
         CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         var vistoria = await vistoriaService.CriarAsync(dto, cancellationToken);
         return CreatedAtAction(nameof(ObterPorIdAsync), new { id = vistoria.Id }, vistoria);
     }
@@ -54,9 +51,6 @@ public sealed class VistoriasController(
     public async Task<ActionResult<IReadOnlyCollection<VistoriaResponseDto>>> ObterTodasAsync(
         CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         var vistorias = await vistoriaService.ObterTodasAsync(cancellationToken);
         return Ok(vistorias);
     }
@@ -81,9 +75,6 @@ public sealed class VistoriasController(
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> MarcarRealizadaAsync(Guid id, CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         await vistoriaService.MarcarRealizadaAsync(id, cancellationToken);
         return NoContent();
     }
@@ -95,9 +86,6 @@ public sealed class VistoriasController(
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> ConcluirAsync(Guid id, CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         await vistoriaService.ConcluirAsync(id, cancellationToken);
         return NoContent();
     }
@@ -109,9 +97,6 @@ public sealed class VistoriasController(
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> CancelarAsync(Guid id, CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         await vistoriaService.CancelarAsync(id, cancellationToken);
         return NoContent();
     }

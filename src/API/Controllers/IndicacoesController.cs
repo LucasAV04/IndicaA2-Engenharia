@@ -51,9 +51,6 @@ public sealed class IndicacoesController(
     public async Task<ActionResult<IReadOnlyCollection<IndicacaoResponseDto>>> ObterTodasAsync(
         CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         var indicacoes = await indicacaoService.ObterTodasAsync(cancellationToken);
         return Ok(indicacoes);
     }
@@ -80,9 +77,6 @@ public sealed class IndicacoesController(
         StatusIndicacao status,
         CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         if (!Enum.IsDefined(status))
         {
             ModelState.AddModelError(nameof(status), "O status informado é inválido.");
@@ -101,9 +95,6 @@ public sealed class IndicacoesController(
         [FromBody] VincularUsuarioIndicadoDto dto,
         CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         if (dto.IndicacaoId != id)
         {
             ModelState.AddModelError(nameof(dto.IndicacaoId), "O identificador da rota deve ser igual ao identificador informado no corpo.");
@@ -122,9 +113,6 @@ public sealed class IndicacoesController(
         [FromBody] VincularVistoriaDto dto,
         CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         if (dto.IndicacaoId != id)
         {
             ModelState.AddModelError(nameof(dto.IndicacaoId), "O identificador da rota deve ser igual ao identificador informado no corpo.");
@@ -142,9 +130,6 @@ public sealed class IndicacoesController(
         Guid id,
         CancellationToken cancellationToken)
     {
-        if (!await IsAuthorizedAsync(AuthorizationPolicies.Administrador))
-            return Forbid();
-
         await indicacaoService.MarcarVistoriaConcluidaAsync(id, cancellationToken);
         return NoContent();
     }

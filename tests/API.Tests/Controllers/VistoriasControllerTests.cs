@@ -116,18 +116,6 @@ public sealed class VistoriasControllerTests
     }
 
     [Fact]
-    public async Task CriarAsync_QuandoNaoForAdministrador_DeveRetornarForbidden()
-    {
-        var service = new Mock<IVistoriaService>();
-        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object, authorizationSucceeded: false);
-
-        var resultado = await controller.CriarAsync(CriarDto(), CancellationToken.None);
-
-        Assert.IsType<ForbidResult>(resultado.Result);
-        service.Verify(item => item.CriarAsync(It.IsAny<CreateVistoriaDto>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
     public async Task ObterPorIdAsync_QuandoNaoForOwnerNemAdministrador_DeveRetornarForbidden()
     {
         var id = Guid.NewGuid();
@@ -150,18 +138,6 @@ public sealed class VistoriasControllerTests
 
         Assert.IsType<ForbidResult>(resultado.Result);
         service.Verify(item => item.ObterPorUsuarioIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task MarcarRealizadaAsync_QuandoNaoForAdministrador_DeveRetornarForbidden()
-    {
-        var service = new Mock<IVistoriaService>();
-        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object, authorizationSucceeded: false);
-
-        var resultado = await controller.MarcarRealizadaAsync(Guid.NewGuid(), CancellationToken.None);
-
-        Assert.IsType<ForbidResult>(resultado);
-        service.Verify(item => item.MarcarRealizadaAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static CreateVistoriaDto CriarDto() => new()

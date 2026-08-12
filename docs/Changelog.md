@@ -4,6 +4,8 @@
 
 ### Adicionado
 
+- A autorizacao administrativa agora tambem exige `sub` presente, conversivel em `Guid` e diferente de `Guid.Empty`; identidade ausente ou invalida retorna `403 Forbidden`.
+
 - Policies centralizadas, `ICurrentUser` por request e handlers OwnerOrAdmin para Indicações e Vistorias.
 - Proteção Bearer para controllers de negócio, acesso administrativo e ownership de recursos por `sub`.
 - Requisitos Bearer por operação protegida no OpenAPI, sem proteger o login.

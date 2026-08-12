@@ -1,4 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Http;
 
 namespace API.Security;
@@ -13,8 +12,7 @@ public sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : ICur
     {
         get
         {
-            var value = Principal?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-            return Guid.TryParse(value, out var userId) && userId != Guid.Empty
+            return CurrentUserClaims.TryGetUserId(Principal, out var userId)
                 ? userId
                 : null;
         }
@@ -22,12 +20,16 @@ public sealed class CurrentUser(IHttpContextAccessor httpContextAccessor) : ICur
 
     public string? Role => Principal?.FindFirst("role")?.Value;
 
-    public bool IsAdministrator => string.Equals(
-        Role,
-        AuthorizationRoles.Administrador,
-        StringComparison.Ordinal);
+    public bool IsAdministrator =>
+        IsAuthenticated &&
+        UserId.HasValue &&
+        string.Equals(Role, AuthorizationRoles.Administrador, StringComparison.Ordinal);
 
-    public bool CanAccessUser(Guid userId) =>
-        userId != Guid.Empty &&
-        (IsAdministrator || UserId is Guid currentUserId && currentUserId == userId);
+    public bool CanAccessUser(Guid userId)
+    {
+        if (!IsAuthenticated || userId == Guid.Empty || UserId is not Guid currentUserId)
+            return false;
+
+        return IsAdministrator || currentUserId == userId;
+    }
 }

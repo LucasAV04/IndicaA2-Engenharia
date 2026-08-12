@@ -12,7 +12,4 @@ public abstract class AuthorizedControllerBase(
 
     protected async Task<bool> IsAuthorizedAsync(object resource, string policy) =>
         (await authorizationService.AuthorizeAsync(User, resource, policy)).Succeeded;
-
-    protected async Task<bool> IsAuthorizedAsync(string policy) =>
-        (await authorizationService.AuthorizeAsync(User, resource: null, policy)).Succeeded;
 }
