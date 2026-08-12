@@ -1,4 +1,5 @@
 using API.Controllers;
+using API.Tests.Authorization;
 using Application.DTOs.Vistoria;
 using Application.Interfaces.Services;
 using Domain.Enums;
@@ -19,7 +20,7 @@ public sealed class VistoriasControllerTests
         var resposta = CriarResposta();
         var service = new Mock<IVistoriaService>();
         service.Setup(item => item.CriarAsync(dto, cancellationToken)).ReturnsAsync(resposta);
-        var controller = new VistoriasController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object);
 
         var resultado = await controller.CriarAsync(dto, cancellationToken);
 
@@ -37,7 +38,7 @@ public sealed class VistoriasControllerTests
         var resposta = CriarResposta(id);
         var service = new Mock<IVistoriaService>();
         service.Setup(item => item.ObterPorIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(resposta);
-        var controller = new VistoriasController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object);
 
         var resultado = await controller.ObterPorIdAsync(id, CancellationToken.None);
 
@@ -51,7 +52,7 @@ public sealed class VistoriasControllerTests
         IReadOnlyCollection<VistoriaResponseDto> respostas = Array.Empty<VistoriaResponseDto>();
         var service = new Mock<IVistoriaService>();
         service.Setup(item => item.ObterTodasAsync(It.IsAny<CancellationToken>())).ReturnsAsync(respostas);
-        var controller = new VistoriasController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object);
 
         var resultado = await controller.ObterTodasAsync(CancellationToken.None);
 
@@ -66,7 +67,7 @@ public sealed class VistoriasControllerTests
         IReadOnlyCollection<VistoriaResponseDto> respostas = [CriarResposta()];
         var service = new Mock<IVistoriaService>();
         service.Setup(item => item.ObterPorUsuarioIdAsync(usuarioId, It.IsAny<CancellationToken>())).ReturnsAsync(respostas);
-        var controller = new VistoriasController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object);
 
         var resultado = await controller.ObterPorUsuarioIdAsync(usuarioId, CancellationToken.None);
 
@@ -80,7 +81,7 @@ public sealed class VistoriasControllerTests
         var id = Guid.NewGuid();
         var cancellationToken = new CancellationTokenSource().Token;
         var service = new Mock<IVistoriaService>();
-        var controller = new VistoriasController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object);
 
         var resultado = await controller.MarcarRealizadaAsync(id, cancellationToken);
 
@@ -93,7 +94,7 @@ public sealed class VistoriasControllerTests
     {
         var id = Guid.NewGuid();
         var service = new Mock<IVistoriaService>();
-        var controller = new VistoriasController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object);
 
         var resultado = await controller.ConcluirAsync(id, CancellationToken.None);
 
@@ -106,12 +107,61 @@ public sealed class VistoriasControllerTests
     {
         var id = Guid.NewGuid();
         var service = new Mock<IVistoriaService>();
-        var controller = new VistoriasController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object);
 
         var resultado = await controller.CancelarAsync(id, CancellationToken.None);
 
         Assert.IsType<NoContentResult>(resultado);
         service.Verify(item => item.CancelarAsync(id, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CriarAsync_QuandoNaoForAdministrador_DeveRetornarForbidden()
+    {
+        var service = new Mock<IVistoriaService>();
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object, authorizationSucceeded: false);
+
+        var resultado = await controller.CriarAsync(CriarDto(), CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(resultado.Result);
+        service.Verify(item => item.CriarAsync(It.IsAny<CreateVistoriaDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ObterPorIdAsync_QuandoNaoForOwnerNemAdministrador_DeveRetornarForbidden()
+    {
+        var id = Guid.NewGuid();
+        var service = new Mock<IVistoriaService>();
+        service.Setup(item => item.ObterPorIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(CriarResposta(id));
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object, authorizationSucceeded: false);
+
+        var resultado = await controller.ObterPorIdAsync(id, CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(resultado.Result);
+    }
+
+    [Fact]
+    public async Task ObterPorUsuarioIdAsync_QuandoIdNaoForDoUsuarioAtual_DeveRetornarForbidden()
+    {
+        var service = new Mock<IVistoriaService>();
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object, canAccessUser: false);
+
+        var resultado = await controller.ObterPorUsuarioIdAsync(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(resultado.Result);
+        service.Verify(item => item.ObterPorUsuarioIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MarcarRealizadaAsync_QuandoNaoForAdministrador_DeveRetornarForbidden()
+    {
+        var service = new Mock<IVistoriaService>();
+        var controller = ControllerAuthorizationFactory.CriarVistoriasController(service.Object, authorizationSucceeded: false);
+
+        var resultado = await controller.MarcarRealizadaAsync(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(resultado);
+        service.Verify(item => item.MarcarRealizadaAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private static CreateVistoriaDto CriarDto() => new()

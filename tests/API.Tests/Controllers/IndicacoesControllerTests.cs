@@ -1,4 +1,5 @@
 using API.Controllers;
+using API.Tests.Authorization;
 using Application.DTOs.Indicacao;
 using Application.Interfaces.Services;
 using Domain.Enums;
@@ -18,7 +19,7 @@ public sealed class IndicacoesControllerTests
         var resposta = CriarResposta();
         var service = new Mock<IIndicacaoService>();
         service.Setup(s => s.CriarAsync(dto, cancellationToken)).ReturnsAsync(resposta);
-        var controller = new IndicacoesController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
 
         var resultado = await controller.CriarAsync(dto, cancellationToken);
 
@@ -36,7 +37,7 @@ public sealed class IndicacoesControllerTests
         var resposta = CriarResposta(id);
         var service = new Mock<IIndicacaoService>();
         service.Setup(s => s.ObterPorIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(resposta);
-        var controller = new IndicacoesController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
 
         var resultado = await controller.ObterPorIdAsync(id, CancellationToken.None);
 
@@ -50,7 +51,7 @@ public sealed class IndicacoesControllerTests
         IReadOnlyCollection<IndicacaoResponseDto> respostas = Array.Empty<IndicacaoResponseDto>();
         var service = new Mock<IIndicacaoService>();
         service.Setup(s => s.ObterTodasAsync(It.IsAny<CancellationToken>())).ReturnsAsync(respostas);
-        var controller = new IndicacoesController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
 
         var resultado = await controller.ObterTodasAsync(CancellationToken.None);
 
@@ -63,7 +64,8 @@ public sealed class IndicacoesControllerTests
     {
         var id = Guid.NewGuid();
         var service = new Mock<IIndicacaoService>();
-        var controller = new IndicacoesController(service.Object);
+        service.Setup(s => s.ObterPorIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(CriarResposta(id));
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
 
         var resultado = await controller.CancelarAsync(id, CancellationToken.None);
 
@@ -77,7 +79,7 @@ public sealed class IndicacoesControllerTests
         var id = Guid.NewGuid();
         var dto = new VincularVistoriaDto { IndicacaoId = id, VistoriaId = Guid.NewGuid() };
         var service = new Mock<IIndicacaoService>();
-        var controller = new IndicacoesController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
 
         var resultado = await controller.VincularVistoriaAsync(id, dto, CancellationToken.None);
 
@@ -91,7 +93,7 @@ public sealed class IndicacoesControllerTests
         var id = Guid.NewGuid();
         var dto = new VincularUsuarioIndicadoDto { IndicacaoId = id, UsuarioIndicadoId = Guid.NewGuid() };
         var service = new Mock<IIndicacaoService>();
-        var controller = new IndicacoesController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
 
         var resultado = await controller.VincularUsuarioIndicadoAsync(id, dto, CancellationToken.None);
 
@@ -103,7 +105,7 @@ public sealed class IndicacoesControllerTests
     public async Task VincularVistoriaAsync_QuandoIdsDivergirem_DeveRetornarValidationProblem()
     {
         var service = new Mock<IIndicacaoService>();
-        var controller = new IndicacoesController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
 
         var resultado = await controller.VincularVistoriaAsync(
             Guid.NewGuid(),
@@ -121,13 +123,63 @@ public sealed class IndicacoesControllerTests
     public async Task ObterPorStatusAsync_QuandoStatusForInvalido_DeveRetornarValidationProblem()
     {
         var service = new Mock<IIndicacaoService>();
-        var controller = new IndicacoesController(service.Object);
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
 
         var resultado = await controller.ObterPorStatusAsync((StatusIndicacao)99, CancellationToken.None);
 
         var problem = Assert.IsType<BadRequestObjectResult>(resultado.Result);
         var details = Assert.IsType<ValidationProblemDetails>(problem.Value);
         service.Verify(s => s.ObterPorStatusAsync(It.IsAny<StatusIndicacao>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CriarAsync_QuandoUsuarioTentaCriarParaOutro_DeveRetornarForbidden()
+    {
+        var service = new Mock<IIndicacaoService>();
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object, canAccessUser: false);
+
+        var resultado = await controller.CriarAsync(CriarDto(), CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(resultado.Result);
+        service.Verify(s => s.CriarAsync(It.IsAny<CreateIndicacaoDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ObterPorIdAsync_QuandoNaoForOwnerNemAdministrador_DeveRetornarForbidden()
+    {
+        var id = Guid.NewGuid();
+        var service = new Mock<IIndicacaoService>();
+        service.Setup(s => s.ObterPorIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(CriarResposta(id));
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object, authorizationSucceeded: false);
+
+        var resultado = await controller.ObterPorIdAsync(id, CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(resultado.Result);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_QuandoNaoForOwnerNemAdministrador_DeveRetornarForbidden()
+    {
+        var id = Guid.NewGuid();
+        var service = new Mock<IIndicacaoService>();
+        service.Setup(s => s.ObterPorIdAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(CriarResposta(id));
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object, authorizationSucceeded: false);
+
+        var resultado = await controller.CancelarAsync(id, CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(resultado);
+        service.Verify(s => s.CancelarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ObterTodasAsync_QuandoNaoForAdministrador_DeveRetornarForbidden()
+    {
+        var service = new Mock<IIndicacaoService>();
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object, authorizationSucceeded: false);
+
+        var resultado = await controller.ObterTodasAsync(CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(resultado.Result);
     }
 
     private static CreateIndicacaoDto CriarDto() => new()
