@@ -8,6 +8,12 @@
 
 - A autorizacao exige `sub` presente, conversivel em `Guid` e diferente de `Guid.Empty` para qualquer acesso, inclusive administrativo. A role `Administrador` sem identidade valida retorna `403 Forbidden`.
 
+- Suite de integracao MySQL no projeto `Infrastructure.Tests`, cobrindo `UsuarioMySqlRepository`, `IndicacaoMySqlRepository` e `VistoriaMySqlRepository` contra banco real.
+- A fixture cria por execucao o database `indicaa2_test_<guid>`, aplica os scripts reais na ordem `002_create_usuarios.sql`, `003_create_vistorias.sql` e `001_create_indicacoes.sql`, limpa dados entre testes e remove o database ao final.
+- A configuracao obrigatoria e `INDICA2_TEST_MYSQL_CONNECTION`: uma conexao administrativa sem `Database`. A fixture valida o prefixo seguro antes de qualquer limpeza ou remocao, portanto nao usa automaticamente banco de desenvolvimento ou producao.
+- A cobertura inclui insert, select, update, filtros, reidratacao, `email` UNIQUE, FK de `vistorias.usuario_id`, `DECIMAL(10,2)` de `AreaM2`, timestamps UTC e `DataAgendada` preservada como valor de negocio. O schema atual de `indicacoes` nao declara FKs e os testes nao assumem integridade inexistente.
+- Para executar: `dotnet test tests/Infrastructure.Tests/Infrastructure.Tests.csproj --filter "Category=Integration"`. Para testes sem MySQL: `dotnet test IndicaA2.slnx --filter "Category!=Integration"`. Sem a variavel, os testes de integracao sao ignorados explicitamente com instrucao de configuracao, sem serem contabilizados como aprovados.
+
 - `IndicacoesController` e `VistoriasController` exigem autenticação Bearer; `POST /api/auth/login` permanece público.
 - `ICurrentUser` interpreta exclusivamente `sub` como `Guid` do usuário atual e `role` como papel. Claims ausentes ou inválidas não concedem acesso.
 - A policy centralizada `Administrador` protege as consultas e comandos operacionais globais.
