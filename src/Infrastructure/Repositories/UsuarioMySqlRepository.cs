@@ -234,7 +234,7 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
             throw new DataException($"O tipo de usuário persistido '{tipoUsuarioPersistido}' é inválido.");
 
         return Usuario.Reidratar(
-            Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
+            reader.ObterGuid("id"),
             reader.GetString(reader.GetOrdinal("nome")),
             reader.GetString(reader.GetOrdinal("email")),
             reader.GetString(reader.GetOrdinal("senha_hash")),
