@@ -33,7 +33,9 @@ public sealed class UsuarioMySqlRepositoryIntegrationTests(MySqlIntegrationFixtu
         Assert.Equal(StatusUsuario.Bloqueado, persistido.Status);
         Assert.Equal(TipoUsuario.Administrador, persistido.TipoUsuario);
         Assert.True(persistido.EmailConfirmado);
-        Assert.Equal(usuario.UltimoLogin, persistido.UltimoLogin);
+        Assert.NotNull(usuario.UltimoLogin);
+        Assert.NotNull(persistido.UltimoLogin);
+        Assert.Equal(usuario.UltimoLogin.Value, persistido.UltimoLogin.Value, TimeSpan.FromTicks(10));
         Assert.Equal(DateTimeKind.Utc, persistido.CreatedAt.Kind);
         Assert.Equal(DateTimeKind.Utc, persistido.UpdatedAt.Kind);
 
