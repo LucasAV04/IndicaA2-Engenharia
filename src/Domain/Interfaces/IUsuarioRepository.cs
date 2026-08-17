@@ -10,6 +10,8 @@ namespace Domain.Interfaces
 
         Task<Usuario?> ObterPorEmailAsync(string email, CancellationToken cancellationToken = default);
 
+        Task<Usuario?> ObterPorCodigoIndicacaoAsync(string codigoIndicacao, CancellationToken cancellationToken = default);
+
         Task<bool> ExistePorEmailAsync(string email, Guid? ignorarUsuarioId = null, CancellationToken cancellationToken = default);
 
         Task<IReadOnlyCollection<Usuario>> ObterTodosAsync(CancellationToken cancellationToken = default);

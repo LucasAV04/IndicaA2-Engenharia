@@ -13,13 +13,20 @@ namespace IndicA2.Application.Services;
 
 public sealed class UsuarioService : IUsuarioService
 {
-   
+    private const int MaximoTentativasGeracaoCodigoIndicacao = 5;
+
     private readonly IUsuarioRepository _usuarioRepository;
     private readonly IPasswordHasher _passwordHasher;
-    public UsuarioService(IUsuarioRepository usuarioRepository,IPasswordHasher passwordHasher)
+    private readonly ICodigoIndicacaoGenerator _codigoIndicacaoGenerator;
+
+    public UsuarioService(
+        IUsuarioRepository usuarioRepository,
+        IPasswordHasher passwordHasher,
+        ICodigoIndicacaoGenerator codigoIndicacaoGenerator)
     {
         _usuarioRepository = usuarioRepository;
         _passwordHasher = passwordHasher;
+        _codigoIndicacaoGenerator = codigoIndicacaoGenerator;
     }
 
     #region Consultas
@@ -28,6 +35,16 @@ public sealed class UsuarioService : IUsuarioService
         Guid id,
         CancellationToken cancellationToken = default) =>
         (await ObterUsuarioOuLancarExceptionAsync(id, cancellationToken)).ToResponseDto();
+
+    public async Task<UsuarioResponseDto> ObterPorCodigoIndicacaoAsync(
+        string codigoIndicacao,
+        CancellationToken cancellationToken = default)
+    {
+        var codigoNormalizado = Usuario.NormalizarCodigoIndicacao(codigoIndicacao);
+        var usuario = await _usuarioRepository.ObterPorCodigoIndicacaoAsync(codigoNormalizado, cancellationToken);
+
+        return (usuario ?? throw new UsuarioNaoEncontradoException()).ToResponseDto();
+    }
 
     public async Task<IReadOnlyCollection<UsuarioResponseDto>> ObterTodosAsync(
         CancellationToken cancellationToken = default) =>
@@ -53,13 +70,15 @@ public sealed class UsuarioService : IUsuarioService
         }
 
         var senhaHash = _passwordHasher.HashPassword(dto.Senha);
+        var codigoIndicacao = await GerarCodigoIndicacaoDisponivelAsync(cancellationToken);
 
         var usuario = new Usuario(
             dto.Nome,
             emailNormalizado,
             senhaHash,
             dto.Telefone,
-            TipoUsuario.Usuario);
+            TipoUsuario.Usuario,
+            codigoIndicacao);
 
         await _usuarioRepository.AdicionarAsync(
             usuario,
@@ -107,6 +126,22 @@ public sealed class UsuarioService : IUsuarioService
     {
         var usuario = await _usuarioRepository.ObterPorIdAsync(id, cancellationToken);
         return usuario ?? throw new UsuarioNaoEncontradoException();
+    }
+
+    private async Task<string> GerarCodigoIndicacaoDisponivelAsync(CancellationToken cancellationToken)
+    {
+        for (var tentativa = 0; tentativa < MaximoTentativasGeracaoCodigoIndicacao; tentativa++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var codigoIndicacao = Usuario.NormalizarCodigoIndicacao(_codigoIndicacaoGenerator.Gerar());
+            var usuarioExistente = await _usuarioRepository.ObterPorCodigoIndicacaoAsync(codigoIndicacao, cancellationToken);
+
+            if (usuarioExistente is null)
+                return codigoIndicacao;
+        }
+
+        throw new InvalidOperationException(
+            "Não foi possível gerar um código de indicação único após cinco tentativas.");
     }
 
     #endregion

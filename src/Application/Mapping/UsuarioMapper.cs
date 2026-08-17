@@ -12,6 +12,7 @@ namespace Application.Mapping
                 Nome = usuario.Nome,
                 Email = usuario.Email,
                 Telefone = usuario.Telefone,
+                CodigoIndicacao = usuario.CodigoIndicacao,
                 Status = usuario.Status,
                 TipoUsuario = usuario.TipoUsuario,
                 EmailConfirmado = usuario.EmailConfirmado,
