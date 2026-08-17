@@ -190,21 +190,16 @@ public sealed class IndicacaoMySqlRepository : IIndicacaoRepository
             throw new DataException($"O status persistido '{statusPersistido}' é inválido.");
 
         return Indicacao.Reidratar(
-            Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
-            Guid.Parse(reader.GetString(reader.GetOrdinal("usuario_indicador_id"))),
-            ObterGuidOpcional(reader, "usuario_indicado_id"),
+            reader.ObterGuid("id"),
+            reader.ObterGuid("usuario_indicador_id"),
+            reader.ObterGuidOpcional("usuario_indicado_id"),
             reader.GetString(reader.GetOrdinal("nome_indicada")),
             reader.GetString(reader.GetOrdinal("telefone_indicada")),
             reader.GetString(reader.GetOrdinal("codigo_indicacao_usado")),
-            ObterGuidOpcional(reader, "vistoria_id"),
+            reader.ObterGuidOpcional("vistoria_id"),
             (StatusIndicacao)statusPersistido,
             DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("created_at")), DateTimeKind.Utc),
             DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("updated_at")), DateTimeKind.Utc));
     }
 
-    private static Guid? ObterGuidOpcional(MySqlDataReader reader, string nomeColuna)
-    {
-        var ordinal = reader.GetOrdinal(nomeColuna);
-        return reader.IsDBNull(ordinal) ? null : Guid.Parse(reader.GetString(ordinal));
-    }
 }

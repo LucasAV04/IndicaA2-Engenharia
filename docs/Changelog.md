@@ -6,6 +6,13 @@
 
 - A autorizacao administrativa agora tambem exige `sub` presente, conversivel em `Guid` e diferente de `Guid.Empty`; identidade ausente ou invalida retorna `403 Forbidden`.
 
+- Corrigida a materializacao de GUIDs MySQL: repositories agora aceitam retorno direto `Guid` ou string GUID valida, rejeitando `DBNull` obrigatorio, `Guid.Empty` e valores invalidos sem alterar o schema.
+
+- Ajustada a comparacao temporal do round-trip MySQL para tolerancia de um microssegundo, compativel com `DATETIME(6)`; nenhum schema ou codigo de producao foi alterado.
+
+- Testes reais de integracao MySQL para repositories de Usuario, Indicacao e Vistoria, em database temporario com prefixo obrigatorio `indicaa2_test_`.
+- Cobertura de schema do zero, reidratacao, filtros, updates, constraint UNIQUE de email, FK de Vistoria e decimal de area; configuracao externa por `INDICA2_TEST_MYSQL_CONNECTION`, sem credenciais versionadas.
+
 - Policies centralizadas, `ICurrentUser` por request e handlers OwnerOrAdmin para Indicações e Vistorias.
 - Proteção Bearer para controllers de negócio, acesso administrativo e ownership de recursos por `sub`.
 - Requisitos Bearer por operação protegida no OpenAPI, sem proteger o login.

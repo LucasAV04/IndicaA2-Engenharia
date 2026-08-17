@@ -172,8 +172,8 @@ public sealed class VistoriaMySqlRepository : IVistoriaRepository
             throw new DataException($"O status persistido '{statusPersistido}' é inválido.");
 
         return Vistoria.Reidratar(
-            Guid.Parse(reader.GetString(reader.GetOrdinal("id"))),
-            Guid.Parse(reader.GetString(reader.GetOrdinal("usuario_id"))),
+            reader.ObterGuid("id"),
+            reader.ObterGuid("usuario_id"),
             reader.GetString(reader.GetOrdinal("tipo_planta")),
             reader.GetDecimal(reader.GetOrdinal("area_m2")),
             (PacoteVistoria)pacotePersistido,
