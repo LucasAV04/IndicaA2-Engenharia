@@ -78,6 +78,7 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
         foreach (var script in new[]
                  {
                      "database/002_create_usuarios.sql",
+                     "database/004_add_codigo_indicacao_usuarios.sql",
                      "database/003_create_vistorias.sql",
                      "database/001_create_indicacoes.sql"
                  })

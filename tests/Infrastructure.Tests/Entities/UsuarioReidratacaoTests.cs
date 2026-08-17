@@ -54,7 +54,8 @@ public sealed class UsuarioReidratacaoTests
             false,
             null,
             DateTime.UtcNow,
-            DateTime.UtcNow));
+            DateTime.UtcNow,
+            "7K4M9P2Q"));
     }
 
     [Fact]
@@ -89,5 +90,61 @@ public sealed class UsuarioReidratacaoTests
             null,
             DateTime.UtcNow,
             DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void Reidratar_QuandoUsuarioPossuirCodigoValido_DevePreservarCodigoNormalizado()
+    {
+        var usuario = Usuario.Reidratar(
+            Guid.NewGuid(),
+            "Ana Silva",
+            "ana@exemplo.com",
+            "hash-seguro",
+            null,
+            StatusUsuario.Ativo,
+            TipoUsuario.Usuario,
+            false,
+            null,
+            DateTime.UtcNow.AddDays(-1),
+            DateTime.UtcNow,
+            " 7k4m9p2q ");
+
+        Assert.Equal("7K4M9P2Q", usuario.CodigoIndicacao);
+    }
+
+    [Fact]
+    public void Reidratar_QuandoCodigoPersistidoForInvalido_DeveLancarDomainException()
+    {
+        Assert.Throws<Domain.Exceptions.DomainException>(() => Usuario.Reidratar(
+            Guid.NewGuid(),
+            "Ana Silva",
+            "ana@exemplo.com",
+            "hash-seguro",
+            null,
+            StatusUsuario.Ativo,
+            TipoUsuario.Usuario,
+            false,
+            null,
+            DateTime.UtcNow.AddDays(-1),
+            DateTime.UtcNow,
+            "7K4M!P2Q"));
+    }
+
+    [Fact]
+    public void Reidratar_QuandoAdministradorPossuirCodigoPersistido_DeveLancarArgumentException()
+    {
+        Assert.Throws<ArgumentException>(() => Usuario.Reidratar(
+            Guid.NewGuid(),
+            "Admin",
+            "admin@exemplo.com",
+            "hash-seguro",
+            null,
+            StatusUsuario.Ativo,
+            TipoUsuario.Administrador,
+            false,
+            null,
+            DateTime.UtcNow.AddDays(-1),
+            DateTime.UtcNow,
+            "7K4M9P2Q"));
     }
 }

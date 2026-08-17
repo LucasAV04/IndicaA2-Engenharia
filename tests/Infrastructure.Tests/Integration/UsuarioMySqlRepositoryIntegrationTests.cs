@@ -87,4 +87,36 @@ public sealed class UsuarioMySqlRepositoryIntegrationTests(MySqlIntegrationFixtu
         await Assert.ThrowsAsync<MySqlException>(() =>
             repository.AdicionarAsync(IntegrationTestData.CriarUsuario("unico@exemplo.com"), CancellationToken.None));
     }
+
+    [MySqlIntegrationFact]
+    public async Task CodigoIndicacao_DeveSerPersistidoConsultadoENaoAceitarDuplicidade()
+    {
+        await fixture.LimparDadosAsync();
+        var repository = new UsuarioMySqlRepository(fixture.ConnectionFactory);
+        var usuario = IntegrationTestData.CriarUsuario(codigoIndicacao: "7K4M9P2Q");
+        await repository.AdicionarAsync(usuario, CancellationToken.None);
+
+        var porCodigo = await repository.ObterPorCodigoIndicacaoAsync(" 7k4m9p2q ", CancellationToken.None);
+
+        Assert.NotNull(porCodigo);
+        Assert.Equal(usuario.Id, porCodigo.Id);
+        Assert.Equal("7K4M9P2Q", porCodigo.CodigoIndicacao);
+
+        var duplicado = IntegrationTestData.CriarUsuario(codigoIndicacao: "7K4M9P2Q");
+        await Assert.ThrowsAsync<MySqlException>(() => repository.AdicionarAsync(duplicado, CancellationToken.None));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task Administrador_DeveSerPersistidoSemCodigoIndicacao()
+    {
+        await fixture.LimparDadosAsync();
+        var repository = new UsuarioMySqlRepository(fixture.ConnectionFactory);
+        var administrador = IntegrationTestData.CriarUsuario(tipoUsuario: TipoUsuario.Administrador);
+
+        await repository.AdicionarAsync(administrador, CancellationToken.None);
+        var persistido = await repository.ObterPorIdAsync(administrador.Id, CancellationToken.None);
+
+        Assert.NotNull(persistido);
+        Assert.Null(persistido.CodigoIndicacao);
+    }
 }
