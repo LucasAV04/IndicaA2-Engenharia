@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-08-17 — Correção de invariantes e colisão concorrente de código
+
+### Corrigido
+
+- A construção normal de `Usuario` comum agora rejeita código de indicação nulo ou vazio; somente a reidratação histórica permite ausência temporária do valor.
+- `UsuarioService` passou a considerar também colisões reais no `INSERT`: a violação específica de `uq_usuarios_codigo_indicacao` gera retry, limitado a cinco tentativas, sem recalcular o hash da senha.
+- `UsuarioMySqlRepository` traduz somente a violação de chave duplicada referente ao código de indicação para `CodigoIndicacaoDuplicadoException`. A violação de unicidade do e-mail preserva o comportamento anterior.
+
+### Testes
+
+- Adicionados casos para as invariantes de criação/reidratação, colisão concorrente, limite de tentativas, hash único, e-mail duplicado e tradução real da constraint MySQL.
+
+## 2026-08-17 — Código de Indicação
+
+### Adicionado
+
+- `CodigoIndicacao` em `Usuario`, destinado exclusivamente a usuários comuns, com formato oficial de oito caracteres alfanuméricos em maiúsculo e sem alteração, regeneração ou expiração.
+- Geração criptograficamente segura por `ICodigoIndicacaoGenerator`/`CodigoIndicacaoGenerator`, verificação de colisão com no máximo cinco tentativas e proteção final por `UNIQUE` no MySQL.
+- Consulta de usuário por código no contrato e repositório MySQL, persistência/materialização do campo e script incremental `004_add_codigo_indicacao_usuarios.sql`.
+- Cobertura para domínio, Application, gerador, DI, reidratação e integração MySQL condicional.
+
+### Decisões
+
+- Código de indicação não é uma entidade nem uma API pública. O valor usado em `Indicacao.CodigoIndicacaoUsado` continua sendo o retrato histórico da indicação.
+- A migração mantém o campo nullable para dados existentes. Nenhum dado histórico é gerado por SQL e nenhuma alteração destrutiva foi executada.
+
 ## 2026-08-12 — Autorização por Roles e Ownership
 
 ### Adicionado

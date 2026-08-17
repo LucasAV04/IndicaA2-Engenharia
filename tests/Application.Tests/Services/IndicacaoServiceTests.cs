@@ -463,5 +463,5 @@ public sealed class IndicacaoServiceTests
         DateTime.UtcNow);
 
     private static Usuario CriarUsuario() =>
-        new("Usuário", "usuario@a2.com", "hash");
+        new("Usuário", "usuario@a2.com", "hash", codigoIndicacao: "A1B2C3D4");
 }

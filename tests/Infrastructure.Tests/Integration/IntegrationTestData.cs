@@ -5,8 +5,23 @@ namespace Infrastructure.Tests.Integration;
 
 internal static class IntegrationTestData
 {
-    public static Usuario CriarUsuario(string? email = null, TipoUsuario tipoUsuario = TipoUsuario.Usuario) =>
-        new("Usuario de Integracao", email ?? $"usuario-{Guid.NewGuid():N}@exemplo.com", "hash-de-teste", "11999999999", tipoUsuario);
+    public static Usuario CriarUsuario(
+        string? email = null,
+        TipoUsuario tipoUsuario = TipoUsuario.Usuario,
+        string? codigoIndicacao = null)
+    {
+        var codigoParaCriacao = tipoUsuario == TipoUsuario.Usuario
+            ? codigoIndicacao ?? Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()
+            : null;
+
+        return new Usuario(
+            "Usuario de Integracao",
+            email ?? $"usuario-{Guid.NewGuid():N}@exemplo.com",
+            "hash-de-teste",
+            "11999999999",
+            tipoUsuario,
+            codigoParaCriacao);
+    }
 
     public static Vistoria CriarVistoria(Guid usuarioId, decimal areaM2 = 72.35m) =>
         new(

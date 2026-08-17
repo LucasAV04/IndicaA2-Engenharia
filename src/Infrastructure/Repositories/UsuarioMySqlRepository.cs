@@ -1,6 +1,7 @@
 using System.Data;
 using Domain.Entities;
 using Domain.Enums;
+using Domain.Exceptions.Usuario;
 using Domain.Interfaces;
 using Infrastructure.Database;
 using MySqlConnector;
@@ -9,10 +10,13 @@ namespace Infrastructure.Repositories;
 
 public sealed class UsuarioMySqlRepository : IUsuarioRepository
 {
+    private const string ConstraintCodigoIndicacao = "uq_usuarios_codigo_indicacao";
+
     private const string Colunas = """
         id,
         nome,
         email,
+        codigo_indicacao,
         senha_hash,
         telefone,
         status,
@@ -53,6 +57,24 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
         await connection.OpenAsync(cancellationToken);
         await using var command = CriarComando(connection, sql);
         command.Parameters.Add("@email", MySqlDbType.VarChar).Value = email;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        return await reader.ReadAsync(cancellationToken)
+            ? Materializar(reader)
+            : null;
+    }
+
+    public async Task<Usuario?> ObterPorCodigoIndicacaoAsync(
+        string codigoIndicacao,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = $"SELECT {Colunas} FROM usuarios WHERE codigo_indicacao = @codigoIndicacao LIMIT 1;";
+        var codigoNormalizado = Usuario.NormalizarCodigoIndicacao(codigoIndicacao);
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = CriarComando(connection, sql);
+        command.Parameters.Add("@codigoIndicacao", MySqlDbType.VarChar).Value = codigoNormalizado;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         return await reader.ReadAsync(cancellationToken)
@@ -128,6 +150,7 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
                 id,
                 nome,
                 email,
+                codigo_indicacao,
                 senha_hash,
                 telefone,
                 status,
@@ -140,6 +163,7 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
                 @id,
                 @nome,
                 @email,
+                @codigoIndicacao,
                 @senhaHash,
                 @telefone,
                 @status,
@@ -150,7 +174,14 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
                 @updatedAt);
             """;
 
-        await ExecutarComandoAsync(sql, command => AdicionarParametrosEstado(command, usuario), cancellationToken);
+        try
+        {
+            await ExecutarComandoAsync(sql, command => AdicionarParametrosEstado(command, usuario), cancellationToken);
+        }
+        catch (MySqlException exception) when (EhViolacaoDeCodigoIndicacaoDuplicado(exception))
+        {
+            throw new CodigoIndicacaoDuplicadoException();
+        }
     }
 
     public async Task AtualizarAsync(Usuario usuario, CancellationToken cancellationToken = default)
@@ -199,11 +230,16 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
 
     private static MySqlCommand CriarComando(MySqlConnection connection, string sql) => new(sql, connection);
 
+    private static bool EhViolacaoDeCodigoIndicacaoDuplicado(MySqlException exception) =>
+        exception.ErrorCode == MySqlErrorCode.DuplicateKeyEntry &&
+        exception.Message.Contains(ConstraintCodigoIndicacao, StringComparison.OrdinalIgnoreCase);
+
     private static void AdicionarParametrosEstado(MySqlCommand command, Usuario usuario)
     {
         AdicionarGuid(command, "@id", usuario.Id);
         command.Parameters.Add("@nome", MySqlDbType.VarChar).Value = usuario.Nome;
         command.Parameters.Add("@email", MySqlDbType.VarChar).Value = usuario.Email;
+        AdicionarTextoOpcional(command, "@codigoIndicacao", usuario.CodigoIndicacao);
         command.Parameters.Add("@senhaHash", MySqlDbType.VarChar).Value = usuario.SenhaHash;
         AdicionarTextoOpcional(command, "@telefone", usuario.Telefone);
         command.Parameters.Add("@status", MySqlDbType.Int32).Value = (int)usuario.Status;
@@ -244,7 +280,8 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
             reader.GetBoolean(reader.GetOrdinal("email_confirmado")),
             ObterDataOpcionalUtc(reader, "ultimo_login"),
             ObterDataUtc(reader, "created_at"),
-            ObterDataUtc(reader, "updated_at"));
+            ObterDataUtc(reader, "updated_at"),
+            ObterTextoOpcional(reader, "codigo_indicacao"));
     }
 
     private static string? ObterTextoOpcional(MySqlDataReader reader, string nomeColuna)

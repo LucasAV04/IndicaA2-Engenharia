@@ -29,6 +29,7 @@ public static class InfrastructureDependencyInjection
         services.AddSingleton(new MySqlConnectionFactory(connectionString));
         services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
         services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
+        services.AddScoped<ICodigoIndicacaoGenerator, CodigoIndicacaoGenerator>();
         services.AddScoped<IAccessTokenGenerator, JwtAccessTokenGenerator>();
         services.AddScoped<IIndicacaoRepository, IndicacaoMySqlRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioMySqlRepository>();

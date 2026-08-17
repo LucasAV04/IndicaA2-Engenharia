@@ -16,6 +16,8 @@ namespace Domain.Entities
 
         public string? Telefone { get; private set; }
 
+        public string? CodigoIndicacao { get; private set; }
+
         public StatusUsuario Status { get; private set; }
 
         public TipoUsuario TipoUsuario { get; private set; }
@@ -28,7 +30,13 @@ namespace Domain.Entities
         {
         }
 
-        public Usuario(string nome ,string email,string senhaHash,string? telefone = null,TipoUsuario tipoUsuario = TipoUsuario.Usuario)
+        public Usuario(
+            string nome,
+            string email,
+            string senhaHash,
+            string? telefone = null,
+            TipoUsuario tipoUsuario = TipoUsuario.Usuario,
+            string? codigoIndicacao = null)
         {
             ValidarNome(nome);
             ValidarEmail(email);
@@ -40,6 +48,7 @@ namespace Domain.Entities
             Telefone = telefone;
 
             TipoUsuario = tipoUsuario;
+            CodigoIndicacao = ValidarCodigoIndicacaoParaCriacao(tipoUsuario, codigoIndicacao);
             Status = StatusUsuario.Ativo;
             EmailConfirmado = false;
         }
@@ -55,7 +64,8 @@ namespace Domain.Entities
             bool emailConfirmado,
             DateTime? ultimoLogin,
             DateTime createdAt,
-            DateTime updatedAt)
+            DateTime updatedAt,
+            string? codigoIndicacao = null)
         {
             if (id == Guid.Empty)
                 throw new ArgumentException("O identificador persistido é obrigatório.", nameof(id));
@@ -72,6 +82,8 @@ namespace Domain.Entities
             if (updatedAt < createdAt)
                 throw new ArgumentException("A data de atualização não pode ser anterior à data de criação.", nameof(updatedAt));
 
+            var codigoIndicacaoNormalizado = ValidarCodigoIndicacaoParaReidratacao(tipoUsuario, codigoIndicacao);
+
             return new Usuario
             {
                 Id = id,
@@ -81,11 +93,28 @@ namespace Domain.Entities
                 Telefone = telefone,
                 Status = status,
                 TipoUsuario = tipoUsuario,
+                CodigoIndicacao = codigoIndicacaoNormalizado,
                 EmailConfirmado = emailConfirmado,
                 UltimoLogin = ultimoLogin,
                 CreatedAt = createdAt,
                 UpdatedAt = updatedAt
             };
+        }
+
+        public static string NormalizarCodigoIndicacao(string codigoIndicacao)
+        {
+            if (string.IsNullOrWhiteSpace(codigoIndicacao))
+                throw new DomainException("O código de indicação é obrigatório.");
+
+            var codigoNormalizado = codigoIndicacao.Trim().ToUpperInvariant();
+
+            if (codigoNormalizado.Length != 8 || codigoNormalizado.Any(caractere =>
+                    !(char.IsAsciiLetterUpper(caractere) || char.IsAsciiDigit(caractere))))
+            {
+                throw new DomainException("O código de indicação deve possuir exatamente 8 caracteres alfanuméricos em maiúsculo.");
+            }
+
+            return codigoNormalizado;
         }
 
         public void AlterarNome(string novoNome)
@@ -185,6 +214,48 @@ namespace Domain.Entities
         {
             if (string.IsNullOrWhiteSpace(senhaHash))
                 throw new SenhaObrigatoriaException();
+        }
+
+        private static string? ValidarCodigoIndicacaoParaReidratacao(
+            TipoUsuario tipoUsuario,
+            string? codigoIndicacao)
+        {
+            if (tipoUsuario == TipoUsuario.Administrador)
+            {
+                if (codigoIndicacao is not null)
+                {
+                    throw new ArgumentException(
+                        "Administrador não pode possuir código de indicação persistido.",
+                        nameof(codigoIndicacao));
+                }
+
+                return null;
+            }
+
+            // A migração 004 mantém a coluna nullable para permitir a leitura de usuários
+            // históricos até que seja executado um backfill controlado.
+            return codigoIndicacao is null ? null : NormalizarCodigoIndicacao(codigoIndicacao);
+        }
+
+        private static string? ValidarCodigoIndicacaoParaCriacao(
+            TipoUsuario tipoUsuario,
+            string? codigoIndicacao)
+        {
+            if (tipoUsuario == TipoUsuario.Usuario)
+            {
+                return NormalizarCodigoIndicacao(
+                    codigoIndicacao ?? throw new DomainException(
+                        "O código de indicação é obrigatório para usuário comum."));
+            }
+
+            if (codigoIndicacao is not null)
+            {
+                throw new ArgumentException(
+                    "Administrador não pode possuir código de indicação.",
+                    nameof(codigoIndicacao));
+            }
+
+            return null;
         }
     }
 }

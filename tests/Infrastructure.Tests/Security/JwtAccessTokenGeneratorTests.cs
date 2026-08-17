@@ -60,7 +60,7 @@ public sealed class JwtAccessTokenGeneratorTests
     {
         const string chaveCorreta = "chave-ficticia-de-testes-com-mais-de-trinta-e-dois-bytes";
         const string chaveIncorreta = "chave-incorreta-de-testes-com-mais-de-trinta-e-dois-bytes";
-        var usuario = new Usuario("Ana", "ana@exemplo.com", "hash-secreto");
+        var usuario = new Usuario("Ana", "ana@exemplo.com", "hash-secreto", codigoIndicacao: "A1B2C3D4");
         var result = new JwtAccessTokenGenerator(CriarOptions(chaveCorreta)).Generate(usuario);
         var handler = new JwtSecurityTokenHandler
         {

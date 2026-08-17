@@ -6,6 +6,7 @@ namespace Application.Interfaces.Services
     {
         Task<UsuarioResponseDto> CriarAsync(CreateUsuarioDto dto, CancellationToken cancellationToken = default);
         Task<UsuarioResponseDto> ObterPorIdAsync(Guid id, CancellationToken cancellationToken = default);
+        Task<UsuarioResponseDto> ObterPorCodigoIndicacaoAsync(string codigoIndicacao, CancellationToken cancellationToken = default);
         Task<IReadOnlyCollection<UsuarioResponseDto>> ObterTodosAsync(CancellationToken cancellationToken = default);
         Task AtualizarAsync(UpdateUsuarioDto dto, CancellationToken cancellationToken = default);
         Task AlterarSenhaAsync(AlterarSenhaUsuarioDto dto, CancellationToken cancellationToken = default);

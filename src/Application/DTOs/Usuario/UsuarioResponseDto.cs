@@ -12,6 +12,8 @@ namespace Application.DTOs.Usuario
 
         public string? Telefone { get; set; }
 
+        public string? CodigoIndicacao { get; set; }
+
         public StatusUsuario Status { get; set; }
 
         public TipoUsuario TipoUsuario { get; set; }
