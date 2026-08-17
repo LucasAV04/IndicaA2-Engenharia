@@ -58,13 +58,27 @@ namespace Application.Services
         {
             ArgumentNullException.ThrowIfNull(dto);
 
-            await ObterUsuarioOuLancarExceptionAsync(dto.UsuarioIndicadorId, cancellationToken);
+            var usuarioIndicador = await ObterUsuarioOuLancarExceptionAsync(
+                dto.UsuarioIndicadorId,
+                cancellationToken);
+            var codigoInformado = Usuario.NormalizarCodigoIndicacao(dto.CodigoIndicacaoUsado);
+
+            if (usuarioIndicador.TipoUsuario != TipoUsuario.Usuario ||
+                usuarioIndicador.CodigoIndicacao is null ||
+                !string.Equals(
+                    Usuario.NormalizarCodigoIndicacao(usuarioIndicador.CodigoIndicacao),
+                    codigoInformado,
+                    StringComparison.Ordinal))
+            {
+                throw new DomainException(
+                    "O código de indicação não corresponde ao usuário indicador.");
+            }
 
             var indicacao = new Indicacao(
-                dto.UsuarioIndicadorId,
+                usuarioIndicador.Id,
                 dto.NomeIndicada,
                 dto.TelefoneIndicada,
-                dto.CodigoIndicacaoUsado);
+                codigoInformado);
 
             await _indicacaoRepository.AdicionarAsync(indicacao, cancellationToken);
 

@@ -13,17 +13,18 @@ namespace Application.Tests.Services;
 public sealed class IndicacaoServiceTests
 {
     [Fact]
-    public async Task CriarAsync_QuandoIndicadorExiste_DeveConsultarPersistirERetornarDto()
+    public async Task CriarAsync_QuandoCodigoPertencerAoIndicador_DeveConsultarPersistirERetornarDto()
     {
         var indicacaoRepository = new Mock<IIndicacaoRepository>();
         var usuarioRepository = new Mock<IUsuarioRepository>();
         var indicadorId = Guid.NewGuid();
         var cancellationToken = new CancellationTokenSource().Token;
+        var indicador = CriarUsuario();
         Indicacao? persistida = null;
 
         usuarioRepository
             .Setup(repository => repository.ObterPorIdAsync(indicadorId, cancellationToken))
-            .ReturnsAsync(CriarUsuario());
+            .ReturnsAsync(indicador);
         indicacaoRepository
             .Setup(repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), cancellationToken))
             .Callback<Indicacao, CancellationToken>((indicacao, _) => persistida = indicacao)
@@ -35,16 +36,101 @@ public sealed class IndicacaoServiceTests
                 UsuarioIndicadorId = indicadorId,
                 NomeIndicada = "Ana Indicada",
                 TelefoneIndicada = "11999999999",
-                CodigoIndicacaoUsado = "a2-123"
+                CodigoIndicacaoUsado = "A1B2C3D4"
             },
             cancellationToken);
 
         Assert.NotNull(persistida);
-        Assert.Equal(indicadorId, resultado.UsuarioIndicadorId);
-        Assert.Equal("A2-123", resultado.CodigoIndicacaoUsado);
+        Assert.Equal(indicador.Id, resultado.UsuarioIndicadorId);
+        Assert.Equal("A1B2C3D4", resultado.CodigoIndicacaoUsado);
         Assert.Equal(StatusIndicacao.Pendente, resultado.Status);
         usuarioRepository.Verify(repository => repository.ObterPorIdAsync(indicadorId, cancellationToken), Times.Once);
         indicacaoRepository.Verify(repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), cancellationToken), Times.Once);
+    }
+
+    [Fact]
+    public async Task CriarAsync_QuandoCodigoNaoPertencerAoIndicador_DeveLancarDomainException()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var usuarioRepository = new Mock<IUsuarioRepository>();
+        var indicadorId = Guid.NewGuid();
+        usuarioRepository
+            .Setup(repository => repository.ObterPorIdAsync(indicadorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CriarUsuario());
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            CriarService(indicacaoRepository, usuarioRepository).CriarAsync(
+                new CreateIndicacaoDto
+                {
+                    UsuarioIndicadorId = indicadorId,
+                    NomeIndicada = "Ana Indicada",
+                    TelefoneIndicada = "11999999999",
+                    CodigoIndicacaoUsado = "Z9Y8X7W6"
+                }));
+
+        indicacaoRepository.Verify(
+            repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CriarAsync_QuandoCodigoCorrespondentePrecisarNormalizacao_DevePersistirValorCanonico()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var usuarioRepository = new Mock<IUsuarioRepository>();
+        var indicadorId = Guid.NewGuid();
+        var indicador = CriarUsuario();
+        Indicacao? persistida = null;
+        usuarioRepository
+            .Setup(repository => repository.ObterPorIdAsync(indicadorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(indicador);
+        indicacaoRepository
+            .Setup(repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()))
+            .Callback<Indicacao, CancellationToken>((indicacao, _) => persistida = indicacao)
+            .Returns(Task.CompletedTask);
+
+        await CriarService(indicacaoRepository, usuarioRepository).CriarAsync(
+            new CreateIndicacaoDto
+            {
+                UsuarioIndicadorId = indicadorId,
+                NomeIndicada = "Ana Indicada",
+                TelefoneIndicada = "11999999999",
+                CodigoIndicacaoUsado = "  a1b2c3d4  "
+            });
+
+        Assert.NotNull(persistida);
+        Assert.Equal(indicador.Id, persistida.UsuarioIndicadorId);
+        Assert.Equal("A1B2C3D4", persistida.CodigoIndicacaoUsado);
+    }
+
+    [Fact]
+    public async Task CriarAsync_QuandoIndicadorForAdministrador_DeveLancarDomainExceptionENaoPersistir()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var usuarioRepository = new Mock<IUsuarioRepository>();
+        var indicadorId = Guid.NewGuid();
+        var administrador = new Usuario(
+            "Administrador",
+            "administrador@a2.com",
+            "hash",
+            tipoUsuario: TipoUsuario.Administrador);
+        usuarioRepository
+            .Setup(repository => repository.ObterPorIdAsync(indicadorId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(administrador);
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            CriarService(indicacaoRepository, usuarioRepository).CriarAsync(
+                new CreateIndicacaoDto
+                {
+                    UsuarioIndicadorId = indicadorId,
+                    NomeIndicada = "Ana Indicada",
+                    TelefoneIndicada = "11999999999",
+                    CodigoIndicacaoUsado = "A1B2C3D4"
+                }));
+
+        indicacaoRepository.Verify(
+            repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

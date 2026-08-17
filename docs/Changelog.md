@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-17 — Consistência entre indicador e código no fluxo legado
+
+### Corrigido
+
+- A criação legada de indicação passou a exigir que `UsuarioIndicadorId` e `CodigoIndicacaoUsado` representem o mesmo usuário comum.
+- O código informado é normalizado antes da comparação e da persistência do snapshot. Combinações inconsistentes, administradores e usuários históricos sem código são rejeitados com `DomainException` (422).
+- O fluxo de criação por código para administradores não foi alterado.
+
 ## 2026-08-17 — Integração de código de indicação em Indicações
 
 ### Adicionado

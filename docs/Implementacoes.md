@@ -1,5 +1,15 @@
 # Implementações
 
+## Consistência do fluxo legado de Indicações
+
+**Data:** 2026-08-17
+
+### Corrigido
+
+- `IndicacaoService.CriarAsync` agora normaliza `CodigoIndicacaoUsado`, valida que ele pertence ao `UsuarioIndicadorId` informado e persiste exclusivamente o valor canônico.
+- Usuário histórico sem código, administrador sem código e combinações entre identificador e código de usuários distintos são rejeitados como violação de regra de domínio.
+- O fluxo administrativo `CriarPorCodigoAsync` e o endpoint `POST /api/indicacoes/por-codigo` permanecem inalterados.
+
 ## Integração de Código de Indicação na criação de Indicações
 
 **Data:** 2026-08-17
