@@ -71,6 +71,42 @@ namespace Application.Services
             return indicacao.ToResponseDto();
         }
 
+        public async Task<IndicacaoResponseDto> CriarPorCodigoAsync(
+            CreateIndicacaoPorCodigoDto dto,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(dto);
+
+            var codigoIndicacao = Usuario.NormalizarCodigoIndicacao(dto.CodigoIndicacao);
+            var usuarioIndicador = await _usuarioRepository.ObterPorCodigoIndicacaoAsync(
+                codigoIndicacao,
+                cancellationToken);
+
+            if (usuarioIndicador is null)
+                throw new CodigoIndicacaoNaoEncontradoException();
+
+            if (usuarioIndicador.TipoUsuario != TipoUsuario.Usuario ||
+                usuarioIndicador.CodigoIndicacao is null ||
+                !string.Equals(
+                    Usuario.NormalizarCodigoIndicacao(usuarioIndicador.CodigoIndicacao),
+                    codigoIndicacao,
+                    StringComparison.Ordinal))
+            {
+                throw new DomainException(
+                    "O código de indicação encontrado não pertence a um usuário comum válido.");
+            }
+
+            var indicacao = new Indicacao(
+                usuarioIndicador.Id,
+                dto.NomeIndicada,
+                dto.TelefoneIndicada,
+                codigoIndicacao);
+
+            await _indicacaoRepository.AdicionarAsync(indicacao, cancellationToken);
+
+            return indicacao.ToResponseDto();
+        }
+
         public async Task VincularUsuarioIndicadoAsync(
             VincularUsuarioIndicadoDto dto,
             CancellationToken cancellationToken = default)

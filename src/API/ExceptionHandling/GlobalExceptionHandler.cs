@@ -15,6 +15,10 @@ public sealed class GlobalExceptionHandler(
     {
         var (status, title, detail) = exception switch
         {
+            CodigoIndicacaoNaoEncontradoException => (
+                StatusCodes.Status404NotFound,
+                "Código de indicação não encontrado",
+                exception.Message),
             IndicacaoNaoEncontradaException => (
                 StatusCodes.Status404NotFound,
                 "Indicação não encontrada",

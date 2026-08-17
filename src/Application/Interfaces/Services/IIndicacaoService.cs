@@ -9,6 +9,10 @@ namespace Application.Interfaces.Services
             CreateIndicacaoDto dto,
             CancellationToken cancellationToken = default);
 
+        Task<IndicacaoResponseDto> CriarPorCodigoAsync(
+            CreateIndicacaoPorCodigoDto dto,
+            CancellationToken cancellationToken = default);
+
         Task<IndicacaoResponseDto> ObterPorIdAsync(
             Guid id,
             CancellationToken cancellationToken = default);
