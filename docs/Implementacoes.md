@@ -1,5 +1,25 @@
 # Implementações
 
+## Integração de Código de Indicação na criação de Indicações
+
+**Data:** 2026-08-17
+
+### Implementado
+
+- O caso de uso `CriarPorCodigoAsync` resolve o usuário indicador pelo código de indicação normalizado, consulta `IUsuarioRepository.ObterPorCodigoIndicacaoAsync` e cria a indicação com o `UsuarioIndicadorId` resolvido.
+- O novo contrato `CreateIndicacaoPorCodigoDto` aceita exclusivamente `CodigoIndicacao`, `NomeIndicada` e `TelefoneIndicada`; não recebe identificador do indicador, status, vistoria ou campos internos.
+- A criação por código usa o valor canônico como `Indicacao.CodigoIndicacaoUsado`, que continua sendo o retrato histórico da indicação.
+- Código inexistente gera `CodigoIndicacaoNaoEncontradoException` e é representado pela API como `404 Not Found`. Código em formato inválido preserva o mapeamento atual de `DomainException` para `422 Unprocessable Entity`.
+- `POST /api/indicacoes/por-codigo` é uma operação administrativa, protegida pela policy `Administrador`, e retorna `201 Created` com `CreatedAtAction` quando concluída.
+- `POST /api/indicacoes` permanece inalterado para preservar o fluxo legado, no qual o usuário comum cria a indicação para o próprio identificador autenticado.
+- A correção do nome de ação de `ObterPorIdAsync` garante a geração de `Location` válida nos dois fluxos de criação.
+- Testes de Application, API e integração MySQL condicional cobrem normalização, resolução do indicador, snapshot, 401, 403, 404, 422, `201 Created`, `CancellationToken` e persistência real quando o ambiente MySQL está habilitado.
+
+### Pendente
+
+- Não existe endpoint público de consulta de código de indicação.
+- O backfill de usuários históricos sem código permanece pendente antes de qualquer mudança para `NOT NULL`.
+
 ## Código de Indicação
 
 **Data:** 2026-08-17
@@ -22,7 +42,7 @@
 ### Pendente
 
 - Backfill controlado dos usuários históricos sem código ou recriação explícita do banco de desenvolvimento, antes de uma futura mudança para `NOT NULL`.
-- A entrada de um código no fluxo de criação de Indicação, uma área autenticada de perfil/dashboard e qualquer endpoint público de consulta permanecem fora deste escopo.
+- A entrada de código no fluxo administrativo de criação de Indicação foi implementada posteriormente; uma área de perfil/dashboard e qualquer endpoint público de consulta continuam fora de escopo.
 
 ## Autorização por Roles e Ownership
 
