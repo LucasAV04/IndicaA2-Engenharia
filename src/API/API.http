@@ -24,6 +24,18 @@ Authorization: Bearer {{AccessToken}}
 
 ###
 
+POST {{API_HostAddress}}/api/indicacoes/por-codigo
+Content-Type: application/json
+Authorization: Bearer {{AccessToken}}
+
+{
+  "codigoIndicacao": "A1B2C3D4",
+  "nomeIndicada": "Ana Indicada",
+  "telefoneIndicada": "11999999999"
+}
+
+###
+
 GET {{API_HostAddress}}/api/indicacoes
 Accept: application/json
 Authorization: Bearer {{AccessToken}}

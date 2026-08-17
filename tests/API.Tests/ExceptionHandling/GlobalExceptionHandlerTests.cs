@@ -29,6 +29,22 @@ public sealed class GlobalExceptionHandlerTests
     }
 
     [Fact]
+    public async Task TryHandleAsync_QuandoCodigoIndicacaoNaoForEncontrado_DeveRetornarProblemDetails404()
+    {
+        var context = CriarContexto();
+
+        var tratado = await CriarHandler().TryHandleAsync(
+            context,
+            new CodigoIndicacaoNaoEncontradoException(),
+            CancellationToken.None);
+
+        Assert.True(tratado);
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        var problemDetails = await LerProblemDetailsAsync(context);
+        Assert.Equal("Código de indicação não encontrado", problemDetails.Title);
+    }
+
+    [Fact]
     public async Task TryHandleAsync_QuandoRegraDeDominioForViolada_DeveRetornarProblemDetails422()
     {
         var context = CriarContexto();

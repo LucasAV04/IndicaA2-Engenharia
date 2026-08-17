@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-08-17 — Consistência entre indicador e código no fluxo legado
+
+### Corrigido
+
+- A criação legada de indicação passou a exigir que `UsuarioIndicadorId` e `CodigoIndicacaoUsado` representem o mesmo usuário comum.
+- O código informado é normalizado antes da comparação e da persistência do snapshot. Combinações inconsistentes, administradores e usuários históricos sem código são rejeitados com `DomainException` (422).
+- O fluxo de criação por código para administradores não foi alterado.
+
+## 2026-08-17 — Integração de código de indicação em Indicações
+
+### Adicionado
+
+- Caso de uso administrativo para criar indicação a partir de `CodigoIndicacao`, com normalização, busca do usuário indicador e snapshot canônico em `CodigoIndicacaoUsado`.
+- DTO restrito `CreateIndicacaoPorCodigoDto`, endpoint protegido `POST /api/indicacoes/por-codigo` e exceção semântica `CodigoIndicacaoNaoEncontradoException` mapeada para 404.
+- Cobertura de Application, controller, pipeline de autorização e integração MySQL condicional para o fluxo por código.
+
+### Corrigido
+
+- A ação de consulta por identificador passou a declarar explicitamente o nome utilizado por `CreatedAtAction`, evitando falha de geração da rota `Location` nos fluxos de criação.
+
+### Decisões
+
+- O endpoint legado `POST /api/indicacoes` não foi alterado. O fluxo por código é exclusivamente administrativo; não foi criada consulta pública de código.
+- Formato inválido de código continua como violação de domínio e retorna 422, conforme o handler global já adotado.
+
 ## 2026-08-17 — Correção de invariantes e colisão concorrente de código
 
 ### Corrigido

@@ -31,7 +31,19 @@ public sealed class IndicacoesController(
         return CreatedAtAction(nameof(ObterPorIdAsync), new { id = indicacao.Id }, indicacao);
     }
 
+    [HttpPost("por-codigo")]
+    [Authorize(Policy = AuthorizationPolicies.Administrador)]
+    [ProducesResponseType(typeof(IndicacaoResponseDto), StatusCodes.Status201Created)]
+    public async Task<ActionResult<IndicacaoResponseDto>> CriarPorCodigoAsync(
+        [FromBody] CreateIndicacaoPorCodigoDto dto,
+        CancellationToken cancellationToken)
+    {
+        var indicacao = await indicacaoService.CriarPorCodigoAsync(dto, cancellationToken);
+        return CreatedAtAction(nameof(ObterPorIdAsync), new { id = indicacao.Id }, indicacao);
+    }
+
     [HttpGet("{id:guid}")]
+    [ActionName(nameof(ObterPorIdAsync))]
     [ProducesResponseType(typeof(IndicacaoResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<IndicacaoResponseDto>> ObterPorIdAsync(
         Guid id,
