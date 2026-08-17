@@ -71,6 +71,118 @@ public sealed class IndicacaoServiceTests
     }
 
     [Fact]
+    public async Task CriarPorCodigoAsync_DeveResolverIndicadorNormalizarEPersistirSnapshotCanonico()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var usuarioRepository = new Mock<IUsuarioRepository>();
+        var indicador = CriarUsuario();
+        var cancellationToken = new CancellationTokenSource().Token;
+        Indicacao? persistida = null;
+        var dto = new CreateIndicacaoPorCodigoDto
+        {
+            CodigoIndicacao = "  a1b2c3d4 ",
+            NomeIndicada = "Ana Indicada",
+            TelefoneIndicada = "11999999999"
+        };
+        usuarioRepository
+            .Setup(repository => repository.ObterPorCodigoIndicacaoAsync("A1B2C3D4", cancellationToken))
+            .ReturnsAsync(indicador);
+        indicacaoRepository
+            .Setup(repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), cancellationToken))
+            .Callback<Indicacao, CancellationToken>((indicacao, _) => persistida = indicacao)
+            .Returns(Task.CompletedTask);
+
+        var resultado = await CriarService(indicacaoRepository, usuarioRepository)
+            .CriarPorCodigoAsync(dto, cancellationToken);
+
+        Assert.NotNull(persistida);
+        Assert.Equal(indicador.Id, persistida.UsuarioIndicadorId);
+        Assert.Equal("A1B2C3D4", persistida.CodigoIndicacaoUsado);
+        Assert.Equal(indicador.Id, resultado.UsuarioIndicadorId);
+        Assert.Equal("A1B2C3D4", resultado.CodigoIndicacaoUsado);
+        usuarioRepository.Verify(
+            repository => repository.ObterPorCodigoIndicacaoAsync("A1B2C3D4", cancellationToken),
+            Times.Once);
+        indicacaoRepository.Verify(
+            repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), cancellationToken),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CriarPorCodigoAsync_QuandoCodigoNaoExiste_DeveLancarExcecaoEspecificaENaoPersistir()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var usuarioRepository = new Mock<IUsuarioRepository>();
+        usuarioRepository
+            .Setup(repository => repository.ObterPorCodigoIndicacaoAsync("A1B2C3D4", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Usuario?)null);
+
+        await Assert.ThrowsAsync<CodigoIndicacaoNaoEncontradoException>(() =>
+            CriarService(indicacaoRepository, usuarioRepository).CriarPorCodigoAsync(
+                new CreateIndicacaoPorCodigoDto
+                {
+                    CodigoIndicacao = "A1B2C3D4",
+                    NomeIndicada = "Ana Indicada",
+                    TelefoneIndicada = "11999999999"
+                }));
+
+        indicacaoRepository.Verify(
+            repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CriarPorCodigoAsync_QuandoCodigoForInvalido_NaoDeveConsultarNemPersistir()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var usuarioRepository = new Mock<IUsuarioRepository>();
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            CriarService(indicacaoRepository, usuarioRepository).CriarPorCodigoAsync(
+                new CreateIndicacaoPorCodigoDto
+                {
+                    CodigoIndicacao = "invalido!",
+                    NomeIndicada = "Ana Indicada",
+                    TelefoneIndicada = "11999999999"
+                }));
+
+        usuarioRepository.Verify(
+            repository => repository.ObterPorCodigoIndicacaoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        indicacaoRepository.Verify(
+            repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CriarPorCodigoAsync_QuandoUsuarioResolvidoNaoForComum_NaoDevePersistir()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var usuarioRepository = new Mock<IUsuarioRepository>();
+        var administrador = new Usuario(
+            "Administrador",
+            "administrador@a2.com",
+            "hash",
+            tipoUsuario: TipoUsuario.Administrador);
+        usuarioRepository
+            .Setup(repository => repository.ObterPorCodigoIndicacaoAsync("A1B2C3D4", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(administrador);
+
+        await Assert.ThrowsAsync<DomainException>(() =>
+            CriarService(indicacaoRepository, usuarioRepository).CriarPorCodigoAsync(
+                new CreateIndicacaoPorCodigoDto
+                {
+                    CodigoIndicacao = "A1B2C3D4",
+                    NomeIndicada = "Ana Indicada",
+                    TelefoneIndicada = "11999999999"
+                }));
+
+        indicacaoRepository.Verify(
+            repository => repository.AdicionarAsync(It.IsAny<Indicacao>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ObterPorIdAsync_QuandoIndicacaoExiste_DeveRetornarDtoEPropagarToken()
     {
         var indicacaoRepository = new Mock<IIndicacaoRepository>();

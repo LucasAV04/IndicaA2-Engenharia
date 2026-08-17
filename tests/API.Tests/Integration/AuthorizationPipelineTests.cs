@@ -1,5 +1,6 @@
 using Application.DTOs.Indicacao;
 using Application.Interfaces.Services;
+using Domain.Exceptions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -9,6 +10,7 @@ using Microsoft.IdentityModel.Tokens;
 using Moq;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -50,6 +52,27 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
         var response = await client.GetAsync("/api/indicacoes");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CriarPorCodigo_SemBearer_DeveRetornarUnauthorized()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CriarPorCodigo_ComTokenDeUsuario_DeveRetornarForbidden()
+    {
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Usuario"));
+
+        var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -103,6 +126,78 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
     }
 
     [Fact]
+    public async Task CriarPorCodigo_ComAdministradorDeveRetornarCreatedSemConectarAoMySql()
+    {
+        var resposta = new IndicacaoResponseDto
+        {
+            Id = Guid.NewGuid(),
+            UsuarioIndicadorId = Guid.NewGuid(),
+            NomeIndicada = "Ana Indicada",
+            TelefoneIndicada = "11999999999",
+            CodigoIndicacaoUsado = "A1B2C3D4"
+        };
+        var service = new Mock<IIndicacaoService>();
+        service.Setup(item => item.CriarPorCodigoAsync(
+                It.IsAny<CreateIndicacaoPorCodigoDto>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(resposta);
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IIndicacaoService>();
+                services.AddScoped(_ => service.Object);
+            });
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
+
+        var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        service.Verify(item => item.CriarPorCodigoAsync(
+            It.Is<CreateIndicacaoPorCodigoDto>(dto =>
+                dto.CodigoIndicacao == "A1B2C3D4" &&
+                dto.NomeIndicada == "Ana Indicada" &&
+                dto.TelefoneIndicada == "11999999999"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CriarPorCodigo_QuandoCodigoNaoForEncontrado_DeveRetornarNotFound()
+    {
+        var service = new Mock<IIndicacaoService>();
+        service.Setup(item => item.CriarPorCodigoAsync(
+                It.IsAny<CreateIndicacaoPorCodigoDto>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new CodigoIndicacaoNaoEncontradoException());
+        using var factory = CriarFactoryComIndicacaoService(service.Object);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
+
+        var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CriarPorCodigo_QuandoCodigoForInvalido_DevePreservarMapeamentoDeDominio()
+    {
+        var service = new Mock<IIndicacaoService>();
+        service.Setup(item => item.CriarPorCodigoAsync(
+                It.IsAny<CreateIndicacaoPorCodigoDto>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DomainException("O código de indicação é inválido."));
+        using var factory = CriarFactoryComIndicacaoService(service.Object);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
+
+        var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Login_SemBearer_DevePermanecerForaDaExigenciaDeAutenticacao()
     {
         using var client = _factory.CreateClient();
@@ -142,6 +237,24 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
         Assert.True(security.GetArrayLength() > 0);
         Assert.True(security[0].TryGetProperty("Bearer", out _));
     }
+
+    private static CreateIndicacaoPorCodigoDto CriarPorCodigoRequest() => new()
+    {
+        CodigoIndicacao = "A1B2C3D4",
+        NomeIndicada = "Ana Indicada",
+        TelefoneIndicada = "11999999999"
+    };
+
+    private WebApplicationFactory<Program> CriarFactoryComIndicacaoService(
+        IIndicacaoService service) =>
+        _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IIndicacaoService>();
+                services.AddScoped(_ => service);
+            });
+        });
 
     private static string CriarToken(string role, string? subject = null, bool includeSubject = true)
     {

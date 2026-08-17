@@ -31,6 +31,30 @@ public sealed class IndicacoesControllerTests
     }
 
     [Fact]
+    public async Task CriarPorCodigoAsync_DeveRetornarCreatedAtActionERepassarCancellationToken()
+    {
+        var cancellationToken = new CancellationTokenSource().Token;
+        var dto = new CreateIndicacaoPorCodigoDto
+        {
+            CodigoIndicacao = "A1B2C3D4",
+            NomeIndicada = "Ana Indicada",
+            TelefoneIndicada = "11999999999"
+        };
+        var resposta = CriarResposta();
+        var service = new Mock<IIndicacaoService>();
+        service.Setup(s => s.CriarPorCodigoAsync(dto, cancellationToken)).ReturnsAsync(resposta);
+        var controller = ControllerAuthorizationFactory.CriarIndicacoesController(service.Object);
+
+        var resultado = await controller.CriarPorCodigoAsync(dto, cancellationToken);
+
+        var created = Assert.IsType<CreatedAtActionResult>(resultado.Result);
+        Assert.Equal(201, created.StatusCode);
+        Assert.Equal(nameof(IndicacoesController.ObterPorIdAsync), created.ActionName);
+        Assert.Equal(resposta, created.Value);
+        service.Verify(s => s.CriarPorCodigoAsync(dto, cancellationToken), Times.Once);
+    }
+
+    [Fact]
     public async Task ObterPorIdAsync_DeveRetornarOk()
     {
         var id = Guid.NewGuid();

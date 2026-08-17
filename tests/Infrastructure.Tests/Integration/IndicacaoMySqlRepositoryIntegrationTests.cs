@@ -79,4 +79,31 @@ public sealed class IndicacaoMySqlRepositoryIntegrationTests(MySqlIntegrationFix
         Assert.Equal(3, todas.Count);
         Assert.Null(inexistente);
     }
+
+    [MySqlIntegrationFact]
+    public async Task CodigoIndicacaoDoUsuario_DeveSerConsultavelEPreservadoComoSnapshotNaIndicacao()
+    {
+        await fixture.LimparDadosAsync();
+        var usuarios = new UsuarioMySqlRepository(fixture.ConnectionFactory);
+        var indicacoes = new IndicacaoMySqlRepository(fixture.ConnectionFactory);
+        var indicador = IntegrationTestData.CriarUsuario(codigoIndicacao: "A1B2C3D4");
+        await usuarios.AdicionarAsync(indicador, CancellationToken.None);
+
+        var resolvido = await usuarios.ObterPorCodigoIndicacaoAsync("  a1b2c3d4 ", CancellationToken.None);
+        Assert.NotNull(resolvido);
+        Assert.Equal(indicador.Id, resolvido.Id);
+        Assert.Equal("A1B2C3D4", resolvido.CodigoIndicacao);
+
+        var indicacao = new Indicacao(
+            resolvido.Id,
+            "Ana Indicada",
+            "11999999999",
+            resolvido.CodigoIndicacao!);
+        await indicacoes.AdicionarAsync(indicacao, CancellationToken.None);
+
+        var persistida = await indicacoes.ObterPorIdAsync(indicacao.Id, CancellationToken.None);
+        Assert.NotNull(persistida);
+        Assert.Equal(resolvido.Id, persistida.UsuarioIndicadorId);
+        Assert.Equal("A1B2C3D4", persistida.CodigoIndicacaoUsado);
+    }
 }
