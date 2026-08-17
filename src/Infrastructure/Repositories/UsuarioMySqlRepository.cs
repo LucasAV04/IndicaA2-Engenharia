@@ -1,6 +1,7 @@
 using System.Data;
 using Domain.Entities;
 using Domain.Enums;
+using Domain.Exceptions.Usuario;
 using Domain.Interfaces;
 using Infrastructure.Database;
 using MySqlConnector;
@@ -9,6 +10,8 @@ namespace Infrastructure.Repositories;
 
 public sealed class UsuarioMySqlRepository : IUsuarioRepository
 {
+    private const string ConstraintCodigoIndicacao = "uq_usuarios_codigo_indicacao";
+
     private const string Colunas = """
         id,
         nome,
@@ -171,7 +174,14 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
                 @updatedAt);
             """;
 
-        await ExecutarComandoAsync(sql, command => AdicionarParametrosEstado(command, usuario), cancellationToken);
+        try
+        {
+            await ExecutarComandoAsync(sql, command => AdicionarParametrosEstado(command, usuario), cancellationToken);
+        }
+        catch (MySqlException exception) when (EhViolacaoDeCodigoIndicacaoDuplicado(exception))
+        {
+            throw new CodigoIndicacaoDuplicadoException();
+        }
     }
 
     public async Task AtualizarAsync(Usuario usuario, CancellationToken cancellationToken = default)
@@ -219,6 +229,10 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
     }
 
     private static MySqlCommand CriarComando(MySqlConnection connection, string sql) => new(sql, connection);
+
+    private static bool EhViolacaoDeCodigoIndicacaoDuplicado(MySqlException exception) =>
+        exception.ErrorCode == MySqlErrorCode.DuplicateKeyEntry &&
+        exception.Message.Contains(ConstraintCodigoIndicacao, StringComparison.OrdinalIgnoreCase);
 
     private static void AdicionarParametrosEstado(MySqlCommand command, Usuario usuario)
     {

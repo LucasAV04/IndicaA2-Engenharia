@@ -1,4 +1,5 @@
 using Domain.Enums;
+using Domain.Exceptions.Usuario;
 using Infrastructure.Repositories;
 using MySqlConnector;
 using Xunit;
@@ -89,7 +90,7 @@ public sealed class UsuarioMySqlRepositoryIntegrationTests(MySqlIntegrationFixtu
     }
 
     [MySqlIntegrationFact]
-    public async Task CodigoIndicacao_DeveSerPersistidoConsultadoENaoAceitarDuplicidade()
+    public async Task CodigoIndicacaoDuplicado_DeveSerTraduzidoParaExcecaoAbstrata()
     {
         await fixture.LimparDadosAsync();
         var repository = new UsuarioMySqlRepository(fixture.ConnectionFactory);
@@ -103,7 +104,8 @@ public sealed class UsuarioMySqlRepositoryIntegrationTests(MySqlIntegrationFixtu
         Assert.Equal("7K4M9P2Q", porCodigo.CodigoIndicacao);
 
         var duplicado = IntegrationTestData.CriarUsuario(codigoIndicacao: "7K4M9P2Q");
-        await Assert.ThrowsAsync<MySqlException>(() => repository.AdicionarAsync(duplicado, CancellationToken.None));
+        await Assert.ThrowsAsync<CodigoIndicacaoDuplicadoException>(() =>
+            repository.AdicionarAsync(duplicado, CancellationToken.None));
     }
 
     [MySqlIntegrationFact]

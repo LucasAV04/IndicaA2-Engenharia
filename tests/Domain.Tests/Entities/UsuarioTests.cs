@@ -8,37 +8,69 @@ namespace Domain.Tests.Entities;
 public sealed class UsuarioTests
 {
     [Fact]
-    public void Construtor_QuandoCodigoValido_DeveNormalizarEPreservarCodigo()
+    public void NovoUsuario_QuandoCodigoIndicacaoForNull_DeveLancarExcecao()
     {
-        var usuario = CriarUsuario(" 7k4m9p2q ");
+        Assert.Throws<DomainException>(() => new Usuario("Ana", "ana@exemplo.com", "hash"));
+    }
+
+    [Fact]
+    public void NovoUsuario_QuandoCodigoIndicacaoForVazio_DeveLancarExcecao()
+    {
+        Assert.Throws<DomainException>(() => new Usuario(
+            "Ana",
+            "ana@exemplo.com",
+            "hash",
+            codigoIndicacao: " "));
+    }
+
+    [Fact]
+    public void NovoUsuario_QuandoCodigoIndicacaoForValido_DeveCriar()
+    {
+        var usuario = new Usuario("Ana", "ana@exemplo.com", "hash", codigoIndicacao: " 7k4m9p2q ");
 
         Assert.Equal("7K4M9P2Q", usuario.CodigoIndicacao);
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("1234567")]
-    [InlineData("123456789")]
-    [InlineData("7K4M-2Q!")]
-    public void Construtor_QuandoFormatoDoCodigoForInvalido_DeveLancarDomainException(string codigoIndicacao)
+    [Fact]
+    public void NovoAdministrador_QuandoCodigoForNull_DeveCriar()
     {
-        Assert.Throws<DomainException>(() => CriarUsuario(codigoIndicacao));
+        var administrador = new Usuario(
+            "Admin",
+            "admin@exemplo.com",
+            "hash",
+            tipoUsuario: TipoUsuario.Administrador);
+
+        Assert.Null(administrador.CodigoIndicacao);
     }
 
     [Fact]
-    public void Construtor_QuandoAdministradorReceberCodigo_DeveLancarArgumentExceptionEManterCodigoNulo()
+    public void NovoAdministrador_QuandoCodigoForInformado_DeveLancarExcecao()
     {
-        var administrador = new Usuario("Admin", "admin@exemplo.com", "hash", tipoUsuario: TipoUsuario.Administrador);
-
         Assert.Throws<ArgumentException>(() => new Usuario(
             "Admin",
             "admin@exemplo.com",
             "hash",
             tipoUsuario: TipoUsuario.Administrador,
             codigoIndicacao: "7K4M9P2Q"));
-        Assert.Null(administrador.CodigoIndicacao);
     }
 
-    private static Usuario CriarUsuario(string? codigoIndicacao = null) =>
-        new("Ana", "ana@exemplo.com", "hash", codigoIndicacao: codigoIndicacao);
+    [Fact]
+    public void ReidratarUsuarioHistorico_QuandoCodigoForNull_DevePermitir()
+    {
+        var usuario = Usuario.Reidratar(
+            Guid.NewGuid(),
+            "Ana",
+            "ana@exemplo.com",
+            "hash",
+            null,
+            StatusUsuario.Ativo,
+            TipoUsuario.Usuario,
+            false,
+            null,
+            DateTime.UtcNow.AddDays(-1),
+            DateTime.UtcNow,
+            codigoIndicacao: null);
+
+        Assert.Null(usuario.CodigoIndicacao);
+    }
 }

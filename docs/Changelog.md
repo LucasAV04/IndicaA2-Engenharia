@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-17 — Correção de invariantes e colisão concorrente de código
+
+### Corrigido
+
+- A construção normal de `Usuario` comum agora rejeita código de indicação nulo ou vazio; somente a reidratação histórica permite ausência temporária do valor.
+- `UsuarioService` passou a considerar também colisões reais no `INSERT`: a violação específica de `uq_usuarios_codigo_indicacao` gera retry, limitado a cinco tentativas, sem recalcular o hash da senha.
+- `UsuarioMySqlRepository` traduz somente a violação de chave duplicada referente ao código de indicação para `CodigoIndicacaoDuplicadoException`. A violação de unicidade do e-mail preserva o comportamento anterior.
+
+### Testes
+
+- Adicionados casos para as invariantes de criação/reidratação, colisão concorrente, limite de tentativas, hash único, e-mail duplicado e tradução real da constraint MySQL.
+
 ## 2026-08-17 — Código de Indicação
 
 ### Adicionado

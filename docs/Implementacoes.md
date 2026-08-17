@@ -13,6 +13,12 @@
 - O script incremental `database/004_add_codigo_indicacao_usuarios.sql` adiciona `codigo_indicacao` nullable e a restrição `UNIQUE`. A coluna nullable preserva a leitura de dados históricos enquanto um backfill controlado não for definido.
 - Foram adicionados testes de domínio, aplicação, gerador, DI, reidratação e integração MySQL condicional para formato, normalização, colisões, unicidade, persistência e ausência de código para administrador.
 
+### Correções posteriores
+
+- A criação normal de `Usuario` exige `CodigoIndicacao` válido. A exceção que aceita `null` é exclusiva de `Usuario.Reidratar`, temporariamente, para dados históricos anteriores à migration 004.
+- A unicidade permanece garantida definitivamente pelo MySQL. Caso uma inserção concorrente viole exclusivamente `uq_usuarios_codigo_indicacao`, a Infrastructure traduz o erro para `CodigoIndicacaoDuplicadoException` e a Application gera novo código, até o limite total de cinco tentativas.
+- Conflito de e-mail não é traduzido como colisão de código e não aciona retry. O hash da senha é calculado uma única vez antes das tentativas.
+
 ### Pendente
 
 - Backfill controlado dos usuários históricos sem código ou recriação explícita do banco de desenvolvimento, antes de uma futura mudança para `NOT NULL`.

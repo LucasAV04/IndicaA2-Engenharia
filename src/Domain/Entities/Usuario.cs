@@ -48,7 +48,7 @@ namespace Domain.Entities
             Telefone = telefone;
 
             TipoUsuario = tipoUsuario;
-            CodigoIndicacao = ValidarCodigoIndicacaoParaReidratacao(tipoUsuario, codigoIndicacao);
+            CodigoIndicacao = ValidarCodigoIndicacaoParaCriacao(tipoUsuario, codigoIndicacao);
             Status = StatusUsuario.Ativo;
             EmailConfirmado = false;
         }
@@ -235,6 +235,27 @@ namespace Domain.Entities
             // A migração 004 mantém a coluna nullable para permitir a leitura de usuários
             // históricos até que seja executado um backfill controlado.
             return codigoIndicacao is null ? null : NormalizarCodigoIndicacao(codigoIndicacao);
+        }
+
+        private static string? ValidarCodigoIndicacaoParaCriacao(
+            TipoUsuario tipoUsuario,
+            string? codigoIndicacao)
+        {
+            if (tipoUsuario == TipoUsuario.Usuario)
+            {
+                return NormalizarCodigoIndicacao(
+                    codigoIndicacao ?? throw new DomainException(
+                        "O código de indicação é obrigatório para usuário comum."));
+            }
+
+            if (codigoIndicacao is not null)
+            {
+                throw new ArgumentException(
+                    "Administrador não pode possuir código de indicação.",
+                    nameof(codigoIndicacao));
+            }
+
+            return null;
         }
     }
 }

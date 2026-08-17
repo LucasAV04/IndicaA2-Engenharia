@@ -70,21 +70,37 @@ public sealed class UsuarioService : IUsuarioService
         }
 
         var senhaHash = _passwordHasher.HashPassword(dto.Senha);
-        var codigoIndicacao = await GerarCodigoIndicacaoDisponivelAsync(cancellationToken);
 
-        var usuario = new Usuario(
-            dto.Nome,
-            emailNormalizado,
-            senhaHash,
-            dto.Telefone,
-            TipoUsuario.Usuario,
-            codigoIndicacao);
+        for (var tentativa = 0; tentativa < MaximoTentativasGeracaoCodigoIndicacao; tentativa++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var codigoIndicacao = Usuario.NormalizarCodigoIndicacao(_codigoIndicacaoGenerator.Gerar());
+            var usuarioExistente = await _usuarioRepository.ObterPorCodigoIndicacaoAsync(codigoIndicacao, cancellationToken);
 
-        await _usuarioRepository.AdicionarAsync(
-            usuario,
-            cancellationToken);
+            if (usuarioExistente is not null)
+                continue;
 
-        return usuario.ToResponseDto();
+            var usuario = new Usuario(
+                dto.Nome,
+                emailNormalizado,
+                senhaHash,
+                dto.Telefone,
+                TipoUsuario.Usuario,
+                codigoIndicacao);
+
+            try
+            {
+                await _usuarioRepository.AdicionarAsync(usuario, cancellationToken);
+                return usuario.ToResponseDto();
+            }
+            catch (CodigoIndicacaoDuplicadoException)
+            {
+                // A constraint UNIQUE protege contra colisões entre consultas concorrentes.
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Não foi possível gerar um código de indicação único após cinco tentativas.");
     }
 
     public async Task AtualizarAsync(UpdateUsuarioDto dto, CancellationToken cancellationToken = default)
@@ -126,22 +142,6 @@ public sealed class UsuarioService : IUsuarioService
     {
         var usuario = await _usuarioRepository.ObterPorIdAsync(id, cancellationToken);
         return usuario ?? throw new UsuarioNaoEncontradoException();
-    }
-
-    private async Task<string> GerarCodigoIndicacaoDisponivelAsync(CancellationToken cancellationToken)
-    {
-        for (var tentativa = 0; tentativa < MaximoTentativasGeracaoCodigoIndicacao; tentativa++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var codigoIndicacao = Usuario.NormalizarCodigoIndicacao(_codigoIndicacaoGenerator.Gerar());
-            var usuarioExistente = await _usuarioRepository.ObterPorCodigoIndicacaoAsync(codigoIndicacao, cancellationToken);
-
-            if (usuarioExistente is null)
-                return codigoIndicacao;
-        }
-
-        throw new InvalidOperationException(
-            "Não foi possível gerar um código de indicação único após cinco tentativas.");
     }
 
     #endregion

@@ -15,7 +15,7 @@ public sealed class AuthServiceTests
     [Fact]
     public async Task LoginAsync_QuandoCredenciaisValidas_DeveNormalizarEmailGerarTokenEAtualizarUsuario()
     {
-        var usuario = new Usuario("Ana", "ana@exemplo.com", "hash");
+        var usuario = new Usuario("Ana", "ana@exemplo.com", "hash", codigoIndicacao: "A1B2C3D4");
         var repository = new Mock<IUsuarioRepository>();
         var hasher = new Mock<IPasswordHasher>();
         var tokenGenerator = new Mock<IAccessTokenGenerator>();
@@ -47,7 +47,7 @@ public sealed class AuthServiceTests
     [InlineData(StatusUsuario.Bloqueado)]
     public async Task LoginAsync_QuandoUsuarioSemAcesso_DeveLancarExcecao(StatusUsuario status)
     {
-        var usuario = new Usuario("Ana", "ana@exemplo.com", "hash");
+        var usuario = new Usuario("Ana", "ana@exemplo.com", "hash", codigoIndicacao: "A1B2C3D4");
         if (status == StatusUsuario.Inativo) usuario.Inativar(); else usuario.Bloquear();
         var repository = new Mock<IUsuarioRepository>();
         var hasher = new Mock<IPasswordHasher>();
