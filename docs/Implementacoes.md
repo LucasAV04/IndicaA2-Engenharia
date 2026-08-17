@@ -1,5 +1,23 @@
 # Implementações
 
+## Código de Indicação
+
+**Data:** 2026-08-17
+
+### Implementado
+
+- `CodigoIndicacao` passou a pertencer diretamente a `Usuario`; não foi criada uma entidade, endpoint ou fluxo público de consulta específico.
+- Usuários do tipo `Usuario` recebem, no caso de uso de criação, um código único, permanente e normalizado no formato de oito caracteres alfanuméricos em maiúsculo. Administradores permanecem sem código.
+- `ICodigoIndicacaoGenerator` é implementado na Infrastructure com `RandomNumberGenerator`; a Application consulta colisões pelo repositório e limita a geração a cinco tentativas.
+- `IUsuarioRepository` voltou a oferecer `ObterPorCodigoIndicacaoAsync`; `UsuarioMySqlRepository` persiste, materializa e consulta o campo com SQL parametrizado.
+- O script incremental `database/004_add_codigo_indicacao_usuarios.sql` adiciona `codigo_indicacao` nullable e a restrição `UNIQUE`. A coluna nullable preserva a leitura de dados históricos enquanto um backfill controlado não for definido.
+- Foram adicionados testes de domínio, aplicação, gerador, DI, reidratação e integração MySQL condicional para formato, normalização, colisões, unicidade, persistência e ausência de código para administrador.
+
+### Pendente
+
+- Backfill controlado dos usuários históricos sem código ou recriação explícita do banco de desenvolvimento, antes de uma futura mudança para `NOT NULL`.
+- A entrada de um código no fluxo de criação de Indicação, uma área autenticada de perfil/dashboard e qualquer endpoint público de consulta permanecem fora deste escopo.
+
 ## Autorização por Roles e Ownership
 
 **Data:** 2026-08-12
@@ -31,7 +49,7 @@
 
 ### Pendente
 
-- Testes de integração reais contra MySQL, confirmação de e-mail, refresh token, código de indicação, estratégia de exclusão/inativação, preços, cashback, Pix e pagamentos.
+- Confirmação de e-mail, refresh token, estratégia de exclusão/inativação, preços, cashback, Pix e pagamentos.
 
 ## Autenticação JWT
 

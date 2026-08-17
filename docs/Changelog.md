@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-17 — Código de Indicação
+
+### Adicionado
+
+- `CodigoIndicacao` em `Usuario`, destinado exclusivamente a usuários comuns, com formato oficial de oito caracteres alfanuméricos em maiúsculo e sem alteração, regeneração ou expiração.
+- Geração criptograficamente segura por `ICodigoIndicacaoGenerator`/`CodigoIndicacaoGenerator`, verificação de colisão com no máximo cinco tentativas e proteção final por `UNIQUE` no MySQL.
+- Consulta de usuário por código no contrato e repositório MySQL, persistência/materialização do campo e script incremental `004_add_codigo_indicacao_usuarios.sql`.
+- Cobertura para domínio, Application, gerador, DI, reidratação e integração MySQL condicional.
+
+### Decisões
+
+- Código de indicação não é uma entidade nem uma API pública. O valor usado em `Indicacao.CodigoIndicacaoUsado` continua sendo o retrato histórico da indicação.
+- A migração mantém o campo nullable para dados existentes. Nenhum dado histórico é gerado por SQL e nenhuma alteração destrutiva foi executada.
+
 ## 2026-08-12 — Autorização por Roles e Ownership
 
 ### Adicionado
