@@ -1,5 +1,13 @@
 # Implementações
 
+## Spike Efí / .NET 9
+
+**Data:** 2026-08-18
+
+- O POC isolado `poc/EfiNet9Compatibility` validou restauração, build, carregamento e instanciação local da SDK oficial `EfiPay` 2.0.4 em `net9.0`.
+- A SDK expõe envio Pix por despacho dinâmico, mas a rota interna observada (`v2`) diverge da documentação atual da Efí (`v3`); a conclusão é compatível com ressalvas e requer sandbox futuro.
+- Pix, cashback, pagamentos, preços, gateways e dependências da Efí na produção continuam pendentes e não foram implementados.
+
 ## Consistência do fluxo legado de Indicações
 
 **Data:** 2026-08-17

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-18 — Spike de compatibilidade Efí com .NET 9
+
+### Adicionado
+
+- POC isolado da SDK oficial `EfiPay` 2.0.4 em `net9.0`, sem referência em `src/`, sem credenciais e sem chamadas à Efí.
+- Registro técnico da compatibilidade, dependências, vulnerabilidades, endpoints de envio Pix, certificado/mTLS e recomendação arquitetural.
+
+### Decisão
+
+- A SDK é compatível com ressalvas: a rota de envio observada no pacote (`v2`) deverá ser validada em sandbox contra a documentação atual da Efí (`v3`) antes de uma integração de produção.
+
 ## 2026-08-17 — Consistência entre indicador e código no fluxo legado
 
 ### Corrigido
