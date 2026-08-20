@@ -1,5 +1,29 @@
 # Implementações
 
+## Pagamento de Vistoria — Domain e Application
+
+**Data:** 2026-08-20
+
+### Implementado
+
+- Entidade `PagamentoVistoria` como registro do pagamento recebido do cliente pela A2 para uma vistoria, com `VistoriaId`, `Valor`, `Status`, `PagoEm` e timestamps herdados de `BaseEntity`.
+- Ciclo de estado restrito a `Pendente`, `Confirmado` e `Cancelado`; a confirmação registra `PagoEm` em UTC e confirmação/cancelamento repetidos no mesmo estado são idempotentes.
+- Valor decimal normalizado para duas casas com `MidpointRounding.AwayFromZero` e rejeição de valor não positivo após a normalização.
+- Contrato `IPagamentoVistoriaRepository`, DTOs de criação e resposta, mapper manual, `IPagamentoVistoriaService`, `PagamentoVistoriaService` e `PagamentoVistoriaNaoEncontradoException`.
+- O service valida a existência da vistoria e impede a criação de mais de um pagamento para a mesma vistoria pelo contrato de repository.
+- Testes de Domain e Application para invariantes, transições, idempotência, duplicidade, exceções, persistência e propagação de `CancellationToken`.
+
+### Decisões
+
+- `PagamentoVistoria.Valor` confirmado é a futura fonte formal de `ValorTotalPago` para o módulo de cashback; este módulo não calcula, cria ou atualiza cashback.
+- Na primeira versão há apenas um pagamento por vistoria. Parcelas, reembolsos, preços, recebimento Pix, provider, API, MySQL, DI e migrações permanecem fora do escopo.
+- `PagamentoPix` continua reservado para o futuro pagamento de saída da A2 ao usuário indicador e não foi criado nem alterado.
+
+### Pendente
+
+- Implementação MySQL, índice/constraint única de `vistoria_id`, registro de DI, endpoints HTTP e recebimento real de pagamento.
+- Definição de preços, cálculo de cashback, fluxo de pagamento de cashback, Pix de saída, integrações com provedores e políticas de autorização.
+
 ## Consistência do fluxo legado de Indicações
 
 **Data:** 2026-08-17
