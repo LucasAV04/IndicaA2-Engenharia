@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-20 — Spike Efí em homologação
+
+### Adicionado
+
+- POC isolada para validar OAuth/mTLS e consulta segura da Efí em homologação, sem referência em `src/` e sem segredos versionados.
+- Proteção adicional para certificados `.p12` em `.gitignore`.
+
+### Resultado
+
+- A autenticação não foi concluída: a SDK retornou `401` e o diagnóstico OAuth direto interrompeu no handshake mTLS local do Windows. Nenhum Pix foi enviado e a decisão SDK versus `HttpClient` permanece adiada.
+
 ## 2026-08-18 — Spike de compatibilidade Efí com .NET 9
 
 ### Adicionado
