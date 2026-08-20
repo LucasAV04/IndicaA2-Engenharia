@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-08-20 — Spike Efí em homologação
+
+### Adicionado
+
+- POC isolada para validar OAuth/mTLS e consulta segura da Efí em homologação, sem referência em `src/` e sem segredos versionados.
+- Proteção adicional para certificados `.p12` em `.gitignore`.
+
+### Resultado
+
+- A autenticação não foi concluída: a SDK retornou `401` e o diagnóstico OAuth direto interrompeu no handshake mTLS local do Windows. Nenhum Pix foi enviado e a decisão SDK versus `HttpClient` permanece adiada.
+
+## 2026-08-18 — Spike de compatibilidade Efí com .NET 9
+
+### Adicionado
+
+- POC isolado da SDK oficial `EfiPay` 2.0.4 em `net9.0`, sem referência em `src/`, sem credenciais e sem chamadas à Efí.
+- Registro técnico da compatibilidade, dependências, vulnerabilidades, endpoints de envio Pix, certificado/mTLS e recomendação arquitetural.
+
+### Decisão
+
+- A SDK é compatível com ressalvas: a rota de envio observada no pacote (`v2`) deverá ser validada em sandbox contra a documentação atual da Efí (`v3`) antes de uma integração de produção.
+
 ## 2026-08-17 — Consistência entre indicador e código no fluxo legado
 
 ### Corrigido

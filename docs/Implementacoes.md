@@ -1,5 +1,22 @@
 # Implementações
 
+## Spike Efí — Homologação bloqueada em OAuth/mTLS
+
+**Data:** 2026-08-20
+
+- A POC isolada `poc/EfiSandboxValidation` validou a presença das configurações de homologação, o carregamento local de certificado `.p12` sem senha e sua chave privada.
+- A consulta segura da SDK `EfiPay` 2.0.4 retornou `401`; o diagnóstico OAuth direto com `HttpClient` falhou no handshake TLS/mTLS local do Windows antes de qualquer resposta HTTP.
+- Não houve envio Pix, webhook, idempotência, consulta de status, rejeição simulada ou chamada à produção.
+- A decisão entre SDK e `HttpClient` foi adiada até a resolução do mTLS e a validação real em homologação. Pix, cashback, pagamentos, preços e gateways de produção continuam pendentes.
+
+## Spike Efí / .NET 9
+
+**Data:** 2026-08-18
+
+- O POC isolado `poc/EfiNet9Compatibility` validou restauração, build, carregamento e instanciação local da SDK oficial `EfiPay` 2.0.4 em `net9.0`.
+- A SDK expõe envio Pix por despacho dinâmico, mas a rota interna observada (`v2`) diverge da documentação atual da Efí (`v3`); a conclusão é compatível com ressalvas e requer sandbox futuro.
+- Pix, cashback, pagamentos, preços, gateways e dependências da Efí na produção continuam pendentes e não foram implementados.
+
 ## Consistência do fluxo legado de Indicações
 
 **Data:** 2026-08-17
