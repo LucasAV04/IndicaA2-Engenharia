@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-21 — Domain e Application de Cashback
+
+### Adicionado
+
+- `Cashback`, `ICashbackRepository`, `ICashbackService`, `CashbackService`, DTO de resposta, mapper manual e exceções específicas.
+- Geração exclusivamente por `PagamentoVistoriaId`, resolvendo a indicação por `VistoriaId` e o beneficiário por `UsuarioIndicadorId`.
+- Snapshot financeiro de valor total pago, percentual fixo de 20% e valor de cashback calculado internamente com `decimal` e arredondamento monetário.
+- Fluxo inicial `Pendente → Disponivel` por aprovação manual e cancelamento de `Pendente` ou `Disponivel`; não existe operação para marcar cashback como `Pago`.
+- Cobertura de Domain/Application para cálculo, arredondamento, rastreabilidade, duplicidade, elegibilidade, aprovação, cancelamento e propagação de `CancellationToken`.
+
+### Decisões
+
+- Somente `PagamentoVistoria` confirmado fornece `ValorTotalPago`; pagamentos pendentes ou cancelados não geram cashback.
+- O beneficiário é o usuário indicador, nunca o usuário indicado. A futura persistência deverá garantir `UNIQUE(pagamento_vistoria_id)` contra concorrência.
+- Cashback, PagamentoPix, Efí, providers, API, migration e Infrastructure concreta continuam fora do escopo.
+
 ## 2026-08-21 — Cardinalidade única entre Indicação e Vistoria
 
 ### Adicionado
