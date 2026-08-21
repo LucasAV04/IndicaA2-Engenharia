@@ -11,6 +11,10 @@ namespace Domain.Interfaces
             Guid id,
             CancellationToken cancellationToken = default);
 
+        Task<Indicacao?> ObterPorVistoriaIdAsync(
+            Guid vistoriaId,
+            CancellationToken cancellationToken = default);
+
         Task<IReadOnlyCollection<Indicacao>> ObterTodasAsync(
             CancellationToken cancellationToken = default);
 
