@@ -1,6 +1,7 @@
 using System.Data;
 using Domain.Entities;
 using Domain.Enums;
+using Domain.Exceptions;
 using Domain.Interfaces;
 using Infrastructure.Database;
 using MySqlConnector;
@@ -9,6 +10,8 @@ namespace Infrastructure.Repositories;
 
 public sealed class IndicacaoMySqlRepository : IIndicacaoRepository
 {
+    private const string ConstraintVistoriaVinculada = "uq_indicacoes_vistoria_id";
+
     private const string Colunas = """
         id,
         usuario_indicador_id,
@@ -37,6 +40,23 @@ public sealed class IndicacaoMySqlRepository : IIndicacaoRepository
         await connection.OpenAsync(cancellationToken);
         await using var command = CriarComando(connection, sql);
         AdicionarGuid(command, "@id", id);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        return await reader.ReadAsync(cancellationToken)
+            ? Materializar(reader)
+            : null;
+    }
+
+    public async Task<Indicacao?> ObterPorVistoriaIdAsync(
+        Guid vistoriaId,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = $"SELECT {Colunas} FROM indicacoes WHERE vistoria_id = @vistoriaId;";
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = CriarComando(connection, sql);
+        AdicionarGuid(command, "@vistoriaId", vistoriaId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         return await reader.ReadAsync(cancellationToken)
@@ -118,14 +138,21 @@ public sealed class IndicacaoMySqlRepository : IIndicacaoRepository
             WHERE id = @id;
             """;
 
-        await ExecutarComandoAsync(sql, command =>
+        try
         {
-            AdicionarGuid(command, "@id", indicacao.Id);
-            AdicionarGuidOpcional(command, "@usuarioIndicadoId", indicacao.UsuarioIndicadoId);
-            AdicionarGuidOpcional(command, "@vistoriaId", indicacao.VistoriaId);
-            command.Parameters.Add("@status", MySqlDbType.Int32).Value = (int)indicacao.Status;
-            command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = indicacao.UpdatedAt;
-        }, cancellationToken);
+            await ExecutarComandoAsync(sql, command =>
+            {
+                AdicionarGuid(command, "@id", indicacao.Id);
+                AdicionarGuidOpcional(command, "@usuarioIndicadoId", indicacao.UsuarioIndicadoId);
+                AdicionarGuidOpcional(command, "@vistoriaId", indicacao.VistoriaId);
+                command.Parameters.Add("@status", MySqlDbType.Int32).Value = (int)indicacao.Status;
+                command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = indicacao.UpdatedAt;
+            }, cancellationToken);
+        }
+        catch (MySqlException exception) when (EhVistoriaVinculadaEmOutraIndicacao(exception))
+        {
+            throw new VistoriaJaVinculadaOutraIndicacaoException();
+        }
     }
 
     private async Task<IReadOnlyCollection<Indicacao>> ObterColecaoAsync(
@@ -182,6 +209,10 @@ public sealed class IndicacaoMySqlRepository : IIndicacaoRepository
 
     private static void AdicionarGuidOpcional(MySqlCommand command, string nome, Guid? valor) =>
         command.Parameters.Add(nome, MySqlDbType.VarChar).Value = (object?)valor?.ToString() ?? DBNull.Value;
+
+    private static bool EhVistoriaVinculadaEmOutraIndicacao(MySqlException exception) =>
+        exception.ErrorCode == MySqlErrorCode.DuplicateKeyEntry &&
+        exception.Message.Contains(ConstraintVistoriaVinculada, StringComparison.OrdinalIgnoreCase);
 
     private static Indicacao Materializar(MySqlDataReader reader)
     {
