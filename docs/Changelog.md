@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-20 — Domínio e Application de Pagamento de Vistoria
+
+### Adicionado
+
+- `PagamentoVistoria` como pagamento recebido do cliente pela A2, com valor decimal normalizado, vínculo obrigatório à vistoria e estados `Pendente`, `Confirmado` e `Cancelado`.
+- Contrato de repository, DTOs, mapper manual, service, exceção específica e testes para o módulo inicial.
+
+### Decisões
+
+- Há no máximo um pagamento por vistoria na versão inicial; parcelas, reembolsos, recebimento Pix, provider, API, MySQL e DI não foram implementados.
+- `PagamentoVistoria.Valor` é o valor registrado/esperado: em `Pendente` não representa dinheiro efetivamente recebido, em `Confirmado` passa a ser a futura fonte de `ValorTotalPago`, e em `Cancelado` nunca é elegível. O futuro cashback pertencerá ao usuário indicador e será `ValorTotalPago * 0.20m`; nenhum cálculo ou atualização foi introduzido.
+- A futura Infrastructure deverá garantir `UNIQUE(vistoria_id)`, traduzir somente a violação dessa constraint e reidratar todos os campos persistidos sem invocar transições de domínio. A futura API administrativa mapeará `PagamentoVistoriaNaoEncontradoException` para `404 Not Found`.
+- `StatusCashback` histórico foi preservado sem alteração. `PagamentoPix` permanece um futuro pagamento de saída da A2 ao indicador.
+
 ## 2026-08-17 — Consistência entre indicador e código no fluxo legado
 
 ### Corrigido
