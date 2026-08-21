@@ -59,6 +59,21 @@ public sealed class InfrastructureDependencyInjectionTests
     }
 
     [Fact]
+    public void AddInfrastructure_DeveRegistrarIPagamentoVistoriaRepositoryComoScoped()
+    {
+        var configuration = CriarConfiguration();
+        var services = new ServiceCollection();
+
+        services.AddInfrastructure(configuration);
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IPagamentoVistoriaRepository>();
+
+        Assert.IsType<PagamentoVistoriaMySqlRepository>(repository);
+    }
+
+    [Fact]
     public void AddInfrastructure_DeveRegistrarGeradorDeCodigoIndicacaoComoScoped()
     {
         var configuration = CriarConfiguration();

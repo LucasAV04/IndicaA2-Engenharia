@@ -30,4 +30,7 @@ internal static class IntegrationTestData
             areaM2,
             PacoteVistoria.Total,
             new DateTime(2026, 9, 15, 14, 30, 0, DateTimeKind.Unspecified));
+
+    public static PagamentoVistoria CriarPagamentoVistoria(Guid vistoriaId, decimal valor = 499.90m) =>
+        new(vistoriaId, valor);
 }
