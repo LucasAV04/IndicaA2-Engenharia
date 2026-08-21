@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-21 — Persistência MySQL de Cashback
+
+### Adicionado
+
+- Migration `007_create_cashbacks.sql`, tabela `cashbacks`, reidratação controlada, `CashbackMySqlRepository` e registro de `ICashbackRepository` na Infrastructure.
+- Constraint `uq_cashbacks_pagamento_vistoria_id`, FKs restritivas para indicação, pagamento e usuário indicador, e atualização restrita a `status` e `updated_at`.
+- Testes de reidratação, DI, bootstrap de schema e integração MySQL condicional para snapshots, status, timestamps, consultas, atualização e concorrência.
+
+### Decisões
+
+- Snapshots financeiros históricos não são recalculados na leitura. A violação de unicidade de pagamento é traduzida somente quando corresponde à constraint específica; outras duplicate keys continuam sendo erros MySQL.
+- Aprovação administrativa, `PagamentoPix`, Efí e demais integrações financeiras permanecem fora desta etapa.
+
 ## 2026-08-21 — Domain e Application de Cashback
 
 ### Adicionado
