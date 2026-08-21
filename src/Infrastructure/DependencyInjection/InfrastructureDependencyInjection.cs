@@ -32,6 +32,7 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<ICodigoIndicacaoGenerator, CodigoIndicacaoGenerator>();
         services.AddScoped<IAccessTokenGenerator, JwtAccessTokenGenerator>();
         services.AddScoped<IIndicacaoRepository, IndicacaoMySqlRepository>();
+        services.AddScoped<ICashbackRepository, CashbackMySqlRepository>();
         services.AddScoped<IPagamentoVistoriaRepository, PagamentoVistoriaMySqlRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioMySqlRepository>();
         services.AddScoped<IVistoriaRepository, VistoriaMySqlRepository>();
