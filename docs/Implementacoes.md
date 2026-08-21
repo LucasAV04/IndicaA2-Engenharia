@@ -1,5 +1,26 @@
 # Implementações
 
+## Cardinalidade Indicação ↔ Vistoria — Rastreabilidade Financeira
+
+**Data:** 2026-08-21
+
+### Implementado
+
+- A fonte de verdade do vínculo continua sendo `Indicacao.VistoriaId`; `Vistoria` não recebeu `IndicacaoId` e não há duplicação do relacionamento.
+- `IIndicacaoRepository` e `IndicacaoMySqlRepository` passaram a oferecer `ObterPorVistoriaIdAsync`, com SQL parametrizado e retorno singular.
+- Migration `006_add_unicidade_vistoria_indicacoes.sql` formaliza `UNIQUE(vistoria_id)`: múltiplas indicações sem vistoria permanecem válidas, mas uma vistoria não pode ser vinculada a duas indicações.
+- A violação concorrente exclusiva de `uq_indicacoes_vistoria_id` é traduzida em `VistoriaJaVinculadaOutraIndicacaoException`; outras violações MySQL não são mascaradas.
+- Testes de Application e de integração MySQL condicional cobrem propagação do erro controlado, consulta reversa, ausência de vínculo, unicidade e múltiplos valores `NULL`.
+
+### Decisões
+
+- O caminho financeiro futuro passa a ser `PagamentoVistoria.VistoriaId → Indicacao → UsuarioIndicadorId`, preparando a rastreabilidade necessária para Cashback sem implementar esse módulo.
+- Não foi criada FK de `indicacoes.vistoria_id` para `vistorias.id`: o schema histórico pode conter referências órfãs e não houve auditoria/saneamento de dados autorizada. A Application já valida a existência da vistoria antes do vínculo; uma futura FK só poderá ser adicionada após validação dos dados existentes.
+
+### Pendente
+
+- Cashback, PagamentoPix, API de Cashback, provedores financeiros e qualquer automação de pagamento continuam fora do escopo.
+
 ## Pagamento de Vistoria — Domain e Application
 
 **Data:** 2026-08-20

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-21 — Cardinalidade única entre Indicação e Vistoria
+
+### Adicionado
+
+- `ObterPorVistoriaIdAsync` em `IIndicacaoRepository` e em `IndicacaoMySqlRepository`, com consulta SQL parametrizada.
+- Migration `006_add_unicidade_vistoria_indicacoes.sql`, que cria `uq_indicacoes_vistoria_id` e impede duas indicações para a mesma vistoria, preservando múltiplos `NULL`.
+- `VistoriaJaVinculadaOutraIndicacaoException`, emitida apenas quando a violação é `DuplicateKeyEntry` da constraint específica.
+- Testes de Application e integração MySQL condicional para navegação reversa, ausência de vínculo, concorrência e múltiplos valores nulos.
+
+### Decisões
+
+- `Indicacao.VistoriaId` permanece a única fonte de verdade do relacionamento; `Vistoria` não recebe `IndicacaoId`.
+- Não foi adicionada FK em `indicacoes.vistoria_id`, pois a compatibilidade de dados históricos não foi auditada. Nenhuma correção automática ou saneamento de dados foi executado.
+- O suporte prepara somente a cadeia futura `PagamentoVistoria → Vistoria → Indicacao → UsuarioIndicadorId`; Cashback continua não implementado.
+
 ## 2026-08-21 — Persistência MySQL de Pagamento de Vistoria
 
 ### Adicionado
