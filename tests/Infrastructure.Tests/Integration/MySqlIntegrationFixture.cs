@@ -82,7 +82,8 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
                      "database/004_add_codigo_indicacao_usuarios.sql",
                      "database/003_create_vistorias.sql",
                      "database/001_create_indicacoes.sql",
-                     "database/005_create_pagamentos_vistoria.sql"
+                     "database/005_create_pagamentos_vistoria.sql",
+                     "database/006_add_unicidade_vistoria_indicacoes.sql"
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Combine(raiz, script));

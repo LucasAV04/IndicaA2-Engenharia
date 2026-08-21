@@ -442,6 +442,35 @@ public sealed class IndicacaoServiceTests
     }
 
     [Fact]
+    public async Task VincularVistoriaAsync_QuandoRepositoryDetectarConcorrencia_DevePropagarErroDeNegocioControlado()
+    {
+        var indicacaoRepository = new Mock<IIndicacaoRepository>();
+        var usuarioRepository = new Mock<IUsuarioRepository>();
+        var vistoriaRepository = new Mock<IVistoriaRepository>();
+        var indicacao = CriarIndicacao();
+        var usuarioIndicadoId = Guid.NewGuid();
+        var vistoriaId = Guid.NewGuid();
+        var cancellationToken = new CancellationTokenSource().Token;
+        indicacao.VincularUsuarioIndicado(usuarioIndicadoId);
+        indicacaoRepository
+            .Setup(repository => repository.ObterPorIdAsync(indicacao.Id, cancellationToken))
+            .ReturnsAsync(indicacao);
+        vistoriaRepository
+            .Setup(repository => repository.ObterPorIdAsync(vistoriaId, cancellationToken))
+            .ReturnsAsync(CriarVistoria(usuarioIndicadoId));
+        indicacaoRepository
+            .Setup(repository => repository.AtualizarAsync(indicacao, cancellationToken))
+            .ThrowsAsync(new VistoriaJaVinculadaOutraIndicacaoException());
+
+        await Assert.ThrowsAsync<VistoriaJaVinculadaOutraIndicacaoException>(() =>
+            CriarService(indicacaoRepository, usuarioRepository, vistoriaRepository).VincularVistoriaAsync(
+                new VincularVistoriaDto { IndicacaoId = indicacao.Id, VistoriaId = vistoriaId },
+                cancellationToken));
+
+        indicacaoRepository.Verify(repository => repository.AtualizarAsync(indicacao, cancellationToken), Times.Once);
+    }
+
+    [Fact]
     public async Task VincularVistoriaAsync_QuandoVistoriaNaoExiste_DeveLancarVistoriaNaoEncontradaException()
     {
         var indicacaoRepository = new Mock<IIndicacaoRepository>();

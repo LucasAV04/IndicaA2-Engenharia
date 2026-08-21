@@ -25,5 +25,22 @@ public sealed class MySqlSchemaBootstrapIntegrationTests(MySqlIntegrationFixture
         Assert.Contains("vistorias", tabelas);
         Assert.Contains("indicacoes", tabelas);
         Assert.Contains("pagamentos_vistoria", tabelas);
+
+        await using var constraintCommand = new MySqlCommand(
+            """
+            SELECT constraint_name
+            FROM information_schema.table_constraints
+            WHERE table_schema = DATABASE()
+              AND table_name = 'indicacoes'
+              AND constraint_type = 'UNIQUE';
+            """,
+            connection);
+        await using var constraintReader = await constraintCommand.ExecuteReaderAsync();
+        var constraints = new List<string>();
+
+        while (await constraintReader.ReadAsync())
+            constraints.Add(constraintReader.GetString(0));
+
+        Assert.Contains("uq_indicacoes_vistoria_id", constraints);
     }
 }
