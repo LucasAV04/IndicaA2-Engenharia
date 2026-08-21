@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-21 — Persistência MySQL de Pagamento de Vistoria
+
+### Adicionado
+
+- Migration `005_create_pagamentos_vistoria.sql`, tabela com FK restritiva para `vistorias`, `DECIMAL(12,2)`, enum persistido como `INT`, `DATETIME(6)` e `UNIQUE(vistoria_id)`.
+- `PagamentoVistoriaMySqlRepository`, reidratação segura sem executar `Confirmar()`, registro de DI e testes de integração contra banco temporário.
+- `PagamentoVistoriaDuplicadoException`, emitida somente para `DuplicateKeyEntry` da constraint `uq_pagamentos_vistoria_vistoria_id`; outras violações MySQL não são mascaradas.
+
+### Decisões
+
+- A Application previne duplicidade, mas o MySQL é a garantia definitiva contra concorrência para uma vistoria possuir no máximo um pagamento.
+- Somente pagamento confirmado fornece futuramente `ValorTotalPago`; cashback de 20% para `UsuarioIndicadorId` permanece fora do escopo. Efí continua adiada.
+
 ## 2026-08-20 — Domínio e Application de Pagamento de Vistoria
 
 ### Adicionado

@@ -12,19 +12,20 @@
 - Contrato `IPagamentoVistoriaRepository`, DTOs de criação e resposta, mapper manual, `IPagamentoVistoriaService`, `PagamentoVistoriaService` e `PagamentoVistoriaNaoEncontradoException`.
 - O service valida a existência da vistoria e impede a criação de mais de um pagamento para a mesma vistoria pelo contrato de repository.
 - Testes de Domain e Application para invariantes, transições, idempotência, duplicidade, exceções, persistência e propagação de `CancellationToken`.
+- Reidratação controlada de `PagamentoVistoria`, preservando `Id`, `VistoriaId`, `Valor`, `Status`, `PagoEm`, `CreatedAt` e `UpdatedAt` sem executar transições de domínio.
+- Migration `005_create_pagamentos_vistoria.sql`, repository MySQL, registro em `AddInfrastructure` e testes de integração com banco temporário.
 
 ### Decisões
 
 - `PagamentoVistoria.Valor` registra o valor esperado para o pagamento. Enquanto o status for `Pendente`, ele não constitui `ValorTotalPago` confirmado; somente `Confirmado` o torna fonte financeira válida para o futuro cashback. Um pagamento `Cancelado` nunca fornece valor elegível. Quando o módulo existir, o cashback pertencerá ao usuário indicador e será calculado como `ValorTotalPago * 0.20m`.
-- Na primeira versão há apenas um pagamento por vistoria. Parcelas, reembolsos, preços, recebimento Pix, provider, API, MySQL, DI e migrações permanecem fora do escopo.
+- Na primeira versão há apenas um pagamento por vistoria. A Application faz a prevenção e o MySQL aplica a garantia definitiva por `UNIQUE(vistoria_id)`; a violação dessa constraint é traduzida especificamente para `PagamentoVistoriaDuplicadoException`.
+- A tabela `pagamentos_vistoria` usa GUID textual, `DECIMAL(12,2)` para valor, enum como `INT`, `DATETIME(6)` e FK restritiva para `vistorias(id)`. Datas persistidas são reidratadas como UTC.
 - `PagamentoPix` continua reservado para o futuro pagamento de saída da A2 ao usuário indicador e não foi criado nem alterado.
 
 ### Pendente
 
-- Implementação MySQL, `UNIQUE(vistoria_id)` como garantia definitiva contra concorrência, registro de DI, endpoints HTTP e recebimento real de pagamento. A Infrastructure deverá traduzir especificamente a violação dessa constraint para erro de negócio controlado.
-- Reidratação controlada para MySQL, preservando exatamente `Id`, `VistoriaId`, `Valor`, `Status`, `PagoEm`, `CreatedAt` e `UpdatedAt`, sem recriar um pagamento confirmado por meio de `Confirmar()`.
 - A futura API administrativa deverá mapear `PagamentoVistoriaNaoEncontradoException` para `404 Not Found`.
-- Definição de preços, cálculo de cashback, fluxo de pagamento de cashback, Pix de saída, integrações com provedores e políticas de autorização.
+- Recebimento real de pagamento, definição de preços, cálculo de cashback, fluxo de pagamento de cashback, Pix de saída, integrações com provedores e políticas de autorização.
 
 ## Consistência do fluxo legado de Indicações
 
