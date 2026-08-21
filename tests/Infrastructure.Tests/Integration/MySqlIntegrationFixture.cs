@@ -55,6 +55,7 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
 
         foreach (var sql in new[]
                  {
+                     "DELETE FROM pagamentos_vistoria;",
                      "DELETE FROM indicacoes;",
                      "DELETE FROM vistorias;",
                      "DELETE FROM usuarios;"
@@ -80,7 +81,8 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
                      "database/002_create_usuarios.sql",
                      "database/004_add_codigo_indicacao_usuarios.sql",
                      "database/003_create_vistorias.sql",
-                     "database/001_create_indicacoes.sql"
+                     "database/001_create_indicacoes.sql",
+                     "database/005_create_pagamentos_vistoria.sql"
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Combine(raiz, script));

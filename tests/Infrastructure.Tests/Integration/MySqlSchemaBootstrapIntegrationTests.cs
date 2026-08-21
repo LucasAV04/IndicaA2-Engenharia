@@ -24,5 +24,6 @@ public sealed class MySqlSchemaBootstrapIntegrationTests(MySqlIntegrationFixture
         Assert.Contains("usuarios", tabelas);
         Assert.Contains("vistorias", tabelas);
         Assert.Contains("indicacoes", tabelas);
+        Assert.Contains("pagamentos_vistoria", tabelas);
     }
 }
