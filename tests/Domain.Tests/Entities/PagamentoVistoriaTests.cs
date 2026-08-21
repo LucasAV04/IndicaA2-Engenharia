@@ -8,7 +8,7 @@ namespace Domain.Tests.Entities;
 public sealed class PagamentoVistoriaTests
 {
     [Fact]
-    public void Construtor_QuandoDadosValidos_DeveCriarPagamentoPendente()
+    public void Construtor_QuandoDadosValidos_DeveCriarPagamentoPendenteAindaNaoConfirmado()
     {
         var vistoriaId = Guid.NewGuid();
 

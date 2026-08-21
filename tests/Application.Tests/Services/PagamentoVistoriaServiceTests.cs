@@ -120,6 +120,25 @@ public sealed class PagamentoVistoriaServiceTests
     }
 
     [Fact]
+    public async Task ObterPorVistoriaIdAsync_QuandoPagamentoNaoExiste_DeveLancarPagamentoVistoriaNaoEncontradoExceptionERepassarCancellationToken()
+    {
+        var vistoriaId = Guid.NewGuid();
+        var cancellationToken = new CancellationTokenSource().Token;
+        var pagamentoRepository = new Mock<IPagamentoVistoriaRepository>();
+        pagamentoRepository
+            .Setup(repository => repository.ObterPorVistoriaIdAsync(vistoriaId, cancellationToken))
+            .ReturnsAsync((PagamentoVistoria?)null);
+
+        await Assert.ThrowsAsync<PagamentoVistoriaNaoEncontradoException>(() =>
+            CriarService(pagamentoRepository, new Mock<IVistoriaRepository>())
+                .ObterPorVistoriaIdAsync(vistoriaId, cancellationToken));
+
+        pagamentoRepository.Verify(
+            repository => repository.ObterPorVistoriaIdAsync(vistoriaId, cancellationToken),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task ObterTodosAsync_DeveRetornarColecaoDoRepository()
     {
         IReadOnlyCollection<PagamentoVistoria> pagamentos = [CriarPagamento()];

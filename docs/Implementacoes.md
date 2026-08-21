@@ -15,13 +15,15 @@
 
 ### Decisões
 
-- `PagamentoVistoria.Valor` confirmado é a futura fonte formal de `ValorTotalPago` para o módulo de cashback; este módulo não calcula, cria ou atualiza cashback.
+- `PagamentoVistoria.Valor` registra o valor esperado para o pagamento. Enquanto o status for `Pendente`, ele não constitui `ValorTotalPago` confirmado; somente `Confirmado` o torna fonte financeira válida para o futuro cashback. Um pagamento `Cancelado` nunca fornece valor elegível.
 - Na primeira versão há apenas um pagamento por vistoria. Parcelas, reembolsos, preços, recebimento Pix, provider, API, MySQL, DI e migrações permanecem fora do escopo.
 - `PagamentoPix` continua reservado para o futuro pagamento de saída da A2 ao usuário indicador e não foi criado nem alterado.
 
 ### Pendente
 
-- Implementação MySQL, índice/constraint única de `vistoria_id`, registro de DI, endpoints HTTP e recebimento real de pagamento.
+- Implementação MySQL, `UNIQUE(vistoria_id)` como garantia definitiva contra concorrência, registro de DI, endpoints HTTP e recebimento real de pagamento. A Infrastructure deverá traduzir especificamente a violação dessa constraint para erro de negócio controlado.
+- Reidratação controlada para MySQL, preservando exatamente `Id`, `VistoriaId`, `Valor`, `Status`, `PagoEm`, `CreatedAt` e `UpdatedAt`, sem recriar um pagamento confirmado por meio de `Confirmar()`.
+- A futura API administrativa deverá mapear `PagamentoVistoriaNaoEncontradoException` para `404 Not Found`.
 - Definição de preços, cálculo de cashback, fluxo de pagamento de cashback, Pix de saída, integrações com provedores e políticas de autorização.
 
 ## Consistência do fluxo legado de Indicações
