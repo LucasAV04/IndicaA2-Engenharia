@@ -144,6 +144,34 @@ public sealed class CashbackTests
         Assert.Throws<DomainException>(() => cashback.Aprovar());
     }
 
+    [Fact]
+    public void Reidratar_DevePreservarSnapshotsHistoricosSemRecalcular()
+    {
+        var createdAt = new DateTime(2025, 2, 10, 8, 30, 0, DateTimeKind.Utc);
+        var updatedAt = createdAt.AddDays(2);
+
+        var cashback = Cashback.Reidratar(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            500m,
+            0.15m,
+            75m,
+            StatusCashback.Disponivel,
+            createdAt,
+            updatedAt);
+
+        Assert.Equal(500m, cashback.ValorTotalPago);
+        Assert.Equal(0.15m, cashback.Percentual);
+        Assert.Equal(75m, cashback.Valor);
+        Assert.Equal(StatusCashback.Disponivel, cashback.Status);
+        Assert.Equal(createdAt, cashback.CreatedAt);
+        Assert.Equal(updatedAt, cashback.UpdatedAt);
+        Assert.Equal(DateTimeKind.Utc, cashback.CreatedAt.Kind);
+        Assert.Equal(DateTimeKind.Utc, cashback.UpdatedAt.Kind);
+    }
+
     private static Cashback CriarCashback(decimal valorTotalPago) => Cashback.Criar(
         Guid.NewGuid(),
         Guid.NewGuid(),
