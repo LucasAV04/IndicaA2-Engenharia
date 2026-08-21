@@ -15,7 +15,7 @@
 
 ### Decisões
 
-- `PagamentoVistoria.Valor` registra o valor esperado para o pagamento. Enquanto o status for `Pendente`, ele não constitui `ValorTotalPago` confirmado; somente `Confirmado` o torna fonte financeira válida para o futuro cashback. Um pagamento `Cancelado` nunca fornece valor elegível.
+- `PagamentoVistoria.Valor` registra o valor esperado para o pagamento. Enquanto o status for `Pendente`, ele não constitui `ValorTotalPago` confirmado; somente `Confirmado` o torna fonte financeira válida para o futuro cashback. Um pagamento `Cancelado` nunca fornece valor elegível. Quando o módulo existir, o cashback pertencerá ao usuário indicador e será calculado como `ValorTotalPago * 0.20m`.
 - Na primeira versão há apenas um pagamento por vistoria. Parcelas, reembolsos, preços, recebimento Pix, provider, API, MySQL, DI e migrações permanecem fora do escopo.
 - `PagamentoPix` continua reservado para o futuro pagamento de saída da A2 ao usuário indicador e não foi criado nem alterado.
 

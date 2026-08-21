@@ -10,7 +10,7 @@
 ### Decisões
 
 - Há no máximo um pagamento por vistoria na versão inicial; parcelas, reembolsos, recebimento Pix, provider, API, MySQL e DI não foram implementados.
-- `PagamentoVistoria.Valor` é o valor registrado/esperado: em `Pendente` não representa dinheiro efetivamente recebido, em `Confirmado` passa a ser a futura fonte de `ValorTotalPago`, e em `Cancelado` nunca é elegível. Nenhum cálculo ou atualização de cashback foi introduzido.
+- `PagamentoVistoria.Valor` é o valor registrado/esperado: em `Pendente` não representa dinheiro efetivamente recebido, em `Confirmado` passa a ser a futura fonte de `ValorTotalPago`, e em `Cancelado` nunca é elegível. O futuro cashback pertencerá ao usuário indicador e será `ValorTotalPago * 0.20m`; nenhum cálculo ou atualização foi introduzido.
 - A futura Infrastructure deverá garantir `UNIQUE(vistoria_id)`, traduzir somente a violação dessa constraint e reidratar todos os campos persistidos sem invocar transições de domínio. A futura API administrativa mapeará `PagamentoVistoriaNaoEncontradoException` para `404 Not Found`.
 - `StatusCashback` histórico foi preservado sem alteração. `PagamentoPix` permanece um futuro pagamento de saída da A2 ao indicador.
 
