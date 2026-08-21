@@ -1,5 +1,29 @@
 # Implementações
 
+## Cashback — Domain e Application
+
+**Data:** 2026-08-21
+
+### Implementado
+
+- Entidade `Cashback` com snapshots financeiros de `ValorTotalPago`, `Percentual` e `Valor`, criada exclusivamente a partir da cadeia `PagamentoVistoria → VistoriaId → Indicacao → UsuarioIndicadorId`.
+- `PagamentoVistoria.Valor` somente é aceito como `ValorTotalPago` quando o pagamento está `Confirmado`; pagamentos `Pendente` e `Cancelado` são rejeitados.
+- Percentual inicial centralizado em `20%`, cálculo interno com `decimal` e arredondamento para duas casas com `MidpointRounding.AwayFromZero`.
+- `Cashback` nasce `Pendente`; aprovação manual muda para `Disponivel`; cancelamento é permitido em `Pendente` ou `Disponivel`; as duas operações são idempotentes quando repetidas no mesmo estado.
+- `ICashbackRepository`, `ICashbackService`, `CashbackService`, DTO de resposta, mapper manual, exceções de não encontrado e duplicidade, e consultas por identificador, pagamento, indicador e coleção completa.
+- A Application impede geração duplicada por `PagamentoVistoriaId` e propaga `CancellationToken` em todos os acessos a repository.
+- Testes Domain/Application cobrem cálculo, arredondamento, snapshots, transições, pagamento não elegível, rastreabilidade, beneficiário, duplicidade e contrato de entrada mínima.
+
+### Decisões
+
+- O beneficiário é exclusivamente `Indicacao.UsuarioIndicadorId`; o chamador informa apenas `PagamentoVistoriaId` para geração e não controla valores, percentual, status, indicação ou beneficiário.
+- `Disponivel` significa aprovação administrativa para pagamento futuro, não confirmação de Pix. `Pago` permanece reservado ao futuro fluxo comprovado por `PagamentoPix`.
+- Um pagamento gera no máximo um cashback na Application. A futura Infrastructure deverá reforçar definitivamente essa regra com `UNIQUE(pagamento_vistoria_id)`.
+
+### Pendente
+
+- Não há `CashbackMySqlRepository`, migration/tabela de cashback, registro de DI, API, controller, PagamentoPix, Pix, Efí, provider, webhook, OAuth ou mTLS.
+
 ## Cardinalidade Indicação ↔ Vistoria — Rastreabilidade Financeira
 
 **Data:** 2026-08-21
