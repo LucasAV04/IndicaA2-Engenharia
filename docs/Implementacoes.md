@@ -1,5 +1,28 @@
 # Implementações
 
+## Dados Pix do Usuário — Domain e Application
+
+**Data:** 2026-08-24
+
+### Implementado
+
+- Entidade `DadosPix`, enum `TipoChavePix`, contrato `IDadosPixRepository`, DTOs de entrada e resposta, mapper manual, `IDadosPixService` e `DadosPixService`.
+- Cada usuário pode possuir zero ou uma configuração ativa de Dados Pix. A ausência é válida: a consulta retorna `null` para um usuário existente sem chave e a remoção repetida é idempotente.
+- São aceitas chaves `Cpf`, `Cnpj`, `Email`, `Telefone` e `Aleatoria`. CPF e CNPJ têm formato removido, são armazenados somente com dígitos e validam os dígitos verificadores; e-mail é normalizado; telefone brasileiro é armazenado somente com dígitos incluindo o código de país `55`; chave aleatória é um `Guid` canônico.
+- O serviço valida a existência do usuário, cria ou substitui a configuração existente, permite remoção e propaga `CancellationToken` em todos os acessos ao repositório de Dados Pix.
+- Testes de Domain e Application cobrem invariantes, normalizações, CPF/CNPJ válidos e inválidos, e-mail, telefone, chave aleatória, ausência opcional, cadastro, atualização, remoção idempotente e propagação de `CancellationToken`.
+
+### Decisões
+
+- Dados Pix não alteram cadastro, login, indicação, geração de Cashback, Cashback `Pendente` ou `Disponivel`.
+- Uma futura ordem de `PagamentoPix` deverá fazer snapshot de `UsuarioBeneficiarioId`, `Valor`, `TipoChavePix` e `ChavePix`; alterar Dados Pix não poderá modificar pagamentos históricos.
+- Foi formalizada, apenas para implementação futura, a cardinalidade `Cashback 1 → 0..1 PagamentoPix`. Uma ordem poderá ter até cinco tentativas de envio; após a quinta falha, deverá ficar em `FalhaDefinitiva`, sem sexta tentativa automática, mantendo o Cashback `Disponivel` até intervenção administrativa.
+
+### Pendente
+
+- Infrastructure, migration/tabela, API, controller, persistência, `PagamentoPix`, tentativas, provider, Efí, Pix, webhook, OAuth e mTLS.
+- O Cashback somente será marcado como `Pago` por confirmação real e confiável de pagamento futuro; criar uma ordem não altera seu status.
+
 ## API Administrativa de Cashback
 
 **Data:** 2026-08-24
