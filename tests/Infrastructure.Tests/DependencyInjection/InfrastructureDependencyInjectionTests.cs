@@ -74,6 +74,20 @@ public sealed class InfrastructureDependencyInjectionTests
     }
 
     [Fact]
+    public void AddInfrastructure_DeveRegistrarICashbackRepositoryComoScoped()
+    {
+        var services = new ServiceCollection();
+
+        services.AddInfrastructure(CriarConfiguration());
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<ICashbackRepository>();
+
+        Assert.IsType<CashbackMySqlRepository>(repository);
+    }
+
+    [Fact]
     public void AddInfrastructure_DeveRegistrarGeradorDeCodigoIndicacaoComoScoped()
     {
         var configuration = CriarConfiguration();

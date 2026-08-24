@@ -61,6 +61,56 @@ public sealed class Cashback : BaseEntity
         };
     }
 
+    internal static Cashback Reidratar(
+        Guid id,
+        Guid indicacaoId,
+        Guid pagamentoVistoriaId,
+        Guid usuarioIndicadorId,
+        decimal valorTotalPago,
+        decimal percentual,
+        decimal valor,
+        StatusCashback status,
+        DateTime createdAt,
+        DateTime updatedAt)
+    {
+        if (id == Guid.Empty)
+            throw new ArgumentException("O identificador persistido é obrigatório.", nameof(id));
+        if (indicacaoId == Guid.Empty)
+            throw new ArgumentException("O identificador da indicação persistida é obrigatório.", nameof(indicacaoId));
+        if (pagamentoVistoriaId == Guid.Empty)
+            throw new ArgumentException("O identificador do pagamento da vistoria persistido é obrigatório.", nameof(pagamentoVistoriaId));
+        if (usuarioIndicadorId == Guid.Empty)
+            throw new ArgumentException("O usuário indicador persistido é obrigatório.", nameof(usuarioIndicadorId));
+        if (valorTotalPago <= 0)
+            throw new ArgumentOutOfRangeException(nameof(valorTotalPago), "O valor total pago persistido deve ser maior que zero.");
+        if (percentual <= 0)
+            throw new ArgumentOutOfRangeException(nameof(percentual), "O percentual persistido deve ser maior que zero.");
+        if (valor <= 0)
+            throw new ArgumentOutOfRangeException(nameof(valor), "O valor persistido deve ser maior que zero.");
+        if (!Enum.IsDefined(status))
+            throw new ArgumentOutOfRangeException(nameof(status), "O status persistido é inválido.");
+        if (createdAt == default)
+            throw new ArgumentException("A data de criação persistida é obrigatória.", nameof(createdAt));
+        if (updatedAt == default)
+            throw new ArgumentException("A data de atualização persistida é obrigatória.", nameof(updatedAt));
+        if (updatedAt < createdAt)
+            throw new ArgumentException("A data de atualização não pode ser anterior à data de criação.", nameof(updatedAt));
+
+        return new Cashback
+        {
+            Id = id,
+            IndicacaoId = indicacaoId,
+            PagamentoVistoriaId = pagamentoVistoriaId,
+            UsuarioIndicadorId = usuarioIndicadorId,
+            ValorTotalPago = valorTotalPago,
+            Percentual = percentual,
+            Valor = valor,
+            Status = status,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt
+        };
+    }
+
     public void Aprovar()
     {
         if (Status == StatusCashback.Disponivel)

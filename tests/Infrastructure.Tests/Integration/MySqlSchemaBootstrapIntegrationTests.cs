@@ -28,6 +28,7 @@ public sealed class MySqlSchemaBootstrapIntegrationTests(MySqlIntegrationFixture
         Assert.Contains("vistorias", tabelas);
         Assert.Contains("indicacoes", tabelas);
         Assert.Contains("pagamentos_vistoria", tabelas);
+        Assert.Contains("cashbacks", tabelas);
 
         var constraints = new List<string>();
 
@@ -48,5 +49,47 @@ public sealed class MySqlSchemaBootstrapIntegrationTests(MySqlIntegrationFixture
         }
 
         Assert.Contains("uq_indicacoes_vistoria_id", constraints);
+
+        var constraintsCashbacks = new List<string>();
+
+        {
+            await using var constraintCommand = new MySqlCommand(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'cashbacks'
+                  AND constraint_type = 'UNIQUE';
+                """,
+                connection);
+            await using var constraintReader = await constraintCommand.ExecuteReaderAsync();
+
+            while (await constraintReader.ReadAsync())
+                constraintsCashbacks.Add(constraintReader.GetString(0));
+        }
+
+        Assert.Contains("uq_cashbacks_pagamento_vistoria_id", constraintsCashbacks);
+
+        var foreignKeysCashbacks = new List<string>();
+
+        {
+            await using var foreignKeyCommand = new MySqlCommand(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'cashbacks'
+                  AND constraint_type = 'FOREIGN KEY';
+                """,
+                connection);
+            await using var foreignKeyReader = await foreignKeyCommand.ExecuteReaderAsync();
+
+            while (await foreignKeyReader.ReadAsync())
+                foreignKeysCashbacks.Add(foreignKeyReader.GetString(0));
+        }
+
+        Assert.Contains("fk_cashbacks_indicacoes", foreignKeysCashbacks);
+        Assert.Contains("fk_cashbacks_pagamentos_vistoria", foreignKeysCashbacks);
+        Assert.Contains("fk_cashbacks_usuarios_indicadores", foreignKeysCashbacks);
     }
 }

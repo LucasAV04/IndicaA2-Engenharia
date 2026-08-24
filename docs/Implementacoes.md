@@ -1,5 +1,28 @@
 # Implementações
 
+## Cashback — Persistência MySQL
+
+**Data:** 2026-08-21
+
+### Implementado
+
+- Migration `007_create_cashbacks.sql`, com tabela `cashbacks`, `DECIMAL(12,2)` para os valores monetários, `DECIMAL(5,4)` para o percentual, status como `INT` e timestamps `DATETIME(6)`.
+- `Cashback.Reidratar`, que preserva todos os snapshots financeiros e timestamps históricos sem recalcular valores nem executar transições de domínio.
+- `CashbackMySqlRepository` com SQL parametrizado, consultas por identificador, pagamento, usuário indicador e coleção completa; a materialização preserva GUIDs, decimais, status e UTC.
+- Atualização limitada a `status` e `updated_at`, mantendo `IndicacaoId`, `PagamentoVistoriaId`, `UsuarioIndicadorId`, `ValorTotalPago`, `Percentual` e `Valor` imutáveis após a inserção.
+- `UNIQUE uq_cashbacks_pagamento_vistoria_id`, que é a garantia definitiva contra concorrência para um pagamento gerar no máximo um cashback. Somente a violação dessa constraint é traduzida em `CashbackJaExisteException`.
+- FKs restritivas de `cashbacks` para `indicacoes`, `pagamentos_vistoria` e `usuarios`, sem cascades e sem qualquer saneamento automático de dados.
+- Registro scoped de `ICashbackRepository` em `AddInfrastructure`, cobertura de reidratação, DI, bootstrap e integração MySQL condicional.
+
+### Decisões
+
+- Percentual, `ValorTotalPago` e `Valor` são snapshots históricos. A reidratação aceita, por exemplo, percentual histórico de `0.15m` sem substituí-lo pela regra vigente de 20%.
+- A aprovação continua manual: `Pendente → Disponivel`. `Disponivel` não representa dinheiro pago; `Pago` segue reservado ao futuro `PagamentoPix`.
+
+### Pendente
+
+- API de Cashback, `PagamentoPix`, Pix, Efí, providers financeiros, webhook, OAuth e mTLS continuam fora do escopo.
+
 ## Cashback — Domain e Application
 
 **Data:** 2026-08-21
