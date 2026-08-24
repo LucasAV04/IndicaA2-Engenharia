@@ -26,6 +26,7 @@ public sealed class CashbacksController(ICashbackService cashbackService) : Cont
     }
 
     [HttpGet("{id:guid}")]
+    [ActionName(nameof(ObterPorIdAsync))]
     [ProducesResponseType(typeof(CashbackResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CashbackResponseDto>> ObterPorIdAsync(Guid id, CancellationToken cancellationToken) =>

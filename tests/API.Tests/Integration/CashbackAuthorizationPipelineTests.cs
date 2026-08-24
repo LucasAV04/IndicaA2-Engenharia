@@ -72,6 +72,26 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplic
     }
 
     [Fact]
+    public async Task GerarPorPagamento_ComAdministrador_DeveRetornarLocationParaConsultaPorId()
+    {
+        var pagamentoVistoriaId = Guid.NewGuid();
+        var cashback = new CashbackResponseDto { Id = Guid.NewGuid() };
+        var service = new Mock<ICashbackService>();
+        service.Setup(item => item.GerarPorPagamentoAsync(pagamentoVistoriaId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cashback);
+        using var factory = CriarFactory(service.Object);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
+
+        var response = await client.PostAsync($"/api/cashbacks/por-pagamento/{pagamentoVistoriaId}", content: null);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(response.Headers.Location);
+        Assert.Equal($"/api/cashbacks/{cashback.Id}", response.Headers.Location!.AbsolutePath);
+        service.Verify(item => item.GerarPorPagamentoAsync(pagamentoVistoriaId, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task OpenApi_DeveDocumentarEndpointsDeCashbackSemFluxoDePagamento()
     {
         using var client = _factory.CreateClient();
