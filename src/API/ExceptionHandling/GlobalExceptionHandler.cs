@@ -15,6 +15,14 @@ public sealed class GlobalExceptionHandler(
     {
         var (status, title, detail) = exception switch
         {
+            CashbackNaoEncontradoException => (
+                StatusCodes.Status404NotFound,
+                "Cashback não encontrado",
+                exception.Message),
+            PagamentoVistoriaNaoEncontradoException => (
+                StatusCodes.Status404NotFound,
+                "Pagamento da vistoria não encontrado",
+                exception.Message),
             CodigoIndicacaoNaoEncontradoException => (
                 StatusCodes.Status404NotFound,
                 "Código de indicação não encontrado",
