@@ -15,6 +15,8 @@
 ### Decisões
 
 - Dados Pix não alteram cadastro, login, indicação, geração de Cashback, Cashback `Pendente` ou `Disponivel`.
+- `Cnpj` formaliza a extensão dos tipos de chave Pix originalmente previstos, sem alterar a cardinalidade ou os fluxos existentes.
+- A futura Infrastructure de Dados Pix deverá persistir `ChavePix` criptografada em repouso. O algoritmo, a gestão de chaves e a implementação concreta permanecem fora do escopo desta etapa.
 - Uma futura ordem de `PagamentoPix` deverá fazer snapshot de `UsuarioBeneficiarioId`, `Valor`, `TipoChavePix` e `ChavePix`; alterar Dados Pix não poderá modificar pagamentos históricos.
 - Foi formalizada, apenas para implementação futura, a cardinalidade `Cashback 1 → 0..1 PagamentoPix`. Uma ordem poderá ter até cinco tentativas de envio; após a quinta falha, deverá ficar em `FalhaDefinitiva`, sem sexta tentativa automática, mantendo o Cashback `Disponivel` até intervenção administrativa.
 
