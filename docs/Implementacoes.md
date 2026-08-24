@@ -24,6 +24,7 @@
 
 - Infrastructure, migration/tabela, API, controller, persistência, `PagamentoPix`, tentativas, provider, Efí, Pix, webhook, OAuth e mTLS.
 - O Cashback somente será marcado como `Pago` por confirmação real e confiável de pagamento futuro; criar uma ordem não altera seu status.
+- A próxima Infrastructure de Dados Pix deverá aplicar `UNIQUE(usuario_id)` como garantia definitiva da cardinalidade 0..1, persistir `ChavePix` sempre criptografada em repouso — nunca em texto puro nem em logs completos — e oferecer reidratação controlada que preserve `Id`, `UsuarioId`, `TipoChavePix`, `ChavePix` descriptografada, `CreatedAt` e `UpdatedAt` sem executar comportamentos de domínio.
 
 ## API Administrativa de Cashback
 
