@@ -1,5 +1,22 @@
 # Implementações
 
+## API Administrativa de Cashback
+
+**Data:** 2026-08-24
+
+### Implementado
+
+- `CashbacksController` em `api/cashbacks`, integralmente protegido pela policy `Administrador`.
+- `POST /api/cashbacks/por-pagamento/{pagamentoVistoriaId}` gera cashback somente pelo identificador do pagamento e responde `201 Created` com `Location` para a consulta por ID.
+- Consultas administrativas por ID, pagamento, indicador e coleção completa; aprovação e cancelamento retornam `204 No Content`.
+- O handler global mapeia `CashbackNaoEncontradoException` e `PagamentoVistoriaNaoEncontradoException` para `404`; duplicidades e demais regras de domínio seguem o padrão `422` já existente.
+- OpenAPI e testes HTTP cobrem Bearer, 401, 403, acesso administrativo e a ausência de rotas de Pix/pagamento.
+
+### Decisões
+
+- A API não recebe valores, percentual, status, indicação ou beneficiário: esses dados continuam derivados por `CashbackService` a partir de `PagamentoVistoriaId`.
+- Não há endpoint para `Pago`; `Disponivel` continua significando aprovação administrativa, e `PagamentoPix`/Efí continuam futuros.
+
 ## Cashback — Persistência MySQL
 
 **Data:** 2026-08-21

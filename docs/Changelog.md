@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-24 — API Administrativa de Cashback
+
+### Adicionado
+
+- Controller administrativo, geração por pagamento, consultas, aprovação, cancelamento, registro de `ICashbackService` e mapeamentos 404 específicos.
+- Cobertura de controller, autorização JWT, OpenAPI e ausência de endpoints de pagamento/Pix.
+
+### Decisões
+
+- Todos os endpoints exigem `Administrador`; nenhum contrato HTTP recebe snapshots financeiros. `Pago`, PagamentoPix e Efí permanecem fora do escopo.
+
 ## 2026-08-21 — Persistência MySQL de Cashback
 
 ### Adicionado

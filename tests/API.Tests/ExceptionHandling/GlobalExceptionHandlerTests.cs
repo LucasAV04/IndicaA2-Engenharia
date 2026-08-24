@@ -29,6 +29,28 @@ public sealed class GlobalExceptionHandlerTests
     }
 
     [Fact]
+    public async Task TryHandleAsync_QuandoCashbackNaoForEncontrado_DeveRetornarProblemDetails404()
+    {
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+
+        await CriarHandler().TryHandleAsync(context, new CashbackNaoEncontradoException(), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_QuandoPagamentoVistoriaNaoForEncontrado_DeveRetornarProblemDetails404()
+    {
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+
+        await CriarHandler().TryHandleAsync(context, new PagamentoVistoriaNaoEncontradoException(), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task TryHandleAsync_QuandoCodigoIndicacaoNaoForEncontrado_DeveRetornarProblemDetails404()
     {
         var context = CriarContexto();
