@@ -113,6 +113,47 @@ public sealed class DadosPixTests
         Assert.True(dadosPix.UpdatedAt >= updatedAtAnterior);
     }
 
+    [Fact]
+    public void Reidratar_QuandoEstadoPersistidoForValidoDevePreservarCamposETimestamps()
+    {
+        var id = Guid.NewGuid();
+        var usuarioId = Guid.NewGuid();
+        var createdAt = new DateTime(2026, 8, 1, 10, 30, 0, DateTimeKind.Utc);
+        var updatedAt = createdAt.AddDays(2);
+
+        var dadosPix = DadosPix.Reidratar(
+            id,
+            usuarioId,
+            TipoChavePix.Email,
+            "Snapshot.Exato@Exemplo.Com",
+            createdAt,
+            updatedAt);
+
+        Assert.Equal(id, dadosPix.Id);
+        Assert.Equal(usuarioId, dadosPix.UsuarioId);
+        Assert.Equal(TipoChavePix.Email, dadosPix.TipoChavePix);
+        Assert.Equal("Snapshot.Exato@Exemplo.Com", dadosPix.ChavePix);
+        Assert.Equal(createdAt, dadosPix.CreatedAt);
+        Assert.Equal(updatedAt, dadosPix.UpdatedAt);
+    }
+
+    [Fact]
+    public void Reidratar_QuandoEstadoEstruturalForInvalidoDeveLancarExcecao()
+    {
+        var createdAt = new DateTime(2026, 8, 1, 10, 30, 0, DateTimeKind.Utc);
+
+        Assert.Throws<ArgumentException>(() => DadosPix.Reidratar(
+            Guid.Empty, Guid.NewGuid(), TipoChavePix.Email, "pix@exemplo.com", createdAt, createdAt));
+        Assert.Throws<ArgumentException>(() => DadosPix.Reidratar(
+            Guid.NewGuid(), Guid.Empty, TipoChavePix.Email, "pix@exemplo.com", createdAt, createdAt));
+        Assert.Throws<ArgumentOutOfRangeException>(() => DadosPix.Reidratar(
+            Guid.NewGuid(), Guid.NewGuid(), (TipoChavePix)99, "pix@exemplo.com", createdAt, createdAt));
+        Assert.Throws<ArgumentException>(() => DadosPix.Reidratar(
+            Guid.NewGuid(), Guid.NewGuid(), TipoChavePix.Email, " ", createdAt, createdAt));
+        Assert.Throws<ArgumentException>(() => DadosPix.Reidratar(
+            Guid.NewGuid(), Guid.NewGuid(), TipoChavePix.Email, "pix@exemplo.com", createdAt, createdAt.AddTicks(-1)));
+    }
+
     private static DadosPix Criar(TipoChavePix tipoChavePix, string chavePix) =>
         new(Guid.NewGuid(), tipoChavePix, chavePix);
 }

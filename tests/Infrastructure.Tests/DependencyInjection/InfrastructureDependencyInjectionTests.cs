@@ -2,6 +2,7 @@ using Domain.Interfaces;
 using Application.Interfaces.Security;
 using Infrastructure.DependencyInjection;
 using Infrastructure.Repositories;
+using Infrastructure.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -102,6 +103,22 @@ public sealed class InfrastructureDependencyInjectionTests
         Assert.IsType<Infrastructure.Security.CodigoIndicacaoGenerator>(generator);
     }
 
+    [Fact]
+    public void AddInfrastructure_DeveRegistrarDadosPixRepositoryEProtectorComChaveFicticia()
+    {
+        var services = new ServiceCollection();
+        services.AddInfrastructure(CriarConfiguration());
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+
+        var repository = scope.ServiceProvider.GetRequiredService<IDadosPixRepository>();
+        var protector = scope.ServiceProvider.GetRequiredService<IDadosPixProtector>();
+
+        Assert.IsType<DadosPixMySqlRepository>(repository);
+        Assert.IsType<AesGcmDadosPixProtector>(protector);
+    }
+
     private static IConfiguration CriarConfiguration() => new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -109,7 +126,8 @@ public sealed class InfrastructureDependencyInjectionTests
             ["Jwt:Issuer"] = "IndicA2.Tests",
             ["Jwt:Audience"] = "IndicA2.Tests",
             ["Jwt:Key"] = "chave-ficticia-de-testes-com-mais-de-trinta-e-dois-bytes",
-            ["Jwt:ExpirationMinutes"] = "60"
+            ["Jwt:ExpirationMinutes"] = "60",
+            ["DadosPixEncryption:Key"] = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
         })
         .Build();
 }

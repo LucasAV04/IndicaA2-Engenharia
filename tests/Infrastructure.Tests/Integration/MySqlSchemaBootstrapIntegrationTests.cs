@@ -29,6 +29,7 @@ public sealed class MySqlSchemaBootstrapIntegrationTests(MySqlIntegrationFixture
         Assert.Contains("indicacoes", tabelas);
         Assert.Contains("pagamentos_vistoria", tabelas);
         Assert.Contains("cashbacks", tabelas);
+        Assert.Contains("dados_pix", tabelas);
 
         var constraints = new List<string>();
 
@@ -91,5 +92,43 @@ public sealed class MySqlSchemaBootstrapIntegrationTests(MySqlIntegrationFixture
         Assert.Contains("fk_cashbacks_indicacoes", foreignKeysCashbacks);
         Assert.Contains("fk_cashbacks_pagamentos_vistoria", foreignKeysCashbacks);
         Assert.Contains("fk_cashbacks_usuarios_indicadores", foreignKeysCashbacks);
+
+        var constraintsDadosPix = new List<string>();
+        var foreignKeysDadosPix = new List<string>();
+
+        {
+            await using var constraintCommand = new MySqlCommand(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'dados_pix'
+                  AND constraint_type = 'UNIQUE';
+                """,
+                connection);
+            await using var constraintReader = await constraintCommand.ExecuteReaderAsync();
+
+            while (await constraintReader.ReadAsync())
+                constraintsDadosPix.Add(constraintReader.GetString(0));
+        }
+
+        {
+            await using var foreignKeyCommand = new MySqlCommand(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'dados_pix'
+                  AND constraint_type = 'FOREIGN KEY';
+                """,
+                connection);
+            await using var foreignKeyReader = await foreignKeyCommand.ExecuteReaderAsync();
+
+            while (await foreignKeyReader.ReadAsync())
+                foreignKeysDadosPix.Add(foreignKeyReader.GetString(0));
+        }
+
+        Assert.Contains("uq_dados_pix_usuario_id", constraintsDadosPix);
+        Assert.Contains("fk_dados_pix_usuarios", foreignKeysDadosPix);
     }
 }
