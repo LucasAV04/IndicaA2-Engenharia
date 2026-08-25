@@ -31,11 +31,25 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
         services.AddScoped<ICodigoIndicacaoGenerator, CodigoIndicacaoGenerator>();
         services.AddScoped<IAccessTokenGenerator, JwtAccessTokenGenerator>();
+        services.AddSingleton<IDadosPixProtector>(_ =>
+        {
+            var encryptionKey = configuration["DadosPixEncryption:Key"]
+                ?? Environment.GetEnvironmentVariable("INDICA2_DADOS_PIX_ENCRYPTION_KEY");
+
+            if (string.IsNullOrWhiteSpace(encryptionKey))
+            {
+                throw new InvalidOperationException(
+                    "Configure a chave externa de criptografia dos Dados Pix antes de utilizar sua persistência.");
+            }
+
+            return new AesGcmDadosPixProtector(encryptionKey);
+        });
         services.AddScoped<IIndicacaoRepository, IndicacaoMySqlRepository>();
         services.AddScoped<ICashbackRepository, CashbackMySqlRepository>();
         services.AddScoped<IPagamentoVistoriaRepository, PagamentoVistoriaMySqlRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioMySqlRepository>();
         services.AddScoped<IVistoriaRepository, VistoriaMySqlRepository>();
+        services.AddScoped<IDadosPixRepository, DadosPixMySqlRepository>();
 
         return services;
     }
