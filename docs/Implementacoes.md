@@ -1,5 +1,26 @@
 # Implementações
 
+## PagamentoPix — Domain e Application
+
+**Data:** 2026-08-25
+
+### Implementado
+
+- Entidade `PagamentoPix` como ordem interna de saída financeira para um `Cashback`, com snapshots imutáveis de `CashbackId`, `UsuarioBeneficiarioId`, `Valor`, `TipoChavePix` e `ChavePix`.
+- A criação recebe somente `CashbackId`: o service exige `Cashback.Disponivel`, usa `Cashback.Valor` e `Cashback.UsuarioIndicadorId`, obtém os Dados Pix atuais do beneficiário e não altera o Cashback.
+- Cardinalidade funcional `Cashback 1 → 0..1 PagamentoPix`: a Application consulta uma ordem existente por cashback antes de criar. A garantia definitiva de concorrência continua planejada para a Infrastructure, por `UNIQUE(cashback_id)`.
+- Estados `Pendente`, `Processando`, `Concluido`, `Falhou`, `FalhaDefinitiva` e `Cancelado`. A tentativa é contabilizada quando iniciada; há no máximo cinco tentativas e a quinta falha resulta em `FalhaDefinitiva`, sem sexta tentativa automática.
+- `ConfirmarConclusao` existe somente no Domain para futura integração financeira confiável. Não há caso de uso público que simule provider e nenhuma transição altera `Cashback` para `Pago`.
+- `IPagamentoPixRepository`, `IPagamentoPixService`, `PagamentoPixService`, `PagamentoPixResponseDto` sem `ChavePix` e `PagamentoPixMapper` manual.
+
+### Testes
+
+- Cobertura de criação, snapshots, validações, transições, cancelamento idempotente, cinco tentativas, FalhaDefinitiva, consultas, duplicidade, Dados Pix ausentes, `CancellationToken` e garantia de que a criação não atualiza o Cashback.
+
+### Pendente
+
+- Infrastructure/MySQL, `UNIQUE(cashback_id)`, reidratação, criptografia em repouso do snapshot da chave, migration, API, provider Pix, envio real, confirmação financeira, Efí, webhook, OAuth e mTLS.
+
 ## Infrastructure — Persistência MySQL Segura de Dados Pix
 
 **Data:** 2026-08-25

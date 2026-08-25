@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-25 — Domain e Application de PagamentoPix
+
+### Adicionado
+
+- Ordem interna `PagamentoPix`, seus snapshots financeiros e de Dados Pix, `StatusPagamentoPix`, contratos de repository/service, DTO de resposta seguro, mapper manual e exceções específicas.
+- Criação exclusiva por `CashbackId`, aceita somente Cashback `Disponivel`, deriva valor e beneficiário do snapshot de Cashback e usa os Dados Pix cadastrados do beneficiário.
+- Máquina de estados de tentativa: máximo de cinco, contagem no início, quinta falha para `FalhaDefinitiva`, sem sexta tentativa automática e cancelamento idempotente apenas em estados permitidos.
+- Testes de Domain e Application para snapshots, regras de tentativa, elegibilidade, duplicidade, ausência de Dados Pix, `CancellationToken` e ausência de alteração de Cashback.
+
+### Decisões
+
+- `PagamentoPix` não paga nem marca Cashback como `Pago`; a confirmação real futura deverá atualizar ambos de modo confiável.
+- A garantia definitiva contra concorrência está adiada para a Infrastructure por `UNIQUE(cashback_id)`. Não foram criadas Infrastructure, migration, API, provider ou integração Efí.
+
 ## 2026-08-25 — Infrastructure MySQL Segura de Dados Pix
 
 ### Adicionado
