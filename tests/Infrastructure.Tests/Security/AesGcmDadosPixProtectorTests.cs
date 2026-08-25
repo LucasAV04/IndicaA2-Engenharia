@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Reflection;
 using System.Text;
 using Infrastructure.Security;
 using Xunit;
@@ -105,6 +106,25 @@ public sealed class AesGcmDadosPixProtectorTests
         Assert.False(ContemSequencia(material.Ciphertext, plaintext));
         Assert.False(ContemSequencia(material.Nonce, plaintext));
         Assert.False(ContemSequencia(material.Tag, plaintext));
+    }
+
+    [Fact]
+    public void Dispose_DeveZerarOMaterialDaChaveEImpedirNovoUso()
+    {
+        var protector = CriarProtector();
+        var keyField = typeof(AesGcmDadosPixProtector).GetField(
+            "_key",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        var key = Assert.IsType<byte[]>(keyField?.GetValue(protector));
+
+        Assert.Contains(key, value => value != 0);
+
+        protector.Dispose();
+
+        Assert.All(key, value => Assert.Equal((byte)0, value));
+        Assert.Throws<ObjectDisposedException>(() => protector.Proteger(ChavePix));
+
+        protector.Dispose();
     }
 
     private static AesGcmDadosPixProtector CriarProtector() =>

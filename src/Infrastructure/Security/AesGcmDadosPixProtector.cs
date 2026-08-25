@@ -3,31 +3,39 @@ using System.Text;
 
 namespace Infrastructure.Security;
 
-public sealed class AesGcmDadosPixProtector : IDadosPixProtector
+public sealed class AesGcmDadosPixProtector : IDadosPixProtector, IDisposable
 {
     public const int EncryptionVersion = 1;
     public const int KeySizeInBytes = 32;
     public const int NonceSizeInBytes = 12;
     public const int TagSizeInBytes = 16;
 
-    private readonly byte[] _key;
+    private byte[]? _key;
 
     public AesGcmDadosPixProtector(string keyBase64)
     {
         if (string.IsNullOrWhiteSpace(keyBase64))
             throw new ArgumentException("A chave de criptografia dos Dados Pix é obrigatória.", nameof(keyBase64));
 
+        byte[] key;
+
         try
         {
-            _key = Convert.FromBase64String(keyBase64);
+            key = Convert.FromBase64String(keyBase64);
         }
         catch (FormatException exception)
         {
             throw new ArgumentException("A chave de criptografia dos Dados Pix deve estar em Base64 válido.", nameof(keyBase64), exception);
         }
 
-        if (_key.Length != KeySizeInBytes)
+        if (key.Length != KeySizeInBytes)
+        {
+            CryptographicOperations.ZeroMemory(key);
+
             throw new ArgumentException("A chave de criptografia dos Dados Pix deve possuir 32 bytes.", nameof(keyBase64));
+        }
+
+        _key = key;
     }
 
     public DadosPixProtegido Proteger(string chavePix)
@@ -40,7 +48,7 @@ public sealed class AesGcmDadosPixProtector : IDadosPixProtector
         var ciphertext = new byte[plaintext.Length];
         var tag = new byte[TagSizeInBytes];
 
-        using var aesGcm = new AesGcm(_key, TagSizeInBytes);
+        using var aesGcm = new AesGcm(ObterChave(), TagSizeInBytes);
         aesGcm.Encrypt(nonce, plaintext, ciphertext, tag);
 
         return new DadosPixProtegido(ciphertext, nonce, tag, EncryptionVersion);
@@ -62,7 +70,7 @@ public sealed class AesGcmDadosPixProtector : IDadosPixProtector
 
         try
         {
-            using var aesGcm = new AesGcm(_key, TagSizeInBytes);
+            using var aesGcm = new AesGcm(ObterChave(), TagSizeInBytes);
             aesGcm.Decrypt(
                 dadosPixProtegido.Nonce,
                 dadosPixProtegido.Ciphertext,
@@ -75,5 +83,19 @@ public sealed class AesGcmDadosPixProtector : IDadosPixProtector
         }
 
         return Encoding.UTF8.GetString(plaintext);
+    }
+
+    public void Dispose()
+    {
+        if (_key is null)
+            return;
+
+        CryptographicOperations.ZeroMemory(_key);
+        _key = null;
+    }
+
+    private byte[] ObterChave()
+    {
+        return _key ?? throw new ObjectDisposedException(nameof(AesGcmDadosPixProtector));
     }
 }
