@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-08-24 — Dados Pix do Usuário
+
+### Adicionado
+
+- `DadosPix` e `TipoChavePix` (`Cpf`, `Cnpj`, `Email`, `Telefone` e `Aleatoria`), com `IDadosPixRepository`, DTOs, mapper manual, `IDadosPixService` e `DadosPixService`.
+- Validações determinísticas e normalizações: CPF/CNPJ com dígitos verificadores, e-mail com estrutura coerente, telefone Pix brasileiro em representação numérica com `55` e UUID canônico para chave aleatória.
+- Cobertura de Domain e Application para criação, alteração, remoção idempotente, ausência opcional, validações e `CancellationToken`.
+
+### Decisões
+
+- Um usuário pode ter zero ou uma configuração ativa de Dados Pix. Não possuir chave é permitido e não bloqueia os fluxos atuais de usuário, indicação ou cashback.
+- `Cnpj` foi formalizado como extensão dos tipos de chave Pix originalmente previstos, sem alteração de cardinalidade ou comportamento dos fluxos atuais.
+- A futura Infrastructure deverá criptografar `ChavePix` em repouso; algoritmo, gestão de chaves e persistência concreta continuam pendentes.
+- A futura ordem de `PagamentoPix` usará snapshot da chave e do tipo; alterações futuras do cadastro não mudam registros históricos.
+- Para o fluxo futuro foi formalizado: `Cashback 1 → 0..1 PagamentoPix`, até cinco tentativas por ordem, `FalhaDefinitiva` após a quinta falha, sem sexta tentativa automática, Cashback mantido em `Disponivel` e intervenção administrativa necessária.
+- `PagamentoPix`, tentativas, Infrastructure, migration, API, Efí e integrações financeiras continuam fora do escopo.
+- Para a futura Infrastructure de Dados Pix, foram definidos: `UNIQUE(usuario_id)` para garantir 0..1 configuração por usuário; criptografia em repouso de `ChavePix`, sem texto puro ou logs completos; e reidratação controlada de `Id`, `UsuarioId`, `TipoChavePix`, `ChavePix` descriptografada e timestamps, sem invocar métodos de domínio.
+
 ## 2026-08-24 — API Administrativa de Cashback
 
 ### Adicionado
