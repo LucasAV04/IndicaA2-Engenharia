@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-25 — Infrastructure MySQL Segura de Dados Pix
+
+### Adicionado
+
+- Migration `008_create_dados_pix.sql`, tabela `dados_pix`, `UNIQUE(usuario_id)` e FK restritiva para `usuarios`, sem cascade.
+- `DadosPixMySqlRepository`, registro de `IDadosPixRepository` e reidratação controlada de `DadosPix`.
+- AES-256-GCM com chave externa em Base64 de 32 bytes, nonce aleatório de 12 bytes, tag de 16 bytes e `encryption_version`.
+- Persistência exclusiva de ciphertext, nonce e tag; `ChavePix` não é gravada em texto puro nem incluída em mensagens de falha criptográfica.
+- Tradução específica de `uq_dados_pix_usuario_id` para `DadosPixJaExisteException`.
+- Testes de criptografia, reidratação, integração MySQL, ausência de plaintext, alteração de material criptográfico e adulteração autenticada.
+
+### Pendente
+
+- API de Dados Pix, PagamentoPix, Efí, providers financeiros, Pix real, webhook, OAuth e mTLS.
+
 ## 2026-08-24 — Dados Pix do Usuário
 
 ### Adicionado

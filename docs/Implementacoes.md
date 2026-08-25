@@ -1,5 +1,28 @@
 # Implementações
 
+## Infrastructure — Persistência MySQL Segura de Dados Pix
+
+**Data:** 2026-08-25
+
+### Implementado
+
+- Migration `008_create_dados_pix.sql` e tabela `dados_pix`, com `UNIQUE(usuario_id)` como garantia definitiva da cardinalidade `Usuario → 0..1 DadosPix` e FK restritiva para `usuarios`.
+- `DadosPixMySqlRepository`, com SQL parametrizado, `CancellationToken`, inserção, consulta por usuário, atualização e remoção física da configuração Pix. A remoção é segura nesta etapa porque pagamentos futuros terão snapshot próprio.
+- `AesGcmDadosPixProtector` na Infrastructure, usando AES-256-GCM com chave de 32 bytes, nonce aleatório de 12 bytes, tag autenticada de 16 bytes e `encryption_version = 1`.
+- O banco persiste somente `chave_pix_ciphertext`, `chave_pix_nonce`, `chave_pix_tag` e `encryption_version`; `ChavePix` nunca é persistida em texto puro. Cada escrita gera material criptográfico novo.
+- A chave mestra é externa ao banco e ao repositório: a resolução aceita `DadosPixEncryption:Key` ou `INDICA2_DADOS_PIX_ENCRYPTION_KEY`, em Base64 com 32 bytes. A chave não está em `appsettings` versionado, migrations ou logs.
+- `DadosPix.Reidratar`, que preserva `Id`, `UsuarioId`, `TipoChavePix`, chave já descriptografada e timestamps sem normalizar nem executar comportamento de domínio.
+- Violação exclusivamente de `uq_dados_pix_usuario_id` é traduzida para `DadosPixJaExisteException`; demais erros de constraint continuam sendo propagados.
+
+### Testes
+
+- Cobertura unitária para roundtrip autenticado, nonce por escrita, tamanhos de nonce/tag, chave inválida, material adulterado e ausência de plaintext no material persistível.
+- Cobertura de reidratação de Dados Pix e integração MySQL condicional para schema, `UNIQUE`, FK, ciphertext, update com novo material, remoção, concorrência, chave em texto puro e adulteração criptográfica.
+
+### Pendente
+
+- API de Dados Pix, PagamentoPix, tentativas de pagamento, Efí, providers financeiros, Pix real, webhook, OAuth e mTLS.
+
 ## Dados Pix do Usuário — Domain e Application
 
 **Data:** 2026-08-24
