@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using Domain.Entities;
 using Domain.Enums;
@@ -314,8 +315,8 @@ public sealed class PagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegration
 
         Assert.True(await reader.ReadAsync());
         return new RegistroPersistido(
-            reader.GetString(0),
-            reader.GetString(1),
+            ObterGuid(reader, 0, "cashback_id"),
+            ObterGuid(reader, 1, "usuario_beneficiario_id"),
             reader.GetDecimal(2),
             reader.GetInt32(3),
             reader.GetFieldValue<byte[]>(4),
@@ -326,6 +327,16 @@ public sealed class PagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegration
             reader.GetInt32(9),
             DateTime.SpecifyKind(reader.GetDateTime(10), DateTimeKind.Utc),
             DateTime.SpecifyKind(reader.GetDateTime(11), DateTimeKind.Utc));
+    }
+
+    private static Guid ObterGuid(MySqlDataReader reader, int ordinal, string nomeColuna)
+    {
+        return reader.GetValue(ordinal) switch
+        {
+            Guid guid when guid != Guid.Empty => guid,
+            string texto when Guid.TryParse(texto, out var guid) && guid != Guid.Empty => guid,
+            _ => throw new DataException($"O GUID persistido na coluna '{nomeColuna}' é inválido.")
+        };
     }
 
     private static string CriarChaveDeTesteBase64() =>
@@ -352,8 +363,8 @@ public sealed class PagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegration
     }
 
     private sealed record RegistroPersistido(
-        string CashbackId,
-        string UsuarioBeneficiarioId,
+        Guid CashbackId,
+        Guid UsuarioBeneficiarioId,
         decimal Valor,
         int TipoChavePix,
         byte[] Ciphertext,

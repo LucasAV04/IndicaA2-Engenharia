@@ -218,6 +218,12 @@ public sealed class MySqlSchemaBootstrapIntegrationTests(MySqlIntegrationFixture
         Assert.Contains("created_at", colunasPagamentosPix);
         Assert.Contains("updated_at", colunasPagamentosPix);
         Assert.Equal(2, regrasExclusaoPagamentosPix.Count);
-        Assert.All(regrasExclusaoPagamentosPix, regra => Assert.Equal("RESTRICT", regra));
+        // InnoDB expõe FKs sem ação de exclusão tanto como RESTRICT quanto como NO ACTION.
+        // Ambas preservam a semântica restritiva exigida para registros financeiros.
+        Assert.All(
+            regrasExclusaoPagamentosPix,
+            regra => Assert.True(
+                regra is "RESTRICT" or "NO ACTION",
+                $"A regra de exclusão '{regra}' não é restritiva."));
     }
 }
