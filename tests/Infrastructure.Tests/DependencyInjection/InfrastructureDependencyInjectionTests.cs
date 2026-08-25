@@ -119,6 +119,22 @@ public sealed class InfrastructureDependencyInjectionTests
         Assert.IsType<AesGcmDadosPixProtector>(protector);
     }
 
+    [Fact]
+    public void AddInfrastructure_DeveRegistrarPagamentoPixRepositoryComMesmoProtectorDeChavePix()
+    {
+        var services = new ServiceCollection();
+        services.AddInfrastructure(CriarConfiguration());
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+
+        var repository = scope.ServiceProvider.GetRequiredService<IPagamentoPixRepository>();
+        var protector = scope.ServiceProvider.GetRequiredService<IDadosPixProtector>();
+
+        Assert.IsType<PagamentoPixMySqlRepository>(repository);
+        Assert.IsType<AesGcmDadosPixProtector>(protector);
+    }
+
     private static IConfiguration CriarConfiguration() => new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
         {
