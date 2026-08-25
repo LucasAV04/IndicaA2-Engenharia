@@ -22,6 +22,40 @@ public sealed class DadosPix : BaseEntity
         DefinirChave(tipoChavePix, chavePix);
     }
 
+    internal static DadosPix Reidratar(
+        Guid id,
+        Guid usuarioId,
+        TipoChavePix tipoChavePix,
+        string chavePix,
+        DateTime createdAt,
+        DateTime updatedAt)
+    {
+        if (id == Guid.Empty)
+            throw new ArgumentException("O identificador persistido é obrigatório.", nameof(id));
+        if (usuarioId == Guid.Empty)
+            throw new ArgumentException("O identificador do usuário persistido é obrigatório.", nameof(usuarioId));
+        if (!Enum.IsDefined(tipoChavePix))
+            throw new ArgumentOutOfRangeException(nameof(tipoChavePix), "O tipo de chave Pix persistido é inválido.");
+        if (string.IsNullOrWhiteSpace(chavePix))
+            throw new ArgumentException("A chave Pix persistida é obrigatória.", nameof(chavePix));
+        if (createdAt == default)
+            throw new ArgumentException("A data de criação persistida é obrigatória.", nameof(createdAt));
+        if (updatedAt == default)
+            throw new ArgumentException("A data de atualização persistida é obrigatória.", nameof(updatedAt));
+        if (updatedAt < createdAt)
+            throw new ArgumentException("A data de atualização não pode ser anterior à data de criação.", nameof(updatedAt));
+
+        return new DadosPix
+        {
+            Id = id,
+            UsuarioId = usuarioId,
+            TipoChavePix = tipoChavePix,
+            ChavePix = chavePix,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt
+        };
+    }
+
     public void Atualizar(TipoChavePix tipoChavePix, string chavePix)
     {
         DefinirChave(tipoChavePix, chavePix);
