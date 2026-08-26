@@ -23,6 +23,57 @@ public sealed class AesGcmDadosPixProtectorTests
     }
 
     [Fact]
+    public void ProtegerEDesproteger_ComMesmoAssociatedDataDevePreservarPlaintext()
+    {
+        var protector = CriarProtector();
+        var associatedData = Encoding.UTF8.GetBytes("PagamentoPix:v1|contexto-de-teste");
+
+        var materialProtegido = protector.Proteger(ChavePix, associatedData);
+        var resultado = protector.Desproteger(materialProtegido, associatedData);
+
+        Assert.Equal(ChavePix, resultado);
+    }
+
+    [Fact]
+    public void Desproteger_ComAssociatedDataDiferenteDeveFalharNaAutenticacao()
+    {
+        var protector = CriarProtector();
+        var associatedData = Encoding.UTF8.GetBytes("PagamentoPix:v1|ordem-a");
+        var materialProtegido = protector.Proteger(ChavePix, associatedData);
+
+        var exception = Assert.Throws<CryptographicException>(() =>
+            protector.Desproteger(materialProtegido, Encoding.UTF8.GetBytes("PagamentoPix:v1|ordem-b")));
+
+        Assert.DoesNotContain(ChavePix, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Desproteger_ComAssociatedDataAdulteradoDeveFalharNaAutenticacao()
+    {
+        var protector = CriarProtector();
+        var associatedDataOriginal = Encoding.UTF8.GetBytes("PagamentoPix:v1|ordem-a");
+        var associatedDataAdulterado = associatedDataOriginal.ToArray();
+        associatedDataAdulterado[^1] ^= 0x01;
+        var materialProtegido = protector.Proteger(ChavePix, associatedDataOriginal);
+
+        var exception = Assert.Throws<CryptographicException>(() =>
+            protector.Desproteger(materialProtegido, associatedDataAdulterado));
+
+        Assert.DoesNotContain(ChavePix, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ProtegerEDesproteger_ComAssociatedDataVazioDeveManterCompatibilidade()
+    {
+        var protector = CriarProtector();
+        var materialProtegido = protector.Proteger(ChavePix, Array.Empty<byte>());
+
+        var resultado = protector.Desproteger(materialProtegido, Array.Empty<byte>());
+
+        Assert.Equal(ChavePix, resultado);
+    }
+
+    [Fact]
     public void Proteger_QuandoMesmoPlaintextForUsadoDuasVezesDeveGerarNovoNonceEMaterialDiferente()
     {
         var protector = CriarProtector();

@@ -40,23 +40,42 @@ public sealed class AesGcmDadosPixProtector : IDadosPixProtector, IDisposable
 
     public DadosPixProtegido Proteger(string chavePix)
     {
+        return Proteger(chavePix, Array.Empty<byte>());
+    }
+
+    public DadosPixProtegido Proteger(string chavePix, byte[] associatedData)
+    {
         if (string.IsNullOrWhiteSpace(chavePix))
             throw new ArgumentException("A chave Pix a proteger é obrigatória.", nameof(chavePix));
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         var plaintext = Encoding.UTF8.GetBytes(chavePix);
         var nonce = RandomNumberGenerator.GetBytes(NonceSizeInBytes);
         var ciphertext = new byte[plaintext.Length];
         var tag = new byte[TagSizeInBytes];
 
-        using var aesGcm = new AesGcm(ObterChave(), TagSizeInBytes);
-        aesGcm.Encrypt(nonce, plaintext, ciphertext, tag);
+        try
+        {
+            using var aesGcm = new AesGcm(ObterChave(), TagSizeInBytes);
+            aesGcm.Encrypt(nonce, plaintext, ciphertext, tag, associatedData);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
 
         return new DadosPixProtegido(ciphertext, nonce, tag, EncryptionVersion);
     }
 
     public string Desproteger(DadosPixProtegido dadosPixProtegido)
     {
+        return Desproteger(dadosPixProtegido, Array.Empty<byte>());
+    }
+
+    public string Desproteger(DadosPixProtegido dadosPixProtegido, byte[] associatedData)
+    {
         ArgumentNullException.ThrowIfNull(dadosPixProtegido);
+        ArgumentNullException.ThrowIfNull(associatedData);
 
         if (dadosPixProtegido.EncryptionVersion != EncryptionVersion ||
             dadosPixProtegido.Ciphertext.Length == 0 ||
@@ -75,14 +94,19 @@ public sealed class AesGcmDadosPixProtector : IDadosPixProtector, IDisposable
                 dadosPixProtegido.Nonce,
                 dadosPixProtegido.Ciphertext,
                 dadosPixProtegido.Tag,
-                plaintext);
+                plaintext,
+                associatedData);
+
+            return Encoding.UTF8.GetString(plaintext);
         }
         catch (CryptographicException exception)
         {
             throw new CryptographicException("Não foi possível descriptografar os Dados Pix armazenados.", exception);
         }
-
-        return Encoding.UTF8.GetString(plaintext);
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
     }
 
     public void Dispose()

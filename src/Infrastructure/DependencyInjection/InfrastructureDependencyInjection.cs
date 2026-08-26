@@ -46,6 +46,7 @@ public static class InfrastructureDependencyInjection
         });
         services.AddScoped<IIndicacaoRepository, IndicacaoMySqlRepository>();
         services.AddScoped<ICashbackRepository, CashbackMySqlRepository>();
+        services.AddScoped<IPagamentoPixRepository, PagamentoPixMySqlRepository>();
         services.AddScoped<IPagamentoVistoriaRepository, PagamentoVistoriaMySqlRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioMySqlRepository>();
         services.AddScoped<IVistoriaRepository, VistoriaMySqlRepository>();

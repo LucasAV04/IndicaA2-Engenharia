@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-08-26 — Autenticação contextual do snapshot de PagamentoPix
+
+### Corrigido
+
+- `PagamentoPixMySqlRepository` passou a proteger e descriptografar a chave Pix com AAD `PagamentoPix:v1`, autenticando `Id`, `CashbackId`, `UsuarioBeneficiarioId`, `Valor` e `TipoChavePix`.
+- A serialização do contexto é determinística: GUIDs canônicos, valor monetário invariável com duas casas e enum persistido como inteiro.
+- A troca integral de material criptográfico entre ordens, ou a alteração direta de qualquer snapshot autenticado, passa a falhar na autenticação AES-GCM.
+- Status, quantidade de tentativas e `updated_at` não fazem parte do AAD; atualizações normais mantêm o material criptográfico e continuam válidas.
+- `DadosPix` mantém os métodos originais sem AAD contextual, preservando a compatibilidade dos registros existentes.
+- Buffers temporários de plaintext são apagados após criptografar ou converter a chave descriptografada em string.
+
+### Decisões
+
+- `encryption_version = 1` permanece a versão do material AES-GCM. `PagamentoPix:v1` identifica somente o esquema de contexto autenticado.
+- Migration 009 não foi alterada; AAD é reconstruído a partir dos snapshots imutáveis e não precisa ser persistido.
+- Concorrência de processamento permanece uma evolução obrigatória antes do envio Pix real, sem solução escolhida nesta etapa.
+
+## 2026-08-25 — Persistência MySQL Segura de PagamentoPix
+
+### Adicionado
+
+- Migration `009_create_pagamentos_pix.sql`, tabela `pagamentos_pix`, `UNIQUE uq_pagamentos_pix_cashback_id` e FKs restritivas para cashback e usuário beneficiário, sem cascade.
+- Reidratação controlada de `PagamentoPix`, `PagamentoPixMySqlRepository` e registro scoped de `IPagamentoPixRepository`.
+- Persistência criptografada do snapshot de `ChavePix` com o protector AES-256-GCM já existente: ciphertext, nonce, tag e `encryption_version`; não há coluna plaintext nem segredo versionado.
+- Atualização limitada a status, quantidade de tentativas e timestamp. Snapshots, ciphertext, nonce, tag e versão de criptografia permanecem imutáveis após a criação.
+- Testes de reidratação, DI, bootstrap, schema, integridade, roundtrip, ausência de plaintext, adulteração criptográfica, concorrência e imutabilidade dos snapshots.
+
+### Decisões
+
+- Somente a violação de `uq_pagamentos_pix_cashback_id` é convertida para `PagamentoPixJaExisteException`; FKs e demais constraints permanecem erros reais do MySQL.
+- `PagamentoPix.Concluido` persistido não atualiza automaticamente o Cashback. API, provider, Efí, envio Pix real e confirmação financeira continuam fora do escopo.
+
 ## 2026-08-25 — Domain e Application de PagamentoPix
 
 ### Adicionado
@@ -12,7 +44,7 @@
 ### Decisões
 
 - `PagamentoPix` não paga nem marca Cashback como `Pago`; a confirmação real futura deverá atualizar ambos de modo confiável.
-- A garantia definitiva contra concorrência está adiada para a Infrastructure por `UNIQUE(cashback_id)`. Não foram criadas Infrastructure, migration, API, provider ou integração Efí.
+- A garantia definitiva contra concorrência é aplicada pela Infrastructure por `UNIQUE(cashback_id)`. API, provider e integração Efí continuam fora do escopo.
 
 ## 2026-08-25 — Infrastructure MySQL Segura de Dados Pix
 
