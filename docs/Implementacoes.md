@@ -1,5 +1,29 @@
 # Implementações
 
+## API Administrativa de PagamentoPix
+
+**Data:** 2026-08-26
+
+### Implementado
+
+- `PagamentosPixController` em `api/pagamentos-pix`, integralmente protegido pela policy `Administrador`.
+- Criação exclusiva por `POST /api/pagamentos-pix/por-cashback/{cashbackId}`, sem corpo financeiro: o caso de uso deriva beneficiário, valor e Dados Pix a partir do cashback.
+- Consultas administrativas por ID, cashback e beneficiário; a criação responde `201 Created` com `Location` para `GET /api/pagamentos-pix/{id}`.
+- Cancelamento por `PATCH /api/pagamentos-pix/{id}/cancelar`, reutilizando a transição já definida no Domain. `IPagamentoPixService.CancelarAsync` apenas orquestra a entidade e a persistência, sem criar regra financeira nova.
+- `PagamentoPixResponseDto` permanece seguro: não expõe `ChavePix`, ciphertext, nonce, tag, versão criptográfica ou qualquer segredo.
+- `PagamentoPixNaoEncontradoException` é mapeada para `404`; regras de domínio, incluindo duplicidade, Dados Pix ausentes e transições inválidas, permanecem em `422` pelo handler global.
+- OpenAPI documenta todas as operações protegidas por Bearer e a API não expõe rotas de processamento, envio, pagamento, confirmação, retentativa ou webhook.
+
+### Testes
+
+- Cobertura unitária de controller e Application para criação, consultas, cancelamento, `CancellationToken` e ausência de dados sensíveis no DTO.
+- Cobertura HTTP real com `WebApplicationFactory` para `201 Created`, `Location`, `200`, `404`, `422`, `401`, `403`, acesso administrativo e OpenAPI protegido.
+
+### Pendente
+
+- Provider financeiro, Efí, envio Pix real, webhook, confirmação financeira e transição coordenada para `Cashback.Pago`.
+- Concorrência de processamento é requisito bloqueante antes da integração com provider financeiro; nenhuma solução foi escolhida nesta etapa.
+
 ## Infrastructure — Persistência MySQL Segura de PagamentoPix
 
 **Data:** 2026-08-25

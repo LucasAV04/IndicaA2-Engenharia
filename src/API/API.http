@@ -136,3 +136,31 @@ Authorization: Bearer {{AccessToken}}
 
 PATCH {{API_HostAddress}}/api/vistorias/33333333-3333-3333-3333-333333333333/cancelar
 Authorization: Bearer {{AccessToken}}
+
+###
+
+POST {{API_HostAddress}}/api/pagamentos-pix/por-cashback/44444444-4444-4444-4444-444444444444
+Authorization: Bearer {{AccessToken}}
+
+###
+
+GET {{API_HostAddress}}/api/pagamentos-pix/55555555-5555-5555-5555-555555555555
+Accept: application/json
+Authorization: Bearer {{AccessToken}}
+
+###
+
+GET {{API_HostAddress}}/api/pagamentos-pix/por-cashback/44444444-4444-4444-4444-444444444444
+Accept: application/json
+Authorization: Bearer {{AccessToken}}
+
+###
+
+GET {{API_HostAddress}}/api/pagamentos-pix/por-beneficiario/22222222-2222-2222-2222-222222222222
+Accept: application/json
+Authorization: Bearer {{AccessToken}}
+
+###
+
+PATCH {{API_HostAddress}}/api/pagamentos-pix/55555555-5555-5555-5555-555555555555/cancelar
+Authorization: Bearer {{AccessToken}}

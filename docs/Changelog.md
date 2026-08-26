@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-26 — API Administrativa de PagamentoPix
+
+### Adicionado
+
+- `PagamentosPixController` protegido pela policy `Administrador`, com criação exclusivamente por `CashbackId`, consultas por ID/cashback/beneficiário e cancelamento da ordem.
+- Registro de `IPagamentoPixService` no composition root e exposição controlada de `CancelarAsync`, reutilizando a transição de domínio existente.
+- Resposta `201 Created` com `Location` para a consulta por ID, além de mapeamento `404` para `PagamentoPixNaoEncontradoException`.
+- Cobertura unitária e HTTP real para contrato administrativo, Bearer, `401`, `403`, `404`, `422`, ausência de Chave Pix e documentação OpenAPI das rotas protegidas.
+
+### Decisões
+
+- A API não aceita valor, beneficiário, chave Pix, tipo de chave, status ou tentativas do cliente; todos os snapshots são derivados pelo caso de uso já existente.
+- Não foram expostos endpoints de processamento, envio, pagamento, confirmação, retentativa ou webhook. Criar, cancelar ou consultar uma ordem não altera automaticamente o Cashback para `Pago`.
+- Concorrência de processamento segue como requisito bloqueante antes da integração com provider financeiro. Efí e Pix real continuam fora do escopo.
+
 ## 2026-08-26 — Autenticação contextual do snapshot de PagamentoPix
 
 ### Corrigido
