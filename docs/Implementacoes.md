@@ -11,6 +11,7 @@
 - `PagamentoPix.Reidratar`, que preserva integralmente identificadores, snapshots, estado, tentativas e timestamps sem executar transições, recalcular valores ou normalizar novamente a chave Pix.
 - `PagamentoPixMySqlRepository`, com SQL parametrizado, propagação de `CancellationToken`, consultas por ID, cashback e beneficiário; a materialização descriptografa a chave e reidrata a entidade de forma controlada.
 - O snapshot de `ChavePix` é protegido em repouso por `IDadosPixProtector`/`AesGcmDadosPixProtector`, reutilizando AES-256-GCM com chave externa de 32 bytes, nonce de 12 bytes, tag de 16 bytes e `encryption_version`. Não foi criado algoritmo ou segredo novo.
+- O snapshot criptografado de PagamentoPix é autenticado também por AAD contextual `PagamentoPix:v1`, composto por `Id`, `CashbackId`, `UsuarioBeneficiarioId`, `Valor` e `TipoChavePix`, serializados deterministicamente. Isso impede a troca íntegra de ciphertext, nonce e tag entre ordens distintas.
 - Após a inserção, snapshots e material criptográfico são imutáveis. `AtualizarAsync` altera somente `status`, `quantidade_tentativas` e `updated_at`; não recria ciphertext, nonce ou tag.
 - Somente a violação da constraint `uq_pagamentos_pix_cashback_id` é traduzida para `PagamentoPixJaExisteException`; demais erros de integridade, inclusive FKs e outras duplicidades, são propagados pelo MySQL.
 - Registro scoped de `IPagamentoPixRepository` em `AddInfrastructure`.
@@ -18,11 +19,12 @@
 ### Testes
 
 - Cobertura de reidratação e das combinações válidas ou inválidas entre status e tentativas.
-- Cobertura de DI, bootstrap condicional do schema, migration, colunas, `UNIQUE`, FKs restritivas, ausência de cascade, snapshots imutáveis, roundtrip criptografado, ausência de plaintext, adulteração de ciphertext/nonce/tag e tradução específica de duplicidade.
+- Cobertura de DI, bootstrap condicional do schema, migration, colunas, `UNIQUE`, FKs restritivas, ausência de cascade, snapshots imutáveis, roundtrip criptografado, ausência de plaintext, adulteração de ciphertext/nonce/tag, troca de material entre ordens, alteração de snapshots autenticados e tradução específica de duplicidade.
 
 ### Pendente
 
 - API de PagamentoPix, provider, envio Pix real, confirmação financeira, atualização de Cashback para `Pago`, Efí, webhook, OAuth, mTLS, rotação criptográfica e auditoria detalhada de tentativas.
+- Antes do envio Pix real, será necessário definir concorrência otimista ou mecanismo equivalente para impedir dois workers de processarem a mesma ordem simultaneamente. Nenhuma estratégia foi escolhida nesta etapa.
 
 ## PagamentoPix — Domain e Application
 

@@ -220,6 +220,48 @@ public sealed class PagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegration
         return ValidarMaterialCriptograficoAdulteradoAsync("chave_pix_tag");
     }
 
+    [MySqlIntegrationFact]
+    public async Task ObterPorIdAsync_QuandoMaterialDeOutraOrdemForCopiadoDeveFalharNaAutenticacao()
+    {
+        await fixture.LimparDadosAsync();
+        var (repository, pagamentoA) = await CriarPagamentoPixAsync("ordem-a@exemplo.com");
+        var (_, pagamentoB) = await CriarPagamentoPixAsync("ordem-b@exemplo.com");
+        await repository.AdicionarAsync(pagamentoA, CancellationToken.None);
+        await repository.AdicionarAsync(pagamentoB, CancellationToken.None);
+        var materialB = await ObterRegistroPersistidoAsync(pagamentoB.Id);
+
+        await AtualizarMaterialCriptograficoAsync(pagamentoA.Id, materialB);
+
+        var exception = await Assert.ThrowsAsync<CryptographicException>(() =>
+            repository.ObterPorIdAsync(pagamentoA.Id, CancellationToken.None));
+        Assert.DoesNotContain(pagamentoA.ChavePix, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(pagamentoB.ChavePix, exception.Message, StringComparison.Ordinal);
+    }
+
+    [MySqlIntegrationFact]
+    public Task ObterPorIdAsync_QuandoCashbackIdAutenticadoForAlteradoDeveFalharNaAutenticacao()
+    {
+        return ValidarAlteracaoDeContextoAsync("cashback_id");
+    }
+
+    [MySqlIntegrationFact]
+    public Task ObterPorIdAsync_QuandoUsuarioBeneficiarioAutenticadoForAlteradoDeveFalharNaAutenticacao()
+    {
+        return ValidarAlteracaoDeContextoAsync("usuario_beneficiario_id");
+    }
+
+    [MySqlIntegrationFact]
+    public Task ObterPorIdAsync_QuandoValorAutenticadoForAlteradoDeveFalharNaAutenticacao()
+    {
+        return ValidarAlteracaoDeContextoAsync("valor");
+    }
+
+    [MySqlIntegrationFact]
+    public Task ObterPorIdAsync_QuandoTipoChavePixAutenticadoForAlteradoDeveFalharNaAutenticacao()
+    {
+        return ValidarAlteracaoDeContextoAsync("tipo_chave_pix");
+    }
+
     private async Task ValidarMaterialCriptograficoAdulteradoAsync(string coluna)
     {
         await fixture.LimparDadosAsync();
@@ -250,7 +292,77 @@ public sealed class PagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegration
         Assert.DoesNotContain(pagamentoPix.ChavePix, exception.Message, StringComparison.Ordinal);
     }
 
-    private async Task<(PagamentoPixMySqlRepository Repository, PagamentoPix PagamentoPix)> CriarPagamentoPixAsync()
+    private async Task ValidarAlteracaoDeContextoAsync(string coluna)
+    {
+        await fixture.LimparDadosAsync();
+        var (repository, pagamentoPix) = await CriarPagamentoPixAsync();
+        var (_, pagamentoAlternativo) = await CriarPagamentoPixAsync();
+        await repository.AdicionarAsync(pagamentoPix, CancellationToken.None);
+
+        await using (var connection = fixture.ConnectionFactory.Create())
+        {
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand(CriarSqlAlteracaoDeContexto(coluna), connection);
+            command.Parameters.Add("@id", MySqlDbType.VarChar).Value = pagamentoPix.Id.ToString();
+
+            switch (coluna)
+            {
+                case "cashback_id":
+                    command.Parameters.Add("@valor", MySqlDbType.VarChar).Value = pagamentoAlternativo.CashbackId.ToString();
+                    break;
+                case "usuario_beneficiario_id":
+                    command.Parameters.Add("@valor", MySqlDbType.VarChar).Value = pagamentoAlternativo.UsuarioBeneficiarioId.ToString();
+                    break;
+                case "valor":
+                    command.Parameters.Add("@valor", MySqlDbType.Decimal).Value = pagamentoPix.Valor + 1m;
+                    break;
+                case "tipo_chave_pix":
+                    command.Parameters.Add("@valor", MySqlDbType.Int32).Value = (int)TipoChavePix.Cpf;
+                    break;
+            }
+
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var exception = await Assert.ThrowsAsync<CryptographicException>(() =>
+            repository.ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None));
+        Assert.DoesNotContain(pagamentoPix.ChavePix, exception.Message, StringComparison.Ordinal);
+    }
+
+    private static string CriarSqlAlteracaoDeContexto(string coluna) => coluna switch
+    {
+        "cashback_id" => "UPDATE pagamentos_pix SET cashback_id = @valor WHERE id = @id;",
+        "usuario_beneficiario_id" => "UPDATE pagamentos_pix SET usuario_beneficiario_id = @valor WHERE id = @id;",
+        "valor" => "UPDATE pagamentos_pix SET valor = @valor WHERE id = @id;",
+        "tipo_chave_pix" => "UPDATE pagamentos_pix SET tipo_chave_pix = @valor WHERE id = @id;",
+        _ => throw new ArgumentOutOfRangeException(nameof(coluna))
+    };
+
+    private async Task AtualizarMaterialCriptograficoAsync(Guid id, RegistroPersistido material)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(
+            """
+            UPDATE pagamentos_pix
+            SET
+                chave_pix_ciphertext = @ciphertext,
+                chave_pix_nonce = @nonce,
+                chave_pix_tag = @tag,
+                encryption_version = @encryptionVersion
+            WHERE id = @id;
+            """,
+            connection);
+        command.Parameters.Add("@ciphertext", MySqlDbType.Blob).Value = material.Ciphertext;
+        command.Parameters.Add("@nonce", MySqlDbType.VarBinary).Value = material.Nonce;
+        command.Parameters.Add("@tag", MySqlDbType.VarBinary).Value = material.Tag;
+        command.Parameters.Add("@encryptionVersion", MySqlDbType.Int32).Value = material.EncryptionVersion;
+        command.Parameters.Add("@id", MySqlDbType.VarChar).Value = id.ToString();
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<(PagamentoPixMySqlRepository Repository, PagamentoPix PagamentoPix)> CriarPagamentoPixAsync(
+        string chavePix = "snapshot.pagamento@exemplo.com")
     {
         var usuarioRepository = new UsuarioMySqlRepository(fixture.ConnectionFactory);
         var vistoriaRepository = new VistoriaMySqlRepository(fixture.ConnectionFactory);
@@ -291,7 +403,7 @@ public sealed class PagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegration
                 indicador.Id,
                 cashback.Valor,
                 TipoChavePix.Email,
-                "snapshot.pagamento@exemplo.com"));
+                chavePix));
     }
 
     private PagamentoPixMySqlRepository CriarRepository() =>

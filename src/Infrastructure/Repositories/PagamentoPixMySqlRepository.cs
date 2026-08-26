@@ -96,7 +96,13 @@ public sealed class PagamentoPixMySqlRepository : IPagamentoPixRepository
                 @status, @quantidadeTentativas, @createdAt, @updatedAt);
             """;
 
-        var materialProtegido = _dadosPixProtector.Proteger(pagamentoPix.ChavePix);
+        var associatedData = PagamentoPixAssociatedData.Criar(
+            pagamentoPix.Id,
+            pagamentoPix.CashbackId,
+            pagamentoPix.UsuarioBeneficiarioId,
+            pagamentoPix.Valor,
+            pagamentoPix.TipoChavePix);
+        var materialProtegido = _dadosPixProtector.Proteger(pagamentoPix.ChavePix, associatedData);
 
         try
         {
@@ -191,6 +197,17 @@ public sealed class PagamentoPixMySqlRepository : IPagamentoPixRepository
 
     private PagamentoPix Materializar(MySqlDataReader reader)
     {
+        var id = reader.ObterGuid("id");
+        var cashbackId = reader.ObterGuid("cashback_id");
+        var usuarioBeneficiarioId = reader.ObterGuid("usuario_beneficiario_id");
+        var valor = reader.GetDecimal(reader.GetOrdinal("valor"));
+        var tipoChavePix = (TipoChavePix)reader.GetInt32(reader.GetOrdinal("tipo_chave_pix"));
+        var associatedData = PagamentoPixAssociatedData.Criar(
+            id,
+            cashbackId,
+            usuarioBeneficiarioId,
+            valor,
+            tipoChavePix);
         var materialProtegido = new DadosPixProtegido(
             ObterBytes(reader, "chave_pix_ciphertext"),
             ObterBytes(reader, "chave_pix_nonce"),
@@ -200,7 +217,7 @@ public sealed class PagamentoPixMySqlRepository : IPagamentoPixRepository
         string chavePix;
         try
         {
-            chavePix = _dadosPixProtector.Desproteger(materialProtegido);
+            chavePix = _dadosPixProtector.Desproteger(materialProtegido, associatedData);
         }
         catch (CryptographicException exception)
         {
@@ -210,11 +227,11 @@ public sealed class PagamentoPixMySqlRepository : IPagamentoPixRepository
         }
 
         return PagamentoPix.Reidratar(
-            reader.ObterGuid("id"),
-            reader.ObterGuid("cashback_id"),
-            reader.ObterGuid("usuario_beneficiario_id"),
-            reader.GetDecimal(reader.GetOrdinal("valor")),
-            (TipoChavePix)reader.GetInt32(reader.GetOrdinal("tipo_chave_pix")),
+            id,
+            cashbackId,
+            usuarioBeneficiarioId,
+            valor,
+            tipoChavePix,
             chavePix,
             (StatusPagamentoPix)reader.GetInt32(reader.GetOrdinal("status")),
             reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")),
