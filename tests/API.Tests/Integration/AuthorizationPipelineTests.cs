@@ -20,8 +20,8 @@ namespace API.Tests.Integration;
 
 public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFactory<Program>>
 {
-    private const string Issuer = "IndicA2.Authorization.Tests";
-    private const string Audience = "IndicA2.Authorization.Tests.Client";
+    private const string Issuer = "IndicA2.Api.Tests";
+    private const string Audience = "IndicA2.Api.Tests.Client";
     private const string Key = "chave-ficticia-de-autorizacao-com-mais-de-trinta-e-dois-bytes";
     private readonly WebApplicationFactory<Program> _factory;
 

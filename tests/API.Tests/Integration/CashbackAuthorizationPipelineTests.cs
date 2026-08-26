@@ -18,8 +18,8 @@ namespace API.Tests.Integration;
 
 public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplicationFactory<Program>>
 {
-    private const string Issuer = "IndicA2.Authorization.Tests";
-    private const string Audience = "IndicA2.Authorization.Tests.Client";
+    private const string Issuer = "IndicA2.Api.Tests";
+    private const string Audience = "IndicA2.Api.Tests.Client";
     private const string Key = "chave-ficticia-de-autorizacao-com-mais-de-trinta-e-dois-bytes";
     private readonly WebApplicationFactory<Program> _factory;
 
@@ -92,7 +92,7 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplic
     }
 
     [Fact]
-    public async Task OpenApi_DeveDocumentarEndpointsDeCashbackSemFluxoDePagamento()
+    public async Task OpenApi_DeveDocumentarEndpointsDeCashbackSemFluxoDePagamentoReal()
     {
         using var client = _factory.CreateClient();
         using var document = JsonDocument.Parse(await client.GetStringAsync("/openapi/v1.json"));
@@ -105,7 +105,12 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplic
         Assert.True(paths.TryGetProperty("/api/cashbacks/{id}/aprovar", out _));
         Assert.True(paths.TryGetProperty("/api/cashbacks/{id}/cancelar", out _));
         Assert.False(paths.TryGetProperty("/api/cashbacks/{id}/pagar", out _));
-        Assert.DoesNotContain(paths.EnumerateObject(), path => path.Name.Contains("pix", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(paths.EnumerateObject(), path =>
+            path.Name.Contains("/processar", StringComparison.OrdinalIgnoreCase) ||
+            path.Name.Contains("/enviar", StringComparison.OrdinalIgnoreCase) ||
+            path.Name.Contains("/pagar", StringComparison.OrdinalIgnoreCase) ||
+            path.Name.Contains("/confirmar", StringComparison.OrdinalIgnoreCase) ||
+            path.Name.Contains("/reprocessar", StringComparison.OrdinalIgnoreCase));
     }
 
     private WebApplicationFactory<Program> CriarFactory(ICashbackService service) =>

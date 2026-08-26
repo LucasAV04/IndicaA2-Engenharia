@@ -236,6 +236,56 @@ public sealed class PagamentoPixServiceTests
         Assert.Equal(typeof(CancellationToken), parametros[1].ParameterType);
     }
 
+    [Fact]
+    public async Task CancelarAsync_DeveAplicarTransicaoDoDominioEPersistirComCancellationToken()
+    {
+        var pagamentoPix = PagamentoPix.Criar(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            100m,
+            TipoChavePix.Email,
+            "indicador@exemplo.com");
+        var cancellationToken = new CancellationTokenSource().Token;
+        var pagamentoPixRepository = new Mock<IPagamentoPixRepository>();
+        pagamentoPixRepository
+            .Setup(repository => repository.ObterPorIdAsync(pagamentoPix.Id, cancellationToken))
+            .ReturnsAsync(pagamentoPix);
+        pagamentoPixRepository
+            .Setup(repository => repository.AtualizarAsync(pagamentoPix, cancellationToken))
+            .Returns(Task.CompletedTask);
+        var service = CriarService(
+            new Mock<ICashbackRepository>(),
+            new Mock<IDadosPixRepository>(),
+            pagamentoPixRepository);
+
+        await service.CancelarAsync(pagamentoPix.Id, cancellationToken);
+
+        Assert.Equal(StatusPagamentoPix.Cancelado, pagamentoPix.Status);
+        pagamentoPixRepository.Verify(
+            repository => repository.AtualizarAsync(pagamentoPix, cancellationToken),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task CancelarAsync_QuandoPagamentoNaoExistir_DeveLancarExcecaoEspecifica()
+    {
+        var pagamentoPixRepository = new Mock<IPagamentoPixRepository>();
+        pagamentoPixRepository
+            .Setup(repository => repository.ObterPorIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PagamentoPix?)null);
+
+        await Assert.ThrowsAsync<PagamentoPixNaoEncontradoException>(() =>
+            CriarService(
+                    new Mock<ICashbackRepository>(),
+                    new Mock<IDadosPixRepository>(),
+                    pagamentoPixRepository)
+                .CancelarAsync(Guid.NewGuid()));
+
+        pagamentoPixRepository.Verify(
+            repository => repository.AtualizarAsync(It.IsAny<PagamentoPix>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static PagamentoPixService CriarService(
         Mock<ICashbackRepository> cashbackRepository,
         Mock<IDadosPixRepository> dadosPixRepository,
