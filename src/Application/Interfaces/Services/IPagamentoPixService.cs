@@ -19,4 +19,8 @@ public interface IPagamentoPixService
     Task<IReadOnlyCollection<PagamentoPixResponseDto>> ObterPorUsuarioBeneficiarioIdAsync(
         Guid usuarioBeneficiarioId,
         CancellationToken cancellationToken = default);
+
+    Task CancelarAsync(
+        Guid id,
+        CancellationToken cancellationToken = default);
 }

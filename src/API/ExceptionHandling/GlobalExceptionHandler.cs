@@ -23,6 +23,10 @@ public sealed class GlobalExceptionHandler(
                 StatusCodes.Status404NotFound,
                 "Pagamento da vistoria não encontrado",
                 exception.Message),
+            PagamentoPixNaoEncontradoException => (
+                StatusCodes.Status404NotFound,
+                "Pagamento Pix não encontrado",
+                exception.Message),
             CodigoIndicacaoNaoEncontradoException => (
                 StatusCodes.Status404NotFound,
                 "Código de indicação não encontrado",

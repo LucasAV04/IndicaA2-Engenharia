@@ -70,6 +70,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IIndicacaoService, IndicacaoService>();
 builder.Services.AddScoped<IVistoriaService, VistoriaService>();
 builder.Services.AddScoped<ICashbackService, CashbackService>();
+builder.Services.AddScoped<IPagamentoPixService, PagamentoPixService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 var app = builder.Build();

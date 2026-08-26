@@ -89,6 +89,15 @@ public sealed class PagamentoPixService : IPagamentoPixService
         return pagamentoPix.ToResponseDto();
     }
 
+    public async Task CancelarAsync(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var pagamentoPix = await ObterPagamentoPixOuLancarExceptionAsync(id, cancellationToken);
+        pagamentoPix.Cancelar();
+        await _pagamentoPixRepository.AtualizarAsync(pagamentoPix, cancellationToken);
+    }
+
     #endregion
 
     #region Métodos Privados
