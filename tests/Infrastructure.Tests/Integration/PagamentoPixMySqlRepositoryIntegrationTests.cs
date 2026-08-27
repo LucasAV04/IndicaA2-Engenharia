@@ -85,6 +85,164 @@ public sealed class PagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegration
     }
 
     [MySqlIntegrationFact]
+    public async Task TentarIniciarProcessamentoAsync_QuandoPendente_DeveAdquirirAtomicaEPreservarSnapshots()
+    {
+        await fixture.LimparDadosAsync();
+        var (repository, pagamentoPix) = await CriarPagamentoPixAsync();
+        await repository.AdicionarAsync(pagamentoPix, CancellationToken.None);
+        var antes = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+        var statusCashbackAntes = await ObterStatusCashbackAsync(pagamentoPix.CashbackId);
+
+        var adquirido = await repository.TentarIniciarProcessamentoAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var depois = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+        var reidratado = await repository.ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None);
+        Assert.True(adquirido);
+        Assert.Equal((int)StatusPagamentoPix.Processando, depois.Status);
+        Assert.Equal(1, depois.QuantidadeTentativas);
+        Assert.True(depois.UpdatedAt >= antes.UpdatedAt);
+        AssertSnapshotsEProtecaoPreservados(antes, depois);
+        Assert.Equal(statusCashbackAntes, await ObterStatusCashbackAsync(pagamentoPix.CashbackId));
+        Assert.NotNull(reidratado);
+        Assert.Equal(StatusPagamentoPix.Processando, reidratado!.Status);
+        Assert.Equal(1, reidratado.QuantidadeTentativas);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task TentarIniciarProcessamentoAsync_QuandoFalhou_DeveAdquirirQuintaTentativaSemMarcarFalhaDefinitiva()
+    {
+        await fixture.LimparDadosAsync();
+        var (repository, pagamentoPix) = await CriarPagamentoPixAsync();
+        var falhouComQuatroTentativas = PagamentoPix.Reidratar(
+            pagamentoPix.Id,
+            pagamentoPix.CashbackId,
+            pagamentoPix.UsuarioBeneficiarioId,
+            pagamentoPix.Valor,
+            pagamentoPix.TipoChavePix,
+            pagamentoPix.ChavePix,
+            StatusPagamentoPix.Falhou,
+            4,
+            pagamentoPix.CreatedAt,
+            pagamentoPix.UpdatedAt);
+        await repository.AdicionarAsync(falhouComQuatroTentativas, CancellationToken.None);
+        var antes = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+
+        var adquirido = await repository.TentarIniciarProcessamentoAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var depois = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+        Assert.True(adquirido);
+        Assert.Equal((int)StatusPagamentoPix.Processando, depois.Status);
+        Assert.Equal(PagamentoPix.TentativasMaximas, depois.QuantidadeTentativas);
+        AssertSnapshotsEProtecaoPreservados(antes, depois);
+    }
+
+    [MySqlIntegrationFact]
+    public Task TentarIniciarProcessamentoAsync_QuandoProcessando_DeveRecusarSemAlterarRegistro() =>
+        ValidarEstadoNaoElegivelAsync(StatusPagamentoPix.Processando, 1);
+
+    [MySqlIntegrationFact]
+    public Task TentarIniciarProcessamentoAsync_QuandoConcluido_DeveRecusarSemAlterarRegistro() =>
+        ValidarEstadoNaoElegivelAsync(StatusPagamentoPix.Concluido, 1);
+
+    [MySqlIntegrationFact]
+    public Task TentarIniciarProcessamentoAsync_QuandoFalhaDefinitiva_DeveRecusarSemAlterarRegistro() =>
+        ValidarEstadoNaoElegivelAsync(StatusPagamentoPix.FalhaDefinitiva, PagamentoPix.TentativasMaximas);
+
+    [MySqlIntegrationFact]
+    public Task TentarIniciarProcessamentoAsync_QuandoCancelado_DeveRecusarSemAlterarRegistro() =>
+        ValidarEstadoNaoElegivelAsync(StatusPagamentoPix.Cancelado, 0);
+
+    [MySqlIntegrationFact]
+    public Task TentarIniciarProcessamentoAsync_QuandoLimiteDeTentativasForAtingido_DeveRecusarSextaTentativa() =>
+        ValidarEstadoNaoElegivelAsync(StatusPagamentoPix.Processando, PagamentoPix.TentativasMaximas);
+
+    private async Task ValidarEstadoNaoElegivelAsync(
+        StatusPagamentoPix status,
+        int quantidadeTentativas)
+    {
+        await fixture.LimparDadosAsync();
+        var (repository, pagamentoPix) = await CriarPagamentoPixAsync();
+        var estadoNaoElegivel = PagamentoPix.Reidratar(
+            pagamentoPix.Id,
+            pagamentoPix.CashbackId,
+            pagamentoPix.UsuarioBeneficiarioId,
+            pagamentoPix.Valor,
+            pagamentoPix.TipoChavePix,
+            pagamentoPix.ChavePix,
+            status,
+            quantidadeTentativas,
+            pagamentoPix.CreatedAt,
+            pagamentoPix.UpdatedAt);
+        await repository.AdicionarAsync(estadoNaoElegivel, CancellationToken.None);
+        var antes = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+
+        var adquirido = await repository.TentarIniciarProcessamentoAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var depois = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+        Assert.False(adquirido);
+        Assert.Equal(antes.Status, depois.Status);
+        Assert.Equal(antes.QuantidadeTentativas, depois.QuantidadeTentativas);
+        Assert.Equal(antes.UpdatedAt, depois.UpdatedAt, TimeSpan.FromMilliseconds(1));
+        AssertSnapshotsEProtecaoPreservados(antes, depois);
+    }
+
+    [MySqlIntegrationFact]
+    public Task TentarIniciarProcessamentoAsync_QuandoDoisExecutoresConcorrerem_DevePermitirSomenteUmClaim() =>
+        ValidarConcorrenciaDeClaimAsync(2);
+
+    [MySqlIntegrationFact]
+    public Task TentarIniciarProcessamentoAsync_QuandoCincoExecutoresConcorrerem_DevePermitirSomenteUmClaim() =>
+        ValidarConcorrenciaDeClaimAsync(5);
+
+    [MySqlIntegrationFact]
+    public Task TentarIniciarProcessamentoAsync_QuandoDezExecutoresConcorrerem_DevePermitirSomenteUmClaim() =>
+        ValidarConcorrenciaDeClaimAsync(10);
+
+    [MySqlIntegrationFact]
+    public async Task TentarIniciarProcessamentoAsync_QuandoCancellationForSolicitado_NaoDeveAlterarOrdem()
+    {
+        await fixture.LimparDadosAsync();
+        var (repository, pagamentoPix) = await CriarPagamentoPixAsync();
+        await repository.AdicionarAsync(pagamentoPix, CancellationToken.None);
+        using var cancellationTokenSource = new CancellationTokenSource();
+        cancellationTokenSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            repository.TentarIniciarProcessamentoAsync(pagamentoPix.Id, cancellationTokenSource.Token));
+
+        var depois = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+        Assert.Equal((int)StatusPagamentoPix.Pendente, depois.Status);
+        Assert.Equal(0, depois.QuantidadeTentativas);
+    }
+
+    private async Task ValidarConcorrenciaDeClaimAsync(int quantidadeExecutores)
+    {
+        await fixture.LimparDadosAsync();
+        var (repository, pagamentoPix) = await CriarPagamentoPixAsync();
+        await repository.AdicionarAsync(pagamentoPix, CancellationToken.None);
+        var antes = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+        var inicio = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var claims = Enumerable.Range(0, quantidadeExecutores)
+            .Select(async _ =>
+            {
+                await inicio.Task;
+                return await CriarRepository().TentarIniciarProcessamentoAsync(
+                    pagamentoPix.Id,
+                    CancellationToken.None);
+            })
+            .ToArray();
+
+        inicio.SetResult();
+        var resultados = await Task.WhenAll(claims);
+
+        var depois = await ObterRegistroPersistidoAsync(pagamentoPix.Id);
+        Assert.Equal(1, resultados.Count(resultado => resultado));
+        Assert.Equal((int)StatusPagamentoPix.Processando, depois.Status);
+        Assert.Equal(1, depois.QuantidadeTentativas);
+        AssertSnapshotsEProtecaoPreservados(antes, depois);
+    }
+
+    [MySqlIntegrationFact]
     public async Task AdicionarEObterPorIdAsync_DevePreservarTodosOsEstadosValidosETentativas()
     {
         await fixture.LimparDadosAsync();
@@ -359,6 +517,33 @@ public sealed class PagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegration
         command.Parameters.Add("@encryptionVersion", MySqlDbType.Int32).Value = material.EncryptionVersion;
         command.Parameters.Add("@id", MySqlDbType.VarChar).Value = id.ToString();
         await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task<int> ObterStatusCashbackAsync(Guid cashbackId)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(
+            "SELECT status FROM cashbacks WHERE id = @id;",
+            connection);
+        command.Parameters.Add("@id", MySqlDbType.VarChar).Value = cashbackId.ToString();
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static void AssertSnapshotsEProtecaoPreservados(
+        RegistroPersistido antes,
+        RegistroPersistido depois)
+    {
+        Assert.Equal(antes.CashbackId, depois.CashbackId);
+        Assert.Equal(antes.UsuarioBeneficiarioId, depois.UsuarioBeneficiarioId);
+        Assert.Equal(antes.Valor, depois.Valor);
+        Assert.Equal(antes.TipoChavePix, depois.TipoChavePix);
+        Assert.Equal(antes.Ciphertext, depois.Ciphertext);
+        Assert.Equal(antes.Nonce, depois.Nonce);
+        Assert.Equal(antes.Tag, depois.Tag);
+        Assert.Equal(antes.EncryptionVersion, depois.EncryptionVersion);
+        Assert.Equal(antes.CreatedAt, depois.CreatedAt, TimeSpan.FromMilliseconds(1));
     }
 
     private async Task<(PagamentoPixMySqlRepository Repository, PagamentoPix PagamentoPix)> CriarPagamentoPixAsync(
