@@ -7,6 +7,9 @@ public sealed class PagamentoPix : BaseEntity
 {
     public const int TentativasMaximas = 5;
 
+    public static IReadOnlyList<StatusPagamentoPix> StatusElegiveisParaIniciarTentativa =>
+        [StatusPagamentoPix.Pendente, StatusPagamentoPix.Falhou];
+
     public Guid CashbackId { get; private set; }
 
     public Guid UsuarioBeneficiarioId { get; private set; }
@@ -111,7 +114,7 @@ public sealed class PagamentoPix : BaseEntity
     {
         if (QuantidadeTentativas >= TentativasMaximas)
             throw new LimiteTentativasPagamentoPixAtingidoException();
-        if (Status is not (StatusPagamentoPix.Pendente or StatusPagamentoPix.Falhou))
+        if (!StatusElegiveisParaIniciarTentativa.Contains(Status))
             throw CriarExcecaoTransicaoInvalida("iniciar uma tentativa");
 
         QuantidadeTentativas++;
