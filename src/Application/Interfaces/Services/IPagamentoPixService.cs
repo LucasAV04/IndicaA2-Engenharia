@@ -23,4 +23,8 @@ public interface IPagamentoPixService
     Task CancelarAsync(
         Guid id,
         CancellationToken cancellationToken = default);
+
+    Task<bool> TentarIniciarProcessamentoAsync(
+        Guid id,
+        CancellationToken cancellationToken = default);
 }
