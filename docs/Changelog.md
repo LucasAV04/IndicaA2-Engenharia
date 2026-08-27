@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-26 — Claim Atômico de Processamento de PagamentoPix
+
+### Adicionado
+
+- Aquisição atômica no MySQL para iniciar processamento da ordem, usando `UPDATE` condicional parametrizado e `affected rows` como resultado do claim.
+- Atualização indivisível para `Processando`, incremento da tentativa e `updated_at`; apenas `Pendente` e `Falhou` podem adquirir uma nova tentativa.
+- Contrato de Application que diferencia PagamentoPix inexistente de uma ordem existente que não adquiriu o claim.
+- Testes reais condicionais de concorrência com dois, cinco e dez executores independentes, além de estados, limite de cinco, snapshots, material criptográfico, Cashback e cancelamento.
+
+### Decisões
+
+- Perder o claim é comportamento esperado e retorna `false`; não há lock em memória como garantia financeira.
+- O claim não cria ordem, não altera `Cashback`, não recriptografa Chave Pix e não adiciona endpoint HTTP, schema ou migration.
+- Concorrência de processamento deixa de ser bloqueio para a futura integração financeira, mas provider, Efí, Pix real, webhook e confirmação de pagamento continuam pendentes.
+
 ## 2026-08-26 — API Administrativa de PagamentoPix
 
 ### Adicionado
