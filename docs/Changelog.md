@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-28 — Fronteira Provider-Agnostic de PagamentoPix
+
+### Adicionado
+
+- Contrato `IPixProvider` na Application para envio e consulta/reconciliação de Pix, sem implementação concreta.
+- Requests internos imutáveis com referência idempotente determinística por `PagamentoPix.Id`, no formato canônico `Guid.ToString("N")`.
+- Resultado provider-agnostic que separa confirmação, falha confirmada, pendência e indeterminação, sem transportar mensagem técnica ou dados Pix.
+- Testes de determinismo, segurança da chave Pix, semântica dos resultados e independência da Efí.
+
+### Decisões
+
+- `Pendente` e `Indeterminado` não são falhas e não permitem retentativa automática; ambos exigem consulta futura ao provider usando a mesma referência idempotente.
+- Timeout ou interrupção local não permite devolver uma ordem `Processando` para `Falhou` nem reenviar dinheiro sem reconciliação.
+- Esta etapa não altera `PagamentoPix`, `Cashback`, claim atômico, schema, migrations, API ou Infrastructure.
+
 ## 2026-08-26 — Claim Atômico de Processamento de PagamentoPix
 
 ### Adicionado

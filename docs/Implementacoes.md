@@ -1,5 +1,26 @@
 # Implementações
 
+## Fronteira do Provider Financeiro Pix
+
+**Data:** 2026-08-28
+
+### Implementado
+
+- Porta `IPixProvider` na Application, em `Application.Interfaces.Providers`, com contratos internos de envio e consulta para uma futura Infrastructure fornecer o adapter financeiro.
+- `PixEnvioRequest` recebe somente snapshots já resolvidos: `PagamentoPixId`, `Valor`, `TipoChavePix` e `ChavePix`. A `ReferenciaIdempotente` é derivada internamente como `PagamentoPixId.ToString("N")`; a mesma ordem preserva a mesma referência em qualquer tentativa ou reinicialização.
+- `PixConsultaRequest` reconcilia a mesma ordem pela mesma referência idempotente. Não há rotina, worker, endpoint ou alteração automática de estado nesta etapa.
+- `PixProviderResult` diferencia `Confirmado`, `FalhaConfirmada`, `Pendente` e `Indeterminado`. Os dois últimos exigem reconciliação e não representam falha confirmada nem autorizam retentativa automática. O contrato inicial expõe apenas identificador e código opcionais; não transporta mensagem técnica para evitar risco de vazamento acidental.
+- `PixEnvioRequest` não é DTO de API e sua representação textual omite a `ChavePix`. O resultado não expõe chave Pix, `EndToEndId` nem tipos específicos de provider.
+
+### Testes
+
+- Cobertura para referência estável de 32 caracteres hexadecimais, repetição, ordens distintas, independência de cultura, consulta pela mesma referência e ausência de chave Pix no `ToString` do request.
+- Cobertura da semântica dos quatro resultados e do contrato de envio/consulta com `CancellationToken`, sem referência à SDK Efí na Application.
+
+### Pendente
+
+- Adapter concreto na Infrastructure, Efí, OAuth, mTLS, certificado, HTTP, sandbox, Pix real, webhook, rotina de reconciliação, coordenação de `PagamentoPix.Concluido` com `Cashback.Pago` e auditoria de tentativas.
+
 ## Claim Atômico de Processamento de PagamentoPix
 
 **Data:** 2026-08-26
