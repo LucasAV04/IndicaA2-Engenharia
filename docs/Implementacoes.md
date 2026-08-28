@@ -1,5 +1,27 @@
 # Implementações
 
+## Claim Atômico de Processamento de PagamentoPix
+
+**Data:** 2026-08-26
+
+### Implementado
+
+- `IPagamentoPixRepository.TentarIniciarProcessamentoAsync` e a orquestração correspondente na Application, sem endpoint HTTP novo.
+- Claim atômico por `UPDATE` condicional e parametrizado no MySQL: somente uma linha elegível recebe `status = Processando`, incremento de `quantidade_tentativas` e novo `updated_at` na mesma operação.
+- `true` significa que uma linha foi afetada e o executor adquiriu a ordem; `false` significa que a ordem existente perdeu ou não pôde obter o claim, condição esperada de concorrência e não exceção.
+- Os estados elegíveis são centralizados no Domain e permanecem `Pendente` e `Falhou`; `Processando`, `Concluido`, `FalhaDefinitiva` e `Cancelado` não podem ser readquiridos.
+- O limite permanece cinco: a quinta tentativa pode ser adquirida e fica `Processando`; não há sexta tentativa e `FalhaDefinitiva` continua sendo definida apenas pela transição de falha do Domain.
+- O claim altera somente `status`, `quantidade_tentativas` e `updated_at`. Snapshots, material AES-GCM, AAD `PagamentoPix:v1`, `created_at` e Cashback não são modificados.
+
+### Testes
+
+- Cobertura de Application para pagamento inexistente, resultado de claim não adquirido e propagação de `CancellationToken`.
+- Integrações MySQL condicionais para estados elegíveis e recusados, quinta tentativa, limite máximo, dois/cinco/dez executores concorrentes, preservação de snapshots/material criptográfico, Cashback e cancelamento.
+
+### Pendente
+
+- Provider financeiro, Efí, Pix real, webhook, confirmação financeira e alteração coordenada de `PagamentoPix`/`Cashback` continuam fora do escopo.
+
 ## API Administrativa de PagamentoPix
 
 **Data:** 2026-08-26

@@ -144,6 +144,41 @@ public sealed class PagamentoPixMySqlRepository : IPagamentoPixRepository
         }, cancellationToken);
     }
 
+    public async Task<bool> TentarIniciarProcessamentoAsync(
+        Guid pagamentoPixId,
+        CancellationToken cancellationToken = default)
+    {
+        var statusElegiveis = PagamentoPix.StatusElegiveisParaIniciarTentativa;
+        var parametrosDeStatus = string.Join(
+            ", ",
+            statusElegiveis.Select((_, indice) => $"@statusElegivel{indice}"));
+        var sql = $"""
+            UPDATE pagamentos_pix
+            SET
+                status = @statusProcessando,
+                quantidade_tentativas = quantidade_tentativas + 1,
+                updated_at = @updatedAt
+            WHERE id = @id
+              AND status IN ({parametrosDeStatus})
+              AND quantidade_tentativas < @tentativasMaximas;
+            """;
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new MySqlCommand(sql, connection);
+        AdicionarGuid(command, "@id", pagamentoPixId);
+        command.Parameters.Add("@statusProcessando", MySqlDbType.Int32).Value = (int)StatusPagamentoPix.Processando;
+        command.Parameters.Add("@tentativasMaximas", MySqlDbType.Int32).Value = PagamentoPix.TentativasMaximas;
+        command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = DateTime.UtcNow;
+
+        foreach (var (status, indice) in statusElegiveis.Select((status, indice) => (status, indice)))
+        {
+            command.Parameters.Add($"@statusElegivel{indice}", MySqlDbType.Int32).Value = (int)status;
+        }
+
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
     private async Task<PagamentoPix?> ObterUnicoAsync(
         string sql,
         string nomeParametro,

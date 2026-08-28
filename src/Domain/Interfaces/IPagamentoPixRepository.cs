@@ -23,4 +23,8 @@ public interface IPagamentoPixRepository
     Task AtualizarAsync(
         PagamentoPix pagamentoPix,
         CancellationToken cancellationToken = default);
+
+    Task<bool> TentarIniciarProcessamentoAsync(
+        Guid pagamentoPixId,
+        CancellationToken cancellationToken = default);
 }

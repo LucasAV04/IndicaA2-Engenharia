@@ -286,6 +286,56 @@ public sealed class PagamentoPixServiceTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task TentarIniciarProcessamentoAsync_QuandoPagamentoExistir_DevePropagarResultadoETratamentoDeConcorrencia()
+    {
+        var pagamentoPix = PagamentoPix.Criar(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            100m,
+            TipoChavePix.Email,
+            "indicador@exemplo.com");
+        var cancellationToken = new CancellationTokenSource().Token;
+        var pagamentoPixRepository = new Mock<IPagamentoPixRepository>();
+        pagamentoPixRepository
+            .Setup(repository => repository.ObterPorIdAsync(pagamentoPix.Id, cancellationToken))
+            .ReturnsAsync(pagamentoPix);
+        pagamentoPixRepository
+            .Setup(repository => repository.TentarIniciarProcessamentoAsync(pagamentoPix.Id, cancellationToken))
+            .ReturnsAsync(false);
+        var service = CriarService(
+            new Mock<ICashbackRepository>(),
+            new Mock<IDadosPixRepository>(),
+            pagamentoPixRepository);
+
+        var adquirido = await service.TentarIniciarProcessamentoAsync(pagamentoPix.Id, cancellationToken);
+
+        Assert.False(adquirido);
+        pagamentoPixRepository.Verify(
+            repository => repository.TentarIniciarProcessamentoAsync(pagamentoPix.Id, cancellationToken),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task TentarIniciarProcessamentoAsync_QuandoPagamentoNaoExistir_NaoDeveTentarClaim()
+    {
+        var pagamentoPixRepository = new Mock<IPagamentoPixRepository>();
+        pagamentoPixRepository
+            .Setup(repository => repository.ObterPorIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PagamentoPix?)null);
+        var service = CriarService(
+            new Mock<ICashbackRepository>(),
+            new Mock<IDadosPixRepository>(),
+            pagamentoPixRepository);
+
+        await Assert.ThrowsAsync<PagamentoPixNaoEncontradoException>(() =>
+            service.TentarIniciarProcessamentoAsync(Guid.NewGuid()));
+
+        pagamentoPixRepository.Verify(
+            repository => repository.TentarIniciarProcessamentoAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static PagamentoPixService CriarService(
         Mock<ICashbackRepository> cashbackRepository,
         Mock<IDadosPixRepository> dadosPixRepository,
