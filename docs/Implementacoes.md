@@ -1,5 +1,23 @@
 # Implementações
 
+## Auditoria Persistente de Operações de PagamentoPix
+
+**Data:** 2026-09-02
+
+### Implementado
+
+- `OperacaoPagamentoPix` registra, antes de uma futura chamada externa, uma operação provider-agnostic de `Envio` ou `Consulta`, vinculada ao `PagamentoPix` e à sua `ReferenciaIdempotente` canônica (`PagamentoPixId.ToString("N")`).
+- Envios registram o número da tentativa já adquirida; consultas não criam nem incrementam tentativa financeira.
+- A auditoria é append-only: vínculo, tipo, referência, tentativa e início são imutáveis. Uma operação aberta pode ser finalizada uma única vez com `Confirmado`, `FalhaConfirmada`, `Pendente` ou `Indeterminado`, além de identificador e código opacos opcionais do provider.
+- A migration `010_create_operacoes_pagamento_pix.sql` cria `operacoes_pagamento_pix` com FK restritiva, índices para histórico cronológico e operações abertas, e unicidade de `PagamentoPixId + NumeroTentativaEnvio`. O `NULL` das consultas permite múltiplas reconciliações para a mesma ordem.
+- `OperacaoPagamentoPixMySqlRepository` usa SQL parametrizado, materialização UTC, consulta de operações abertas e finalização condicional por `finished_at IS NULL`. Apenas a primeira finalização vence; a segunda recebe `false` e não sobrescreve o histórico.
+- Nenhuma chave Pix, token, certificado, payload HTTP, credencial, stack trace ou URL de webhook é persistida nesse registro.
+
+### Pendente
+
+- Continua pendente a orquestração que chama `IPixProvider`, webhook próprio, reconciliação, recuperação de operações abertas, worker, retentativa, coordenação de `PagamentoPix`/`Cashback`, produção e observabilidade financeira.
+- A auditoria não altera o estado de `PagamentoPix` nem de `Cashback` e não é a fonte de verdade desses estados.
+
 ## Adapter Efí Pix — Sandbox/Homologação
 
 **Data:** 2026-08-31

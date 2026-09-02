@@ -31,6 +31,45 @@ public sealed class MySqlSchemaBootstrapIntegrationTests(MySqlIntegrationFixture
         Assert.Contains("cashbacks", tabelas);
         Assert.Contains("dados_pix", tabelas);
         Assert.Contains("pagamentos_pix", tabelas);
+        Assert.Contains("operacoes_pagamento_pix", tabelas);
+
+        var foreignKeysOperacoes = new List<string>();
+        var regrasExclusaoOperacoes = new List<string>();
+
+        {
+            await using var foreignKeyCommand = new MySqlCommand(
+                """
+                SELECT constraint_name
+                FROM information_schema.table_constraints
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'operacoes_pagamento_pix'
+                  AND constraint_type = 'FOREIGN KEY';
+                """,
+                connection);
+            await using var foreignKeyReader = await foreignKeyCommand.ExecuteReaderAsync();
+
+            while (await foreignKeyReader.ReadAsync())
+                foreignKeysOperacoes.Add(foreignKeyReader.GetString(0));
+        }
+
+        {
+            await using var regrasExclusaoCommand = new MySqlCommand(
+                """
+                SELECT delete_rule
+                FROM information_schema.referential_constraints
+                WHERE constraint_schema = DATABASE()
+                  AND table_name = 'operacoes_pagamento_pix';
+                """,
+                connection);
+            await using var regrasExclusaoReader = await regrasExclusaoCommand.ExecuteReaderAsync();
+
+            while (await regrasExclusaoReader.ReadAsync())
+                regrasExclusaoOperacoes.Add(regrasExclusaoReader.GetString(0));
+        }
+
+        Assert.Contains("fk_operacoes_pagamento_pix_pagamentos_pix", foreignKeysOperacoes);
+        Assert.Single(regrasExclusaoOperacoes);
+        Assert.True(regrasExclusaoOperacoes[0] is "RESTRICT" or "NO ACTION");
 
         var constraints = new List<string>();
 
