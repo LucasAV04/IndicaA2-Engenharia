@@ -1,5 +1,27 @@
 # Implementações
 
+## Orquestração Segura de Envio PagamentoPix
+
+**Data:** 2026-09-02
+
+### Implementado
+
+- A porta transacional IPagamentoPixEnvioStore prepara uma tentativa de envio em uma única transação MySQL: faz o claim condicional da ordem elegível, incrementa a tentativa e insere a OperacaoPagamentoPix aberta de tipo Envio.
+- PagamentoPixEnvioMySqlStore só confirma a transação quando claim e auditoria são persistidos. Falha na inserção da auditoria reverte o estado da ordem e o contador de tentativas; não existe estado Processando sem operação de envio correspondente.
+- PagamentoPixEnvioService é um caso de uso separado de PagamentoPixService. Ele verifica a existência da ordem, solicita a preparação atômica, recarrega e confere a consistência persistida e somente então chama IPixProvider.EnviarAsync.
+- Cada tentativa adquirida executa uma chamada ao provider. O resultado provider-agnostic é mapeado explicitamente para Confirmado, FalhaConfirmada, Pendente ou Indeterminado e finaliza a auditoria uma única vez com identificador e código opacos opcionais.
+- Se o claim não for adquirido, não há chamada externa. Se o provider lançar exceção, for cancelado após a preparação ou a finalização da auditoria falhar, não ocorre novo envio, não há rollback financeiro e a inconsistência/operação aberta fica disponível para reconciliação futura.
+- Após qualquer resposta do provider, PagamentoPix permanece Processando; Cashback não é alterado. Não são chamados ConfirmarConclusao nem RegistrarFalha nesta etapa.
+
+### Testes
+
+- Testes de Application cobrem inexistência, preparação não adquirida, snapshots do request, referência idempotente, os quatro mapeamentos de resultado, cancelamento, exceção do provider, falha de finalização, chamada única e ausência de mutação da ordem.
+- Integrações MySQL condicionais cobrem preparação atômica, rollback por colisão de auditoria, quinta tentativa, estados não elegíveis, preservação do material criptográfico e cinco executores concorrentes com um único envio por provider simulado.
+
+### Pendente
+
+- Reconciliação e recuperação de operações abertas, aplicação do resultado ao PagamentoPix, coordenação atômica de PagamentoPix.Concluido com Cashback.Pago, webhook, worker, retentativas pós-reconciliação, observabilidade e produção.
+
 ## Auditoria Persistente de Operações de PagamentoPix
 
 **Data:** 2026-09-02
