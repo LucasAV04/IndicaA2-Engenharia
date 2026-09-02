@@ -1,4 +1,5 @@
 using Domain.Interfaces;
+using Application.Interfaces.Providers;
 using Application.Interfaces.Security;
 using Infrastructure.DependencyInjection;
 using Infrastructure.Repositories;
@@ -133,6 +134,17 @@ public sealed class InfrastructureDependencyInjectionTests
 
         Assert.IsType<PagamentoPixMySqlRepository>(repository);
         Assert.IsType<AesGcmDadosPixProtector>(protector);
+    }
+
+    [Fact]
+    public void AddInfrastructure_DeveRegistrarIPixProviderComoScopedSemResolverCertificadoNoStartup()
+    {
+        var services = new ServiceCollection();
+
+        services.AddInfrastructure(CriarConfiguration());
+
+        var registro = Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IPixProvider));
+        Assert.Equal(ServiceLifetime.Scoped, registro.Lifetime);
     }
 
     private static IConfiguration CriarConfiguration() => new ConfigurationBuilder()
