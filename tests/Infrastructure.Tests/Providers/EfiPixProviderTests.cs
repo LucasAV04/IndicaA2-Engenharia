@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Application.Interfaces.Providers;
@@ -17,6 +18,35 @@ public sealed class EfiPixProviderTests
 
         Assert.Equal(X509KeyStorageFlags.DefaultKeySet, flags);
         Assert.False(flags.HasFlag(X509KeyStorageFlags.EphemeralKeySet));
+    }
+
+    [Fact]
+    public void HandlerMtls_QuandoConfiguracaoBaseForValidaSemChavePagador_DeveCriar()
+    {
+        var certificatePath = Path.Combine(Path.GetTempPath(), $"efi-pix-{Guid.NewGuid():N}.p12");
+        try
+        {
+            using var key = RSA.Create(2048);
+            var certificateRequest = new CertificateRequest(
+                "CN=EfiPixTest",
+                key,
+                HashAlgorithmName.SHA256,
+                RSASignaturePadding.Pkcs1);
+            using var certificate = certificateRequest.CreateSelfSigned(
+                DateTimeOffset.UtcNow.AddDays(-1),
+                DateTimeOffset.UtcNow.AddDays(1));
+
+            File.WriteAllBytes(certificatePath, certificate.Export(X509ContentType.Pkcs12));
+
+            using var handler = EfiPixHttpMessageHandlerFactory.Criar(
+                CriarOptionsComCertificatePath(certificatePath, chavePixPagador: string.Empty));
+
+            Assert.IsType<HttpClientHandler>(handler);
+        }
+        finally
+        {
+            File.Delete(certificatePath);
+        }
     }
 
     [Fact]
@@ -58,6 +88,22 @@ public sealed class EfiPixProviderTests
         Assert.Equal("/v2/gn/pix/enviados/id-envio/94fd293e8ed946729a0763d4f1891c4d", handler.Requisicoes[1].PathAndQuery);
         Assert.Equal(HttpMethod.Get, handler.Requisicoes[1].Method);
         Assert.Equal("gn.pix.send.read", handler.Requisicoes[0].Form["scope"]);
+    }
+
+    [Fact]
+    public async Task ConsultarAsync_QuandoChavePixPagadorEstiverAusente_DeveConsultarNormalmente()
+    {
+        var pagamentoPixId = Guid.Parse("94fd293e-8ed9-4672-9a07-63d4f1891c4d");
+        var handler = new RoteadorHttpMessageHandler(
+            OAuthComToken(),
+            Json(HttpStatusCode.OK, """{"idEnvio":"94fd293e8ed946729a0763d4f1891c4d","status":"REALIZADO"}"""));
+        var provider = CriarProvider(handler, CriarOptions(chavePixPagador: string.Empty));
+
+        var result = await provider.ConsultarAsync(new PixConsultaRequest(pagamentoPixId));
+
+        Assert.Equal(StatusPixProvider.Confirmado, result.Status);
+        Assert.Equal(2, handler.Requisicoes.Count);
+        Assert.Equal(HttpMethod.Get, handler.Requisicoes[1].Method);
     }
 
     [Theory]
@@ -105,6 +151,17 @@ public sealed class EfiPixProviderTests
 
         Assert.Equal(StatusPixProvider.Indeterminado, result.Status);
         Assert.Equal("timeout", result.Codigo);
+    }
+
+    [Fact]
+    public async Task EnviarAsync_QuandoChavePixPagadorEstiverAusente_DeveFalharAntesDaRequisicaoFinanceira()
+    {
+        var handler = new RoteadorHttpMessageHandler();
+        var provider = CriarProvider(handler, CriarOptions(chavePixPagador: string.Empty));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => provider.EnviarAsync(CriarEnvioRequest()));
+
+        Assert.Empty(handler.Requisicoes);
     }
 
     [Fact]
@@ -200,6 +257,26 @@ public sealed class EfiPixProviderTests
     }
 
     [Fact]
+    public void EfiPixOptions_QuandoBaseUrlNaoForOficial_DeveRejeitar()
+    {
+        var options = CriarOptions();
+        options = new EfiPixOptions
+        {
+            Environment = options.Environment,
+            BaseUrl = "https://api.exemplo.test",
+            ClientId = options.ClientId,
+            ClientSecret = options.ClientSecret,
+            CertificatePath = options.CertificatePath,
+            CertificatePassword = options.CertificatePassword,
+            ChavePixPagador = options.ChavePixPagador
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => options.ValidarParaSandbox());
+
+        Assert.Contains("base HTTPS de sandbox", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void HandlerMtls_QuandoCertificadoNaoExiste_NaoDeveExporOCaminhoNaExcecao()
     {
         const string certificatePath = "C:\\diretorio-privado\\certificado-ausente.p12";
@@ -211,10 +288,12 @@ public sealed class EfiPixProviderTests
         Assert.DoesNotContain(certificatePath, exception.Message, StringComparison.Ordinal);
     }
 
-    private static EfiPixProvider CriarProvider(RoteadorHttpMessageHandler handler) =>
-        new(new HttpClient(handler), CriarOptions());
+    private static EfiPixProvider CriarProvider(
+        RoteadorHttpMessageHandler handler,
+        EfiPixOptions? options = null) =>
+        new(new HttpClient(handler), options ?? CriarOptions());
 
-    private static EfiPixOptions CriarOptions() => new()
+    private static EfiPixOptions CriarOptions(string chavePixPagador = "pagador-ficticio@exemplo.com") => new()
     {
         Environment = "Sandbox",
         BaseUrl = "https://pix-h.api.efipay.com.br",
@@ -222,17 +301,19 @@ public sealed class EfiPixProviderTests
         ClientSecret = "segredo-ficticio",
         CertificatePath = "certificado-ficticio.p12",
         CertificatePassword = "senha-ficticia",
-        ChavePixPagador = "pagador-ficticio@exemplo.com"
+        ChavePixPagador = chavePixPagador
     };
 
-    private static EfiPixOptions CriarOptionsComCertificatePath(string certificatePath) => new()
+    private static EfiPixOptions CriarOptionsComCertificatePath(
+        string certificatePath,
+        string chavePixPagador = "pagador-ficticio@exemplo.com") => new()
     {
         Environment = "Sandbox",
         BaseUrl = "https://pix-h.api.efipay.com.br",
         ClientId = "client-id-ficticio",
         ClientSecret = "segredo-ficticio",
         CertificatePath = certificatePath,
-        ChavePixPagador = "pagador-ficticio@exemplo.com"
+        ChavePixPagador = chavePixPagador
     };
 
     private static PixEnvioRequest CriarEnvioRequest() =>

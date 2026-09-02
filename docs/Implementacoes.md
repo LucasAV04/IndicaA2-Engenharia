@@ -10,7 +10,7 @@
 - O envio usa `PUT /v3/gn/pix/{idEnvio}` com o escopo `pix.send`; a consulta/reconciliação usa `GET /v2/gn/pix/enviados/id-envio/{idEnvio}` com o escopo `gn.pix.send.read`. Em ambos, `idEnvio` é exatamente `ReferenciaIdempotente`.
 - OAuth usa `POST /oauth/token`, Basic Auth e cache de token em memória por escopo. O cache respeita `expires_in`, renova antes da expiração e serializa refresh concorrente, sem persistir ou registrar token.
 - O handler HTTP do adapter carrega somente certificado P12/PFX externo com chave privada e `DefaultKeySet`, para mTLS inclusive no OAuth. Não há bypass de validação TLS, certificado versionado nem configuração de produção.
-- `EfiPixOptions` falha fechada quando o ambiente não é `Sandbox`/`Homologacao` ou a base não é `https://pix-h.api.efipay.com.br`. Credenciais, certificado e chave Pix do pagador devem ser fornecidos externamente por variáveis de ambiente ou user-secrets.
+- `EfiPixOptions` falha fechada quando o ambiente não é `Sandbox`/`Homologacao` ou a base não é `https://pix-h.api.efipay.com.br`. Credenciais e certificado são configuração comum; a chave Pix do pagador é externa e exigida somente no envio.
 - `REALIZADO` é traduzido para `Confirmado`; `REJEITADO`, para `FalhaConfirmada`; `EM_PROCESSAMENTO`, para `Pendente`; status desconhecido, timeout, transporte, JSON inválido, `409`, `429` e `5xx` resultam em `Indeterminado`. No envio, `400`, `404` e `422` documentados como rejeição/validação anterior à criação resultam em `FalhaConfirmada`; na consulta, somente `404` é ausência conclusiva.
 
 ### Testes

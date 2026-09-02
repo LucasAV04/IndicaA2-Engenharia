@@ -41,14 +41,18 @@ public sealed class EfiPixOptions
         ExigirValor(ClientId, "ClientId");
         ExigirValor(ClientSecret, "ClientSecret");
         ExigirValor(CertificatePath, "CertificatePath");
-        ExigirValor(ChavePixPagador, "ChavePixPagador");
-
         if (!string.Equals(Path.GetExtension(CertificatePath), ".p12", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(Path.GetExtension(CertificatePath), ".pfx", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 "O adapter Efí Pix desta etapa aceita certificado cliente P12/PFX externo.");
         }
+    }
+
+    public void ValidarParaEnvio()
+    {
+        ValidarParaSandbox();
+        ExigirValor(ChavePixPagador, "ChavePixPagador");
     }
 
     private static bool EhSandbox(string environment) =>

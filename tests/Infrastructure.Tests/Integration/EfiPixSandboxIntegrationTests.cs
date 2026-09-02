@@ -27,13 +27,11 @@ public sealed class EfiPixSandboxIntegrationTests
         var clientSecret = Environment.GetEnvironmentVariable("INDICA2_EFI_SANDBOX_CLIENT_SECRET");
         var certificatePath = Environment.GetEnvironmentVariable("INDICA2_EFI_SANDBOX_CERTIFICATE_PATH");
         var certificatePassword = Environment.GetEnvironmentVariable("INDICA2_EFI_SANDBOX_CERTIFICATE_PASSWORD");
-        var chavePixPagador = Environment.GetEnvironmentVariable("INDICA2_EFI_SANDBOX_CHAVE_PIX_PAGADOR");
         var referencia = Environment.GetEnvironmentVariable("INDICA2_EFI_SANDBOX_QUERY_ID_ENVIO");
 
         if (string.IsNullOrWhiteSpace(clientId)
             || string.IsNullOrWhiteSpace(clientSecret)
             || string.IsNullOrWhiteSpace(certificatePath)
-            || string.IsNullOrWhiteSpace(chavePixPagador)
             || !Guid.TryParseExact(referencia, "N", out var pagamentoPixId))
         {
             throw SkipException.ForSkip(
@@ -47,8 +45,7 @@ public sealed class EfiPixSandboxIntegrationTests
             ClientId = clientId,
             ClientSecret = clientSecret,
             CertificatePath = certificatePath,
-            CertificatePassword = certificatePassword,
-            ChavePixPagador = chavePixPagador
+            CertificatePassword = certificatePassword
         };
 
         using var handler = EfiPixHttpMessageHandlerFactory.Criar(options);

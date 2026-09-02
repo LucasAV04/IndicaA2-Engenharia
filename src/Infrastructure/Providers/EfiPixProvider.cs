@@ -49,6 +49,7 @@ public sealed class EfiPixProvider : IPixProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        _options.ValidarParaEnvio();
 
         try
         {
