@@ -137,6 +137,19 @@ public sealed class InfrastructureDependencyInjectionTests
     }
 
     [Fact]
+    public void AddInfrastructure_DeveRegistrarOperacaoPagamentoPixRepositoryComoScoped()
+    {
+        var services = new ServiceCollection();
+        services.AddInfrastructure(CriarConfiguration());
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IOperacaoPagamentoPixRepository>();
+
+        Assert.IsType<OperacaoPagamentoPixMySqlRepository>(repository);
+    }
+
+    [Fact]
     public void AddInfrastructure_DeveRegistrarIPixProviderComoScopedSemResolverCertificadoNoStartup()
     {
         var services = new ServiceCollection();

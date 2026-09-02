@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-02 — Auditoria Persistente de Operações de PagamentoPix
+
+### Adicionado
+
+- Registro provider-agnostic de início e finalização única de envios e consultas Pix, com referência idempotente canônica, resultado normalizado e identificação opaca opcional do provider.
+- Persistência MySQL em `operacoes_pagamento_pix`, FK restritiva, índices de histórico/operações abertas e proteção concorrente por atualização condicional.
+
+### Decisões
+
+- A auditoria não armazena chave Pix, payload, token, credenciais, certificado ou mensagens externas completas; tampouco altera `PagamentoPix` ou `Cashback`.
+- Orquestração de provider, webhook, reconciliação, worker e produção permanecem fora do escopo.
+
 ## 2026-08-31 — Adapter Efí Pix em Sandbox/Homologação
 
 ### Adicionado
