@@ -1,10 +1,13 @@
 using Domain.Interfaces;
 using Infrastructure.Database;
+using Infrastructure.Providers;
 using Infrastructure.Repositories;
 using Infrastructure.Security;
+using Application.Interfaces.Providers;
 using Application.Interfaces.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Infrastructure.DependencyInjection;
 
@@ -28,6 +31,17 @@ public static class InfrastructureDependencyInjection
 
         services.AddSingleton(new MySqlConnectionFactory(connectionString));
         services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
+        services.Configure<EfiPixOptions>(configuration.GetSection(EfiPixOptions.SectionName));
+        services.AddSingleton<EfiPixAccessTokenCache>();
+        services.AddHttpClient(EfiPixProvider.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+                EfiPixHttpMessageHandlerFactory.Criar(
+                    serviceProvider.GetRequiredService<IOptions<EfiPixOptions>>().Value));
+        services.AddScoped<IPixProvider>(serviceProvider =>
+            new EfiPixProvider(
+                serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient(EfiPixProvider.HttpClientName),
+                serviceProvider.GetRequiredService<IOptions<EfiPixOptions>>().Value,
+                serviceProvider.GetRequiredService<EfiPixAccessTokenCache>()));
         services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
         services.AddScoped<ICodigoIndicacaoGenerator, CodigoIndicacaoGenerator>();
         services.AddScoped<IAccessTokenGenerator, JwtAccessTokenGenerator>();

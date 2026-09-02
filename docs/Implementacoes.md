@@ -1,5 +1,41 @@
 # Implementações
 
+## Adapter Efí Pix — Sandbox/Homologação
+
+**Data:** 2026-08-31
+
+### Implementado
+
+- `EfiPixProvider` na Infrastructure implementa `IPixProvider` por `HttpClient` direto. A SDK EfiPay não foi adicionada: a documentação oficial atual define envio em v3, enquanto a POC anterior registrou ambiguidade em v2.
+- O envio usa `PUT /v3/gn/pix/{idEnvio}` com o escopo `pix.send`; a consulta/reconciliação usa `GET /v2/gn/pix/enviados/id-envio/{idEnvio}` com o escopo `gn.pix.send.read`. Em ambos, `idEnvio` é exatamente `ReferenciaIdempotente`.
+- OAuth usa `POST /oauth/token`, Basic Auth e cache de token em memória por escopo. O cache respeita `expires_in`, renova antes da expiração e serializa refresh concorrente, sem persistir ou registrar token.
+- O handler HTTP do adapter carrega somente certificado P12/PFX externo com chave privada e `DefaultKeySet`, para mTLS inclusive no OAuth. Não há bypass de validação TLS, certificado versionado nem configuração de produção.
+- `EfiPixOptions` falha fechada quando o ambiente não é `Sandbox`/`Homologacao` ou a base não é `https://pix-h.api.efipay.com.br`. Credenciais e certificado são configuração comum; a chave Pix do pagador é externa e exigida somente no envio.
+- `REALIZADO` é traduzido para `Confirmado`; `REJEITADO`, para `FalhaConfirmada`; `EM_PROCESSAMENTO`, para `Pendente`; status desconhecido, timeout, transporte, JSON inválido, `409`, `429` e `5xx` resultam em `Indeterminado`. No envio, `400`, `404` e `422` documentados como rejeição/validação anterior à criação resultam em `FalhaConfirmada`; na consulta, somente `404` é ausência conclusiva.
+
+### Testes
+
+- Cobertura HTTP sem internet para OAuth, URL e métodos das rotas oficiais, payload, Bearer, referência idempotente, cache e renovação por expiração, concorrência de refresh, cancelamento, quatro resultados e ausência de dados sensíveis em resultado/exceção.
+- Testes externos condicionais de consulta e envio em sandbox: ausência das variáveis obrigatórias resulta em teste ignorado, nunca aprovado sem chamada real. O envio exige chaves distintas para `INDICA2_EFI_SANDBOX_CHAVE_PIX_PAGADOR` e `INDICA2_EFI_SANDBOX_CHAVE_PIX_FAVORECIDO`; valores, tokens, certificado e corpo sensível não são registrados.
+
+### Validação de homologação
+
+- OAuth e mTLS foram confirmados contra a base de homologação.
+- Consulta real pelo mesmo `idEnvio` foi confirmada.
+- Envio de homologação de R$ 0,01 foi confirmado; o callback POST da Efí foi observado em receptor temporário, sem incorporar esse receptor à arquitetura.
+- Não há repetição automática de envio após resultado indeterminado.
+
+### Pendente
+
+- Webhook próprio do IndicA2, autenticação e validação adequadas do callback em produção, persistência/auditoria de tentativas financeiras e reconciliação confiável continuam pendentes.
+- Também permanecem pendentes o tratamento de ordens `Processando` após crash, coordenação confiável entre `PagamentoPix.Concluido` e `Cashback.Pago`, rotina/worker de processamento, desenho de retentativas após reconciliação, configuração/validação de produção e observabilidade financeira definitiva.
+- Não foram criados worker, endpoint de processamento, webhook próprio, migration, configuração de produção ou coordenação automática de `PagamentoPix`/`Cashback`.
+
+### Referências oficiais
+
+- https://dev.efipay.com.br/docs/api-pix/envio-pagamento-pix/
+- https://dev.efipay.com.br/docs/api-pix/credenciais/
+
 ## Fronteira do Provider Financeiro Pix
 
 **Data:** 2026-08-28
@@ -19,7 +55,7 @@
 
 ### Pendente
 
-- Adapter concreto na Infrastructure, Efí, OAuth, mTLS, certificado, HTTP, sandbox, Pix real, webhook, rotina de reconciliação, coordenação de `PagamentoPix.Concluido` com `Cashback.Pago` e auditoria de tentativas.
+- A orquestração que usa o adapter, webhook próprio, rotina automática de reconciliação, coordenação de `PagamentoPix.Concluido` com `Cashback.Pago` e auditoria de tentativas continuam pendentes.
 
 ## Claim Atômico de Processamento de PagamentoPix
 

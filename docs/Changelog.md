@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-08-31 — Adapter Efí Pix em Sandbox/Homologação
+
+### Adicionado
+
+- Adapter `EfiPixProvider` na Infrastructure por `HttpClient` direto, com OAuth, mTLS P12/PFX externo, cache em memória por escopo e bloqueio explícito de produção.
+- Envio oficial v3 por `PUT /v3/gn/pix/{idEnvio}` (`pix.send`) e consulta oficial por `GET /v2/gn/pix/enviados/id-envio/{idEnvio}` (`gn.pix.send.read`), sempre usando `ReferenciaIdempotente` como `idEnvio`.
+- Tradução isolada do protocolo Efí para `PixProviderResult`, sem expor SDK, HTTP, tokens, certificado, payload ou tipos Efí à Application.
+- Cobertura unitária de OAuth, HTTP, cache, concorrência, expiração, cancelamento, falhas ambíguas, resultados normalizados e bloqueio de produção; teste de consulta sandbox é opcional e não envia Pix.
+- Testes sandbox condicionais exigem configuração completa e são marcados como ignorados quando ela está ausente; o envio usa variáveis distintas para as chaves Pix pagadora e favorecida, sem registrar seus valores.
+
+### Validação de homologação
+
+- OAuth e mTLS foram validados previamente contra a Efí, com certificado externo carregado por `DefaultKeySet` e validação TLS padrão.
+- O envio de homologação de R$ 0,01, o callback POST da Efí em receptor temporário e a consulta posterior pelo mesmo `idEnvio` foram confirmados manualmente.
+
+### Decisões
+
+- A integração adotou HTTP direto. A SDK EfiPay não foi instalada porque a documentação oficial atual privilegia envio v3, enquanto a POC anterior observou rota v2.
+- `EM_PROCESSAMENTO` não confirma pagamento; timeout, transporte, resposta inválida, `409`, `429` e `5xx` são `Indeterminado` e exigem reconciliação antes de qualquer nova tentativa.
+- Webhook próprio, autenticação/validação de callback em produção, worker, auditoria persistida, reconciliação, recuperação de ordens `Processando` após crash, coordenação de `PagamentoPix`/`Cashback`, retentativas pós-reconciliação, observabilidade e produção permanecem fora do escopo.
+
 ## 2026-08-28 — Fronteira Provider-Agnostic de PagamentoPix
 
 ### Adicionado
