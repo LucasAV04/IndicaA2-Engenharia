@@ -1,5 +1,29 @@
 # Implementações
 
+## Reconciliação Segura de PagamentoPix
+
+**Data:** 2026-09-03
+
+### Implementado
+
+- IPagamentoPixReconciliacaoService reconcilia uma ordem pelo seu identificador somente quando ela permanece em Processando. Os demais estados retornam resultado explícito Não Aplicável, sem consultar provider.
+- O caso de uso usa o histórico persistido de OperacaoPagamentoPix como evidência. O Envio da tentativa atual é identificado por NumeroTentativaEnvio igual a QuantidadeTentativas; sua ausência, duplicidade ou Envio aberto de tentativa anterior são inconsistências explícitas, sem chamada externa.
+- Somente um resultado conclusivo Confirmado ou FalhaConfirmada pertencente ao ciclo da tentativa atualmente Processando retorna Resultado Já Conclusivo. Consultas do ciclo atual são as iniciadas após o Envio atual; resultados e consultas de tentativas anteriores permanecem histórico append-only, e evidências conclusivas conflitantes no ciclo atual são inconsistência explícita.
+- Quando ainda não há evidência conclusiva, uma nova OperacaoPagamentoPix de Consulta é criada e persistida antes da única chamada a IPixProvider.ConsultarAsync. A referência continua canônica, derivada de PagamentoPixId.ToString(N), e a consulta não incrementa tentativa.
+- A resposta provider-agnostic finaliza a auditoria de Consulta como Confirmado, FalhaConfirmada, Pendente ou Indeterminado. A persistência ocorre mesmo quando há cancelamento tardio do chamador após a resposta.
+- Consulta conclusiva pode finalizar o único Envio aberto correspondente. Pendente ou Indeterminado preservam esse Envio aberto. Em concorrência, a primeira finalização vence; resultado igual já persistido é benigno, resultado incompatível é inconsistente.
+- Evidência conclusiva já persistida no ciclo atual também recupera o Envio atual que tenha permanecido aberto, reutilizando seus metadados seguros sem criar nova Consulta nem chamar o provider.
+- Não há novo envio, retentativa automática, endpoint, worker, webhook, migration ou alteração do adapter Efí. PagamentoPix permanece Processando e Cashback não é alterado.
+
+### Testes
+
+- Testes de Application cobrem estados não aplicáveis, inexistência, histórico ausente ou conclusivo, auditoria antes da consulta, quatro resultados, referência, consulta aberta anterior, falhas/cancelamento, finalização concorrente e ausência de mutação financeira.
+- Integrações MySQL condicionais usam repositories reais e provider falso para confirmar auditoria de Consulta, resolução conclusiva de Envio aberto, manutenção de Envio aberto quando Pendente e múltiplas consultas históricas.
+
+### Pendente
+
+- Aplicação do resultado conclusivo ao PagamentoPix, coordenação PagamentoPix.Concluido com Cashback.Pago, política de FalhaConfirmada e retentativas, seleção automática de candidatos, recuperação de operações abertas, worker, webhook, observabilidade e produção.
+
 ## Orquestração Segura de Envio PagamentoPix
 
 **Data:** 2026-09-02
