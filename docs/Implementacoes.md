@@ -1,5 +1,28 @@
 # Implementações
 
+## Reconciliação Segura de PagamentoPix
+
+**Data:** 2026-09-03
+
+### Implementado
+
+- IPagamentoPixReconciliacaoService reconcilia uma ordem pelo seu identificador somente quando ela permanece em Processando. Os demais estados retornam resultado explícito Não Aplicável, sem consultar provider.
+- O caso de uso usa o histórico persistido de OperacaoPagamentoPix como evidência. Processando sem auditoria e múltiplos envios abertos são inconsistências explícitas, sem chamada externa.
+- Um resultado histórico conclusivo Confirmado ou FalhaConfirmada retorna Resultado Já Conclusivo e evita nova consulta.
+- Quando ainda não há evidência conclusiva, uma nova OperacaoPagamentoPix de Consulta é criada e persistida antes da única chamada a IPixProvider.ConsultarAsync. A referência continua canônica, derivada de PagamentoPixId.ToString(N), e a consulta não incrementa tentativa.
+- A resposta provider-agnostic finaliza a auditoria de Consulta como Confirmado, FalhaConfirmada, Pendente ou Indeterminado. A persistência ocorre mesmo quando há cancelamento tardio do chamador após a resposta.
+- Consulta conclusiva pode finalizar o único Envio aberto correspondente. Pendente ou Indeterminado preservam esse Envio aberto. Em concorrência, a primeira finalização vence; resultado igual já persistido é benigno, resultado incompatível é inconsistente.
+- Não há novo envio, retentativa automática, endpoint, worker, webhook, migration ou alteração do adapter Efí. PagamentoPix permanece Processando e Cashback não é alterado.
+
+### Testes
+
+- Testes de Application cobrem estados não aplicáveis, inexistência, histórico ausente ou conclusivo, auditoria antes da consulta, quatro resultados, referência, consulta aberta anterior, falhas/cancelamento, finalização concorrente e ausência de mutação financeira.
+- Integrações MySQL condicionais usam repositories reais e provider falso para confirmar auditoria de Consulta, resolução conclusiva de Envio aberto, manutenção de Envio aberto quando Pendente e múltiplas consultas históricas.
+
+### Pendente
+
+- Aplicação do resultado conclusivo ao PagamentoPix, coordenação PagamentoPix.Concluido com Cashback.Pago, política de FalhaConfirmada e retentativas, seleção automática de candidatos, recuperação de operações abertas, worker, webhook, observabilidade e produção.
+
 ## Orquestração Segura de Envio PagamentoPix
 
 **Data:** 2026-09-02

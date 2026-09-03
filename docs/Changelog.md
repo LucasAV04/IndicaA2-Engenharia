@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-03 — Reconciliação Segura de PagamentoPix
+
+### Adicionado
+
+- Caso de uso interno para consultar o provider pela referência idempotente original e registrar uma OperacaoPagamentoPix de Consulta antes da chamada externa.
+- Resultado seguro que diferencia ordem não aplicável, histórico já conclusivo e consulta executada, sem expor Dados Pix ou detalhes técnicos.
+- Recuperação auditável de um único Envio aberto quando a nova consulta é conclusiva, com tratamento da finalização concorrente.
+
+### Decisões
+
+- Reconciliação nunca envia Pix, não incrementa tentativa e não altera PagamentoPix ou Cashback.
+- Consulta anterior aberta não bloqueia nova consulta; resultados Pendente e Indeterminado preservam a evidência aberta para reconciliação posterior.
+- Endpoint, worker, webhook, migration, retentativa e mudança no adapter Efí continuam fora do escopo.
+
 ## 2026-09-02 — Orquestração Segura de Envio PagamentoPix
 
 ### Adicionado
