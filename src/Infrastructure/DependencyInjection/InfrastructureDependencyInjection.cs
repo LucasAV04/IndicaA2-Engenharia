@@ -5,6 +5,7 @@ using Infrastructure.Repositories;
 using Infrastructure.Security;
 using Application.Interfaces.Providers;
 using Application.Interfaces.Security;
+using Application.Interfaces.Stores;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -61,6 +62,7 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<IIndicacaoRepository, IndicacaoMySqlRepository>();
         services.AddScoped<ICashbackRepository, CashbackMySqlRepository>();
         services.AddScoped<IPagamentoPixRepository, PagamentoPixMySqlRepository>();
+        services.AddScoped<IPagamentoPixEnvioStore, PagamentoPixEnvioMySqlStore>();
         services.AddScoped<IOperacaoPagamentoPixRepository, OperacaoPagamentoPixMySqlRepository>();
         services.AddScoped<IPagamentoVistoriaRepository, PagamentoVistoriaMySqlRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioMySqlRepository>();

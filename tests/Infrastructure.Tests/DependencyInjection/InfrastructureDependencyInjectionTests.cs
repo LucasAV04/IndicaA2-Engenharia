@@ -1,6 +1,7 @@
 using Domain.Interfaces;
 using Application.Interfaces.Providers;
 using Application.Interfaces.Security;
+using Application.Interfaces.Stores;
 using Infrastructure.DependencyInjection;
 using Infrastructure.Repositories;
 using Infrastructure.Security;
@@ -147,6 +148,19 @@ public sealed class InfrastructureDependencyInjectionTests
         var repository = scope.ServiceProvider.GetRequiredService<IOperacaoPagamentoPixRepository>();
 
         Assert.IsType<OperacaoPagamentoPixMySqlRepository>(repository);
+    }
+
+    [Fact]
+    public void AddInfrastructure_DeveRegistrarStoreTransacionalDeEnvioPixComoScoped()
+    {
+        var services = new ServiceCollection();
+        services.AddInfrastructure(CriarConfiguration());
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IPagamentoPixEnvioStore>();
+
+        Assert.IsType<PagamentoPixEnvioMySqlStore>(store);
     }
 
     [Fact]

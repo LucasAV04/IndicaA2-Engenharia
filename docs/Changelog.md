@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-02 — Orquestração Segura de Envio PagamentoPix
+
+### Adicionado
+
+- Porta transacional específica para adquirir uma tentativa de PagamentoPix e criar sua auditoria de envio na mesma transação MySQL.
+- Caso de uso interno PagamentoPixEnvioService, que só chama o provider depois do commit, usa snapshots da ordem, mapeia o resultado provider-agnostic e finaliza a operação de auditoria.
+- Cobertura de Application e integração MySQL condicional para rollback, concorrência, chamada única ao provider simulado e preservação de snapshots.
+
+### Decisões
+
+- Perder o claim é resultado esperado: não chama provider nem cria auditoria.
+- Depois da preparação, cancelamento, exceção ambígua ou falha de persistência da finalização não autorizam novo envio. A auditoria pode permanecer aberta para reconciliação futura.
+- O resultado do provider não muda PagamentoPix nem Cashback; ambos permanecem fora de coordenação financeira até uma feature futura.
+- Não foram criados endpoint, worker, webhook, migration, retentativa automática ou alteração no adapter Efí.
+
 ## 2026-09-02 — Auditoria Persistente de Operações de PagamentoPix
 
 ### Adicionado
