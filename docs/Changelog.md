@@ -8,6 +8,7 @@
 - Correção do escopo histórico: a reconciliação ancora o ciclo no Envio cuja tentativa é igual a QuantidadeTentativas; resultados e consultas anteriores não decidem a tentativa Processando, e evidências conclusivas conflitantes no ciclo atual falham fechadas.
 - Resultado seguro que diferencia ordem não aplicável, histórico já conclusivo e consulta executada, sem expor Dados Pix ou detalhes técnicos.
 - Recuperação auditável de um único Envio aberto quando a nova consulta é conclusiva, com tratamento da finalização concorrente.
+- Recuperação do Envio atual aberto quando uma Consulta conclusiva do mesmo ciclo já estiver persistida, sem nova consulta ao provider.
 
 ### Decisões
 

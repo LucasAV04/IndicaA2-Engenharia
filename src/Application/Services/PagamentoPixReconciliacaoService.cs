@@ -46,9 +46,22 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
             cancellationToken);
         var cicloAtual = IdentificarCicloAtual(historico, pagamentoPix.QuantidadeTentativas);
 
-        var conclusiva = ObterResultadoConclusivo(cicloAtual);
-        if (conclusiva.HasValue)
-            return ResultadoReconciliacaoPagamentoPix.JaConclusivo(pagamentoPixId, conclusiva.Value);
+        var evidenciaConclusiva = ObterEvidenciaConclusiva(cicloAtual);
+        if (evidenciaConclusiva is not null)
+        {
+            if (!cicloAtual.Envio.FinishedAt.HasValue)
+            {
+                cicloAtual.Envio.Finalizar(
+                    evidenciaConclusiva.Resultado!.Value,
+                    evidenciaConclusiva.IdentificadorProvider,
+                    evidenciaConclusiva.Codigo);
+                await FinalizarEnvioAbertoAsync(cicloAtual.Envio, evidenciaConclusiva.Resultado.Value);
+            }
+
+            return ResultadoReconciliacaoPagamentoPix.JaConclusivo(
+                pagamentoPixId,
+                evidenciaConclusiva.Resultado!.Value);
+        }
 
         var consulta = OperacaoPagamentoPix.IniciarConsulta(pagamentoPixId);
         await _operacaoPagamentoPixRepository.AdicionarAsync(consulta, cancellationToken);
@@ -130,12 +143,14 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
         return new CicloAtual(envioAtual, consultasDoCicloAtual);
     }
 
-    private static ResultadoOperacaoPagamentoPix? ObterResultadoConclusivo(
+    private static OperacaoPagamentoPix? ObterEvidenciaConclusiva(
         CicloAtual cicloAtual)
     {
-        var resultadosConclusivos = new[] { cicloAtual.Envio }
+        var evidenciasConclusivas = new[] { cicloAtual.Envio }
             .Concat(cicloAtual.Consultas)
             .Where(operacao => EhConclusivo(operacao.Resultado))
+            .ToArray();
+        var resultadosConclusivos = evidenciasConclusivas
             .Select(operacao => operacao.Resultado!.Value)
             .Distinct()
             .ToArray();
@@ -145,9 +160,12 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
                 "Pagamento Pix possui evidências conclusivas conflitantes no ciclo da tentativa atual.");
         }
 
-        return resultadosConclusivos.Length == 0
+        return evidenciasConclusivas.Length == 0
             ? null
-            : resultadosConclusivos[0];
+            : evidenciasConclusivas
+                .OrderByDescending(operacao => operacao.FinishedAt)
+                .ThenByDescending(operacao => operacao.CreatedAt)
+                .First();
     }
 
     private async Task<bool> FinalizarEnvioAbertoAsync(

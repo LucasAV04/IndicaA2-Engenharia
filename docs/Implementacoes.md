@@ -12,6 +12,7 @@
 - Quando ainda não há evidência conclusiva, uma nova OperacaoPagamentoPix de Consulta é criada e persistida antes da única chamada a IPixProvider.ConsultarAsync. A referência continua canônica, derivada de PagamentoPixId.ToString(N), e a consulta não incrementa tentativa.
 - A resposta provider-agnostic finaliza a auditoria de Consulta como Confirmado, FalhaConfirmada, Pendente ou Indeterminado. A persistência ocorre mesmo quando há cancelamento tardio do chamador após a resposta.
 - Consulta conclusiva pode finalizar o único Envio aberto correspondente. Pendente ou Indeterminado preservam esse Envio aberto. Em concorrência, a primeira finalização vence; resultado igual já persistido é benigno, resultado incompatível é inconsistente.
+- Evidência conclusiva já persistida no ciclo atual também recupera o Envio atual que tenha permanecido aberto, reutilizando seus metadados seguros sem criar nova Consulta nem chamar o provider.
 - Não há novo envio, retentativa automática, endpoint, worker, webhook, migration ou alteração do adapter Efí. PagamentoPix permanece Processando e Cashback não é alterado.
 
 ### Testes

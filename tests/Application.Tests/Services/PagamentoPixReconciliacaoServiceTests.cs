@@ -104,6 +104,86 @@ public sealed class PagamentoPixReconciliacaoServiceTests
         contexto.OperacaoRepository.Verify(
             value => value.AdicionarAsync(It.IsAny<OperacaoPagamentoPix>(), It.IsAny<CancellationToken>()),
             Times.Never);
+        contexto.OperacaoRepository.Verify(
+            value => value.FinalizarAsync(It.IsAny<OperacaoPagamentoPix>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData(ResultadoOperacaoPagamentoPix.Confirmado)]
+    [InlineData(ResultadoOperacaoPagamentoPix.FalhaConfirmada)]
+    public async Task ReconciliarAsync_QuandoConsultaConclusivaDoCicloAtualExistir_DeveRecuperarEnvioAberto(
+        ResultadoOperacaoPagamentoPix resultadoConclusivo)
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 1);
+        var inicio = DateTime.UtcNow.AddMinutes(-2);
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1, null, inicio);
+        var consultaAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Consulta, null,
+            resultadoConclusivo, inicio.AddMinutes(1));
+        var contexto = CriarContexto([envioAtual, consultaAtual], pagamento, envioAtual);
+        contexto.OperacaoRepository
+            .Setup(value => value.FinalizarAsync(envioAtual, CancellationToken.None))
+            .ReturnsAsync(true);
+
+        var resultado = await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken);
+
+        Assert.Equal(StatusReconciliacaoPagamentoPix.ResultadoJaConclusivo, resultado.Status);
+        Assert.Equal(resultadoConclusivo, resultado.ResultadoOperacao);
+        Assert.Equal(resultadoConclusivo, envioAtual.Resultado);
+        Assert.True(envioAtual.FinishedAt.HasValue);
+        Assert.Equal(consultaAtual.IdentificadorProvider, envioAtual.IdentificadorProvider);
+        Assert.Equal(consultaAtual.Codigo, envioAtual.Codigo);
+        Assert.Equal(StatusPagamentoPix.Processando, pagamento.Status);
+        VerificarNenhumaConsultaNova(contexto);
+        contexto.OperacaoRepository.Verify(
+            value => value.FinalizarAsync(envioAtual, CancellationToken.None),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(ResultadoOperacaoPagamentoPix.Confirmado, true)]
+    [InlineData(ResultadoOperacaoPagamentoPix.FalhaConfirmada, false)]
+    public async Task ReconciliarAsync_QuandoRecuperacaoDoEnvioConcorrer_DeveAceitarMesmoResultadoOuRejeitarConflito(
+        ResultadoOperacaoPagamentoPix resultadoPersistido,
+        bool esperadoBenigno)
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 1);
+        var inicio = DateTime.UtcNow.AddMinutes(-2);
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1, null, inicio);
+        var consultaAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Consulta, null,
+            ResultadoOperacaoPagamentoPix.Confirmado, inicio.AddMinutes(1));
+        var contexto = CriarContexto([envioAtual, consultaAtual], pagamento, envioAtual);
+        var envioPersistido = OperacaoPagamentoPix.Reidratar(
+            envioAtual.Id,
+            pagamento.Id,
+            TipoOperacaoPagamentoPix.Envio,
+            1,
+            pagamento.Id.ToString("N"),
+            resultadoPersistido,
+            "provider-id",
+            "provider-code",
+            inicio,
+            inicio.AddMinutes(2),
+            inicio.AddMinutes(2));
+        contexto.OperacaoRepository
+            .Setup(value => value.FinalizarAsync(envioAtual, CancellationToken.None))
+            .ReturnsAsync(false);
+        contexto.OperacaoRepository
+            .Setup(value => value.ObterPorIdAsync(envioAtual.Id, CancellationToken.None))
+            .ReturnsAsync(envioPersistido);
+
+        if (esperadoBenigno)
+        {
+            var resultado = await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken);
+            Assert.Equal(StatusReconciliacaoPagamentoPix.ResultadoJaConclusivo, resultado.Status);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken));
+        }
+
+        VerificarNenhumaConsultaNova(contexto);
     }
 
     [Fact]
