@@ -106,6 +106,167 @@ public sealed class PagamentoPixReconciliacaoServiceTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task ReconciliarAsync_QuandoTentativaAnteriorFalhou_DeveConsultarSomenteATentativaAtual()
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 2);
+        var inicio = DateTime.UtcNow.AddMinutes(-3);
+        var envioAnterior = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1,
+            ResultadoOperacaoPagamentoPix.FalhaConfirmada, inicio);
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 2, null, inicio.AddMinutes(1));
+        var contexto = CriarContexto([envioAnterior, envioAtual], pagamento, envioAtual);
+        PrepararConsultaComResultado(contexto, PixProviderResult.Confirmado());
+
+        var resultado = await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken);
+
+        Assert.Equal(StatusReconciliacaoPagamentoPix.Consultado, resultado.Status);
+        Assert.Equal(ResultadoOperacaoPagamentoPix.FalhaConfirmada, envioAnterior.Resultado);
+        Assert.Equal(ResultadoOperacaoPagamentoPix.Confirmado, envioAtual.Resultado);
+        VerificarSomenteConsulta(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoConsultaConclusivaForDeCicloAnterior_DeveConsultarTentativaAtual()
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 2);
+        var inicio = DateTime.UtcNow.AddMinutes(-4);
+        var envioAnterior = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1,
+            ResultadoOperacaoPagamentoPix.Pendente, inicio);
+        var consultaAnterior = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Consulta, null,
+            ResultadoOperacaoPagamentoPix.FalhaConfirmada, inicio.AddMinutes(1));
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 2, null, inicio.AddMinutes(2));
+        var contexto = CriarContexto([envioAnterior, consultaAnterior, envioAtual], pagamento, envioAtual);
+        PrepararConsultaComResultado(contexto, PixProviderResult.Pendente());
+
+        var resultado = await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken);
+
+        Assert.Equal(StatusReconciliacaoPagamentoPix.Consultado, resultado.Status);
+        Assert.Equal(ResultadoOperacaoPagamentoPix.FalhaConfirmada, consultaAnterior.Resultado);
+        Assert.False(consultaAnterior.FinishedAt is null);
+        VerificarSomenteConsulta(contexto);
+    }
+
+    [Theory]
+    [InlineData(ResultadoOperacaoPagamentoPix.Confirmado)]
+    [InlineData(ResultadoOperacaoPagamentoPix.FalhaConfirmada)]
+    public async Task ReconciliarAsync_QuandoConsultaDoCicloAtualForConclusiva_NaoDeveConsultarNovamente(
+        ResultadoOperacaoPagamentoPix resultadoConclusivo)
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 1);
+        var inicio = DateTime.UtcNow.AddMinutes(-2);
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1,
+            ResultadoOperacaoPagamentoPix.Pendente, inicio);
+        var consultaAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Consulta, null,
+            resultadoConclusivo, inicio.AddMinutes(1));
+        var contexto = CriarContexto([envioAtual, consultaAtual], pagamento, envioAtual);
+
+        var resultado = await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken);
+
+        Assert.Equal(StatusReconciliacaoPagamentoPix.ResultadoJaConclusivo, resultado.Status);
+        Assert.Equal(resultadoConclusivo, resultado.ResultadoOperacao);
+        VerificarNenhumaConsultaNova(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoCicloAtualTiverResultadosConclusivosConflitantes_DeveLancarInconsistencia()
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 1);
+        var inicio = DateTime.UtcNow.AddMinutes(-2);
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1,
+            ResultadoOperacaoPagamentoPix.Confirmado, inicio);
+        var consultaAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Consulta, null,
+            ResultadoOperacaoPagamentoPix.FalhaConfirmada, inicio.AddMinutes(1));
+        var contexto = CriarContexto([envioAtual, consultaAtual], pagamento, envioAtual);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken));
+
+        VerificarNenhumaConsultaNova(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoEnvioDaTentativaAtualEstiverAusente_DeveLancarInconsistencia()
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 2);
+        var envioAnterior = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1,
+            ResultadoOperacaoPagamentoPix.FalhaConfirmada, DateTime.UtcNow.AddMinutes(-2));
+        var contexto = CriarContexto([envioAnterior], pagamento);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken));
+
+        VerificarNenhumaConsultaNova(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoHouverMaisDeUmEnvioDaTentativaAtual_DeveLancarInconsistencia()
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 1);
+        var inicio = DateTime.UtcNow.AddMinutes(-2);
+        var primeiroEnvioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1, null, inicio);
+        var segundoEnvioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1, null, inicio.AddMinutes(1));
+        var contexto = CriarContexto([primeiroEnvioAtual, segundoEnvioAtual], pagamento, primeiroEnvioAtual);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken));
+
+        VerificarNenhumaConsultaNova(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoEnvioAnteriorEstiverAberto_DeveLancarInconsistencia()
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 2);
+        var inicio = DateTime.UtcNow.AddMinutes(-2);
+        var envioAnteriorAberto = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1, null, inicio);
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 2, null, inicio.AddMinutes(1));
+        var contexto = CriarContexto([envioAnteriorAberto, envioAtual], pagamento, envioAtual);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken));
+
+        VerificarNenhumaConsultaNova(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoResultadoForConclusivo_DeveFinalizarSomenteEnvioAtual()
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 2);
+        var inicio = DateTime.UtcNow.AddMinutes(-2);
+        var envioAnterior = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1,
+            ResultadoOperacaoPagamentoPix.Pendente, inicio);
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 2, null, inicio.AddMinutes(1));
+        var contexto = CriarContexto([envioAnterior, envioAtual], pagamento, envioAtual);
+        PrepararConsultaComResultado(contexto, PixProviderResult.Confirmado());
+
+        await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken);
+
+        Assert.Equal(ResultadoOperacaoPagamentoPix.Pendente, envioAnterior.Resultado);
+        Assert.Equal(ResultadoOperacaoPagamentoPix.Confirmado, envioAtual.Resultado);
+        VerificarSomenteConsulta(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoConsultaAntigaEstiverAberta_NaoDeveFinalizaLa()
+    {
+        var pagamento = CriarPagamento(StatusPagamentoPix.Processando, 2);
+        var inicio = DateTime.UtcNow.AddMinutes(-3);
+        var envioAnterior = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 1,
+            ResultadoOperacaoPagamentoPix.Pendente, inicio);
+        var consultaAnteriorAberta = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Consulta, null,
+            null, inicio.AddMinutes(1));
+        var envioAtual = CriarOperacao(pagamento.Id, TipoOperacaoPagamentoPix.Envio, 2, null, inicio.AddMinutes(2));
+        var contexto = CriarContexto([envioAnterior, consultaAnteriorAberta, envioAtual], pagamento, envioAtual);
+        PrepararConsultaComResultado(contexto, PixProviderResult.Confirmado());
+
+        await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.CancellationToken);
+
+        Assert.Null(consultaAnteriorAberta.Resultado);
+        Assert.Null(consultaAnteriorAberta.FinishedAt);
+        Assert.Equal(ResultadoOperacaoPagamentoPix.Confirmado, envioAtual.Resultado);
+        VerificarSomenteConsulta(contexto);
+    }
+
     [Theory]
     [InlineData(StatusPixProvider.Confirmado, ResultadoOperacaoPagamentoPix.Confirmado, true)]
     [InlineData(StatusPixProvider.FalhaConfirmada, ResultadoOperacaoPagamentoPix.FalhaConfirmada, true)]
@@ -352,6 +513,61 @@ public sealed class PagamentoPixReconciliacaoServiceTests
             StatusPixProvider.Indeterminado => PixProviderResult.Indeterminado("provider-id", "provider-code"),
             _ => throw new ArgumentOutOfRangeException(nameof(status))
         };
+
+    private static OperacaoPagamentoPix CriarOperacao(
+        Guid pagamentoPixId,
+        TipoOperacaoPagamentoPix tipoOperacao,
+        int? numeroTentativaEnvio,
+        ResultadoOperacaoPagamentoPix? resultado,
+        DateTime createdAt) =>
+        OperacaoPagamentoPix.Reidratar(
+            Guid.NewGuid(),
+            pagamentoPixId,
+            tipoOperacao,
+            numeroTentativaEnvio,
+            pagamentoPixId.ToString("N"),
+            resultado,
+            resultado.HasValue ? "provider-id" : null,
+            resultado.HasValue ? "provider-code" : null,
+            createdAt,
+            resultado.HasValue ? createdAt.AddSeconds(1) : createdAt,
+            resultado.HasValue ? createdAt.AddSeconds(1) : null);
+
+    private static void PrepararConsultaComResultado(Contexto contexto, PixProviderResult resultado)
+    {
+        contexto.OperacaoRepository
+            .Setup(value => value.AdicionarAsync(It.IsAny<OperacaoPagamentoPix>(), contexto.CancellationToken))
+            .Returns(Task.CompletedTask);
+        contexto.Provider
+            .Setup(value => value.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.CancellationToken))
+            .ReturnsAsync(resultado);
+        contexto.OperacaoRepository
+            .Setup(value => value.FinalizarAsync(It.IsAny<OperacaoPagamentoPix>(), CancellationToken.None))
+            .ReturnsAsync(true);
+    }
+
+    private static void VerificarSomenteConsulta(Contexto contexto)
+    {
+        contexto.Provider.Verify(
+            value => value.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.CancellationToken),
+            Times.Once);
+        contexto.Provider.Verify(
+            value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    private static void VerificarNenhumaConsultaNova(Contexto contexto)
+    {
+        contexto.Provider.Verify(
+            value => value.ConsultarAsync(It.IsAny<PixConsultaRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        contexto.Provider.Verify(
+            value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        contexto.OperacaoRepository.Verify(
+            value => value.AdicionarAsync(It.IsAny<OperacaoPagamentoPix>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 
     private static Contexto CriarContextoComEnvioAberto()
     {

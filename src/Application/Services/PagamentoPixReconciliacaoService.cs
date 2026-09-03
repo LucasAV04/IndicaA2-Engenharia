@@ -44,13 +44,12 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
         var historico = await _operacaoPagamentoPixRepository.ObterPorPagamentoPixIdAsync(
             pagamentoPixId,
             cancellationToken);
-        ValidarHistoricoParaReconciliacao(historico);
+        var cicloAtual = IdentificarCicloAtual(historico, pagamentoPix.QuantidadeTentativas);
 
-        var conclusiva = ObterResultadoConclusivo(historico);
+        var conclusiva = ObterResultadoConclusivo(cicloAtual);
         if (conclusiva.HasValue)
             return ResultadoReconciliacaoPagamentoPix.JaConclusivo(pagamentoPixId, conclusiva.Value);
 
-        var envioAberto = ObterEnvioAberto(historico);
         var consulta = OperacaoPagamentoPix.IniciarConsulta(pagamentoPixId);
         await _operacaoPagamentoPixRepository.AdicionarAsync(consulta, cancellationToken);
 
@@ -70,13 +69,13 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
         }
 
         var envioResolvido = false;
-        if (EhConclusivo(resultadoConsulta) && envioAberto is not null)
+        if (EhConclusivo(resultadoConsulta) && !cicloAtual.Envio.FinishedAt.HasValue)
         {
-            envioAberto.Finalizar(
+            cicloAtual.Envio.Finalizar(
                 resultadoConsulta,
                 providerResult.IdentificadorProvider,
                 providerResult.Codigo);
-            envioResolvido = await FinalizarEnvioAbertoAsync(envioAberto, resultadoConsulta);
+            envioResolvido = await FinalizarEnvioAbertoAsync(cicloAtual.Envio, resultadoConsulta);
         }
 
         return ResultadoReconciliacaoPagamentoPix.Consultado(
@@ -96,39 +95,60 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
         await _pagamentoPixRepository.ObterPorIdAsync(pagamentoPixId, cancellationToken)
         ?? throw new PagamentoPixNaoEncontradoException();
 
-    private static void ValidarHistoricoParaReconciliacao(
-        IReadOnlyCollection<OperacaoPagamentoPix> historico)
+    private static CicloAtual IdentificarCicloAtual(
+        IReadOnlyCollection<OperacaoPagamentoPix> historico,
+        int tentativaAtual)
     {
-        if (historico.Count == 0)
+        var enviosDaTentativaAtual = historico
+            .Where(operacao =>
+                operacao.TipoOperacao == TipoOperacaoPagamentoPix.Envio &&
+                operacao.NumeroTentativaEnvio == tentativaAtual)
+            .ToArray();
+        if (enviosDaTentativaAtual.Length != 1)
         {
             throw new InvalidOperationException(
-                "Pagamento Pix Processando sem auditoria é inconsistente e requer intervenção técnica.");
+                "Pagamento Pix Processando deve possuir exatamente um envio para a tentativa atual.");
         }
 
-        var quantidadeEnviosAbertos = historico.Count(operacao =>
+        var envioAtual = enviosDaTentativaAtual[0];
+        var envioAnteriorAberto = historico.Any(operacao =>
             operacao.TipoOperacao == TipoOperacaoPagamentoPix.Envio &&
+            operacao.NumeroTentativaEnvio < tentativaAtual &&
             !operacao.FinishedAt.HasValue);
-        if (quantidadeEnviosAbertos > 1)
+        if (envioAnteriorAberto)
         {
             throw new InvalidOperationException(
-                "Pagamento Pix possui múltiplas operações de envio abertas e requer intervenção técnica.");
+                "Pagamento Pix possui envio aberto de tentativa anterior e requer intervenção técnica.");
         }
+
+        var consultasDoCicloAtual = historico
+            .Where(operacao =>
+                operacao.TipoOperacao == TipoOperacaoPagamentoPix.Consulta &&
+                operacao.CreatedAt > envioAtual.CreatedAt)
+            .ToArray();
+
+        return new CicloAtual(envioAtual, consultasDoCicloAtual);
     }
 
     private static ResultadoOperacaoPagamentoPix? ObterResultadoConclusivo(
-        IReadOnlyCollection<OperacaoPagamentoPix> historico) =>
-        historico
+        CicloAtual cicloAtual)
+    {
+        var resultadosConclusivos = new[] { cicloAtual.Envio }
+            .Concat(cicloAtual.Consultas)
             .Where(operacao => EhConclusivo(operacao.Resultado))
-            .OrderByDescending(operacao => operacao.FinishedAt)
-            .ThenByDescending(operacao => operacao.CreatedAt)
-            .Select(operacao => operacao.Resultado)
-            .FirstOrDefault();
+            .Select(operacao => operacao.Resultado!.Value)
+            .Distinct()
+            .ToArray();
+        if (resultadosConclusivos.Length > 1)
+        {
+            throw new InvalidOperationException(
+                "Pagamento Pix possui evidências conclusivas conflitantes no ciclo da tentativa atual.");
+        }
 
-    private static OperacaoPagamentoPix? ObterEnvioAberto(
-        IReadOnlyCollection<OperacaoPagamentoPix> historico) =>
-        historico.SingleOrDefault(operacao =>
-            operacao.TipoOperacao == TipoOperacaoPagamentoPix.Envio &&
-            !operacao.FinishedAt.HasValue);
+        return resultadosConclusivos.Length == 0
+            ? null
+            : resultadosConclusivos[0];
+    }
 
     private async Task<bool> FinalizarEnvioAbertoAsync(
         OperacaoPagamentoPix envioAberto,
@@ -162,6 +182,10 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
             StatusPixProvider.Indeterminado => ResultadoOperacaoPagamentoPix.Indeterminado,
             _ => throw new ArgumentOutOfRangeException(nameof(status), "O status do provider Pix é inválido.")
         };
+
+    private sealed record CicloAtual(
+        OperacaoPagamentoPix Envio,
+        IReadOnlyCollection<OperacaoPagamentoPix> Consultas);
 
     #endregion
 }
