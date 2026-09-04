@@ -164,6 +164,19 @@ public sealed class InfrastructureDependencyInjectionTests
     }
 
     [Fact]
+    public void AddInfrastructure_DeveRegistrarStoreTransacionalDeAplicacaoDoResultadoPixComoScoped()
+    {
+        var services = new ServiceCollection();
+        services.AddInfrastructure(CriarConfiguration());
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IPagamentoPixAplicacaoResultadoStore>();
+
+        Assert.IsType<PagamentoPixAplicacaoResultadoMySqlStore>(store);
+    }
+
+    [Fact]
     public void AddInfrastructure_DeveRegistrarIPixProviderComoScopedSemResolverCertificadoNoStartup()
     {
         var services = new ServiceCollection();

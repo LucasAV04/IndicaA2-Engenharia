@@ -172,6 +172,53 @@ public sealed class CashbackTests
         Assert.Equal(DateTimeKind.Utc, cashback.UpdatedAt.Kind);
     }
 
+    [Fact]
+    public void RegistrarPagamento_QuandoDisponivel_DeveMarcarComoPagoSemAlterarSnapshots()
+    {
+        var cashback = CriarCashback(499.90m);
+        cashback.Aprovar();
+        var updatedAtAnterior = cashback.UpdatedAt;
+        var indicacaoId = cashback.IndicacaoId;
+        var pagamentoVistoriaId = cashback.PagamentoVistoriaId;
+        var indicadorId = cashback.UsuarioIndicadorId;
+        var valor = cashback.Valor;
+
+        cashback.RegistrarPagamento();
+
+        Assert.Equal(StatusCashback.Pago, cashback.Status);
+        Assert.Equal(indicacaoId, cashback.IndicacaoId);
+        Assert.Equal(pagamentoVistoriaId, cashback.PagamentoVistoriaId);
+        Assert.Equal(indicadorId, cashback.UsuarioIndicadorId);
+        Assert.Equal(valor, cashback.Valor);
+        Assert.True(cashback.UpdatedAt >= updatedAtAnterior);
+    }
+
+    [Fact]
+    public void RegistrarPagamento_QuandoJaPago_DeveSerIdempotente()
+    {
+        var cashback = CriarCashback(500m);
+        cashback.Aprovar();
+        cashback.RegistrarPagamento();
+        var updatedAt = cashback.UpdatedAt;
+
+        cashback.RegistrarPagamento();
+
+        Assert.Equal(StatusCashback.Pago, cashback.Status);
+        Assert.Equal(updatedAt, cashback.UpdatedAt);
+    }
+
+    [Theory]
+    [InlineData(StatusCashback.Pendente)]
+    [InlineData(StatusCashback.Cancelado)]
+    public void RegistrarPagamento_QuandoStatusNaoForDisponivel_DeveRejeitar(StatusCashback status)
+    {
+        var cashback = CriarCashback(500m);
+        if (status == StatusCashback.Cancelado)
+            cashback.Cancelar();
+
+        Assert.Throws<DomainException>(() => cashback.RegistrarPagamento());
+    }
+
     private static Cashback CriarCashback(decimal valorTotalPago) => Cashback.Criar(
         Guid.NewGuid(),
         Guid.NewGuid(),

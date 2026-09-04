@@ -136,6 +136,16 @@ public sealed class Cashback : BaseEntity
         AtualizarDataAlteracao();
     }
 
+    public void RegistrarPagamento()
+    {
+        if (Status == StatusCashback.Pago)
+            return;
+
+        GarantirStatus(StatusCashback.Disponivel, "registrar o pagamento do cashback");
+        Status = StatusCashback.Pago;
+        AtualizarDataAlteracao();
+    }
+
     private void GarantirStatus(StatusCashback statusEsperado, string acao)
     {
         if (Status != statusEsperado)

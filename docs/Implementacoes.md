@@ -1,5 +1,29 @@
 # Implementações
 
+## Aplicação Segura do Resultado de PagamentoPix
+
+**Data:** 2026-09-04
+
+### Implementado
+
+- `IPagamentoPixAplicacaoResultadoService` aplica exclusivamente uma evidência conclusiva já persistida na auditoria. A entrada é somente o identificador da ordem: nenhum chamador informa arbitrariamente se o pagamento foi confirmado ou recusado.
+- A evidência é limitada ao ciclo da tentativa atual: há exatamente um `Envio` cujo número corresponde a `QuantidadeTentativas`, e somente `Consulta` iniciada depois desse envio participa do ciclo. Evidências conclusivas anteriores são histórico e não decidem a tentativa atual; conflito entre `Confirmado` e `FalhaConfirmada` falha fechado.
+- Auditoria aberta não é modificada por este caso de uso. Se uma Consulta conclusiva existir enquanto o Envio atual permanecer aberto, o resultado é `RequerReconciliacao`, preservando a responsabilidade da reconciliação de recuperar a auditoria.
+- `Cashback.RegistrarPagamento()` formaliza a única nova transição de domínio: `Disponivel → Pago`, idempotente em `Pago` e proibida a partir de `Pendente` ou `Cancelado`.
+- `Confirmado` efetiva `PagamentoPix.Processando → Concluido` e `Cashback.Disponivel → Pago` em uma transação MySQL. `FalhaConfirmada` efetiva somente `PagamentoPix.Processando → Falhou` ou `FalhaDefinitiva`, conforme a tentativa, preservando o Cashback `Disponivel`.
+- `PagamentoPixAplicacaoResultadoMySqlStore` bloqueia as linhas envolvidas, valida snapshots financeiros, usa updates condicionais e reverte a transação quando qualquer etapa não pode ser concluída. Reexecuções concorrentes observam o estado final coerente e retornam resultado idempotente.
+- Não há chamada a `IPixProvider`, criação/finalização de `OperacaoPagamentoPix`, migration, endpoint, worker, webhook ou retentativa automática.
+
+### Testes
+
+- Cobertura de Domain para a transição `Disponivel → Pago`, idempotência, estados proibidos, `UpdatedAt` e preservação de snapshots.
+- Cobertura de Application para ciclo atual, histórico anterior, inconsistências, estados parciais, aplicação confirmada, falha até a quinta tentativa, idempotência, snapshots e ausência de provider/auditoria mutável.
+- Integrações MySQL condicionais para confirmação atômica, falha, quinta tentativa, rollback induzido, concorrência com cinco executores, idempotência, preservação de material criptográfico/auditoria, histórico anterior e conflito conclusivo.
+
+### Pendente
+
+- Política de retry após `Falhou`, seleção automática de pagamentos, recuperação operacional, worker, webhook, produção e observabilidade financeira.
+
 ## Reconciliação Segura de PagamentoPix
 
 **Data:** 2026-09-03

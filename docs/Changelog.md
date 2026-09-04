@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-04 — Aplicação Segura do Resultado de PagamentoPix
+
+### Adicionado
+
+- Caso de uso interno para transformar somente evidência conclusiva e já auditada do ciclo atual em estado financeiro interno, sem provider, envio, consulta ou mutação da auditoria.
+- Transição de domínio `Cashback.Disponivel → Pago`, com idempotência em `Pago` e rejeição de estados não elegíveis.
+- Store transacional MySQL que coordena `PagamentoPix.Concluido + Cashback.Pago` de forma atômica e aplica `FalhaConfirmada` sem alterar o Cashback.
+- Cobertura para idempotência, concorrência, rollback e preservação de snapshots financeiros e da auditoria.
+
+### Decisões
+
+- `Confirmado` e `FalhaConfirmada` são descobertos exclusivamente no histórico persistido do ciclo atual; resultados de tentativas anteriores e evidências conflitantes não são aplicados.
+- `FalhaConfirmada` não inicia retry. Política de nova tentativa, worker, webhook, seleção automática e observabilidade permanecem pendentes.
+
 ## 2026-09-03 — Reconciliação Segura de PagamentoPix
 
 ### Adicionado
