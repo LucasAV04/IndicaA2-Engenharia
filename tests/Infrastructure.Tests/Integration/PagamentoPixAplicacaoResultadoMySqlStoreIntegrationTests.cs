@@ -193,7 +193,6 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
         new(
             CriarPagamentoRepository(),
             CriarCashbackRepository(),
-            new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory),
             new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory));
 
     private async Task<ContextoFinanceiro> CriarContextoPersistidoAsync(

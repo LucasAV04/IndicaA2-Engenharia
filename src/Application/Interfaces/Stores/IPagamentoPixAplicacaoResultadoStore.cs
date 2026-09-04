@@ -8,6 +8,6 @@ namespace Application.Interfaces.Stores;
 public interface IPagamentoPixAplicacaoResultadoStore
 {
     Task<ResultadoPersistenciaAplicacaoPagamentoPix> AplicarAsync(
-        AplicacaoResultadoPagamentoPixRequest request,
+        Guid pagamentoPixId,
         CancellationToken cancellationToken = default);
 }

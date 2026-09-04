@@ -64,6 +64,7 @@ public static class InfrastructureDependencyInjection
         services.AddScoped<IPagamentoPixRepository, PagamentoPixMySqlRepository>();
         services.AddScoped<IPagamentoPixEnvioStore, PagamentoPixEnvioMySqlStore>();
         services.AddScoped<IPagamentoPixAplicacaoResultadoStore, PagamentoPixAplicacaoResultadoMySqlStore>();
+        services.AddScoped<IPagamentoPixReconciliacaoStore, PagamentoPixReconciliacaoMySqlStore>();
         services.AddScoped<IOperacaoPagamentoPixRepository, OperacaoPagamentoPixMySqlRepository>();
         services.AddScoped<IPagamentoVistoriaRepository, PagamentoVistoriaMySqlRepository>();
         services.AddScoped<IUsuarioRepository, UsuarioMySqlRepository>();

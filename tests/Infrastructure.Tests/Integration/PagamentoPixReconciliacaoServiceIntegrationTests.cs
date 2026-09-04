@@ -77,7 +77,7 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
     }
 
     [MySqlIntegrationFact]
-    public async Task ReconciliarAsync_QuandoConsultaAnteriorEstiverAberta_DeveRegistrarNovaConsulta()
+    public async Task ReconciliarAsync_QuandoConsultaDoCicloAtualEstiverAberta_NaoDeveRegistrarNovaConsulta()
     {
         await fixture.LimparDadosAsync();
         var pagamentoPix = await CriarPagamentoPixProcessandoAsync();
@@ -89,17 +89,15 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
         await operacaoRepository.AdicionarAsync(consultaAnterior, CancellationToken.None);
         var provider = new PixProviderFake(PixProviderResult.Indeterminado());
 
-        await CriarService(provider).ReconciliarAsync(pagamentoPix.Id, CancellationToken.None);
+        var resultado = await CriarService(provider).ReconciliarAsync(pagamentoPix.Id, CancellationToken.None);
 
         var operacoes = await operacaoRepository.ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None);
         var consultas = operacoes.Where(operacao => operacao.TipoOperacao == TipoOperacaoPagamentoPix.Consulta).ToArray();
 
-        Assert.Equal(2, consultas.Length);
+        Assert.Equal(StatusReconciliacaoPagamentoPix.ConsultaEmAndamento, resultado.Status);
+        Assert.Single(consultas);
         Assert.False(consultas.Single(operacao => operacao.Id == consultaAnterior.Id).FinishedAt.HasValue);
-        Assert.Single(
-            consultas,
-            operacao => operacao.Id != consultaAnterior.Id && operacao.FinishedAt.HasValue);
-        Assert.Equal(1, provider.QuantidadeConsultas);
+        Assert.Equal(0, provider.QuantidadeConsultas);
         Assert.Equal(0, provider.QuantidadeEnvios);
     }
 
@@ -271,10 +269,74 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
         }
     }
 
+    [MySqlIntegrationFact]
+    public async Task ReconciliarAsync_QuandoConsultaForPreparada_DeveImpedirAplicacaoAteFinalizacaoDaAuditoria()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixProcessandoAsync();
+        var operacaoRepository = new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory);
+        await operacaoRepository.AdicionarAsync(
+            OperacaoPagamentoPix.IniciarEnvio(pagamentoPix.Id, 1),
+            CancellationToken.None);
+        var provider = new PixProviderBloqueavel(PixProviderResult.Confirmado());
+        var reconciliacao = CriarService(provider);
+        var aplicacao = new PagamentoPixAplicacaoResultadoService(
+            CriarPagamentoRepository(),
+            new CashbackMySqlRepository(fixture.ConnectionFactory),
+            new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory));
+
+        var tarefaReconciliacao = reconciliacao.ReconciliarAsync(pagamentoPix.Id, CancellationToken.None);
+        await provider.ConsultaIniciada;
+
+        var duranteConsulta = await aplicacao.AplicarAsync(pagamentoPix.Id, CancellationToken.None);
+        Assert.Equal(StatusAplicacaoPagamentoPix.RequerReconciliacao, duranteConsulta.Status);
+
+        provider.LiberarConsulta();
+        _ = await tarefaReconciliacao;
+
+        var aposReconciliacao = await aplicacao.AplicarAsync(pagamentoPix.Id, CancellationToken.None);
+        var pagamentoPersistido = (await CriarPagamentoRepository()
+            .ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+        var cashbackPersistido = (await new CashbackMySqlRepository(fixture.ConnectionFactory)
+            .ObterPorIdAsync(pagamentoPix.CashbackId, CancellationToken.None))!;
+
+        Assert.Equal(StatusAplicacaoPagamentoPix.Aplicado, aposReconciliacao.Status);
+        Assert.Equal(StatusPagamentoPix.Concluido, pagamentoPersistido.Status);
+        Assert.Equal(StatusCashback.Pago, cashbackPersistido.Status);
+        Assert.Equal(1, provider.QuantidadeConsultas);
+        Assert.Equal(0, provider.QuantidadeEnvios);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ReconciliarAsync_QuandoAplicacaoFinanceiraVencerCoordenacao_NaoDeveCriarConsultaNemChamarProvider()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixProcessandoAsync();
+        var operacaoRepository = new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory);
+        var envio = OperacaoPagamentoPix.IniciarEnvio(pagamentoPix.Id, 1);
+        await AdicionarEFinalizarAsync(operacaoRepository, envio, ResultadoOperacaoPagamentoPix.Confirmado);
+        var aplicacao = new PagamentoPixAplicacaoResultadoService(
+            CriarPagamentoRepository(),
+            new CashbackMySqlRepository(fixture.ConnectionFactory),
+            new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory));
+        var provider = new PixProviderFake(PixProviderResult.Pendente());
+
+        var aplicacaoResultado = await aplicacao.AplicarAsync(pagamentoPix.Id, CancellationToken.None);
+        var reconciliacaoResultado = await CriarService(provider).ReconciliarAsync(pagamentoPix.Id, CancellationToken.None);
+        var operacoes = await operacaoRepository.ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None);
+
+        Assert.Equal(StatusAplicacaoPagamentoPix.Aplicado, aplicacaoResultado.Status);
+        Assert.Equal(StatusReconciliacaoPagamentoPix.NaoAplicavel, reconciliacaoResultado.Status);
+        Assert.Single(operacoes);
+        Assert.Equal(0, provider.QuantidadeConsultas);
+        Assert.Equal(0, provider.QuantidadeEnvios);
+    }
+
     private PagamentoPixReconciliacaoService CriarService(IPixProvider provider) =>
         new(
             CriarPagamentoRepository(),
             new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory),
+            new PagamentoPixReconciliacaoMySqlStore(fixture.ConnectionFactory),
             provider);
 
     private async Task<PagamentoPix> CriarPagamentoPixProcessandoAsync(int quantidadeTentativas = 1)
@@ -409,5 +471,33 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
             Interlocked.Increment(ref _quantidadeConsultas);
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class PixProviderBloqueavel(PixProviderResult result) : IPixProvider
+    {
+        private readonly TaskCompletionSource _consultaIniciada = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _liberacao = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _quantidadeConsultas;
+        private int _quantidadeEnvios;
+
+        public Task ConsultaIniciada => _consultaIniciada.Task;
+        public int QuantidadeConsultas => _quantidadeConsultas;
+        public int QuantidadeEnvios => _quantidadeEnvios;
+
+        public Task<PixProviderResult> EnviarAsync(PixEnvioRequest request, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _quantidadeEnvios);
+            throw new InvalidOperationException("O envio não é permitido durante a reconciliação.");
+        }
+
+        public async Task<PixProviderResult> ConsultarAsync(PixConsultaRequest request, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _quantidadeConsultas);
+            _consultaIniciada.TrySetResult();
+            await _liberacao.Task.WaitAsync(cancellationToken);
+            return result;
+        }
+
+        public void LiberarConsulta() => _liberacao.TrySetResult();
     }
 }

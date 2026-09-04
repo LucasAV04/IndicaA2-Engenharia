@@ -7,8 +7,9 @@ using MySqlConnector;
 namespace Infrastructure.Repositories;
 
 /// <summary>
-/// Persiste a liquidação financeira de uma evidência conclusiva já auditada.
-/// Nenhuma operação Pix é criada ou alterada nesta transação.
+/// Decide e persiste a liquidação financeira sob bloqueio da mesma ordem usada
+/// para preparar uma reconciliação. A evidência nunca é confiada a uma leitura
+/// anterior à transação.
 /// </summary>
 public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixAplicacaoResultadoStore
 {
@@ -20,12 +21,10 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
     }
 
     public async Task<ResultadoPersistenciaAplicacaoPagamentoPix> AplicarAsync(
-        AplicacaoResultadoPagamentoPixRequest request,
+        Guid pagamentoPixId,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ValidarRequest(request);
-        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentOutOfRangeException.ThrowIfEqual(pagamentoPixId, Guid.Empty);
 
         await using var connection = _connectionFactory.Create();
         await connection.OpenAsync(cancellationToken);
@@ -34,71 +33,66 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
         try
         {
             var pagamentoPix = await ObterPagamentoPixParaAtualizacaoAsync(
-                connection,
-                transaction,
-                request.PagamentoPixId,
-                cancellationToken);
-            var cashback = await ObterCashbackParaAtualizacaoAsync(
-                connection,
-                transaction,
-                request.CashbackId,
-                cancellationToken);
+                connection, transaction, pagamentoPixId, cancellationToken);
+            var operacoes = await ObterOperacoesParaAtualizacaoAsync(
+                connection, transaction, pagamentoPixId, cancellationToken);
+            var cicloAtual = IdentificarCicloAtual(operacoes, pagamentoPix.QuantidadeTentativas);
+            var resultadoConclusivo = ObterResultadoConclusivo(cicloAtual);
 
-            ValidarSnapshotsPersistidos(pagamentoPix, cashback, request);
-            if (EstadoJaAplicado(pagamentoPix, cashback, request))
+            if (cicloAtual.Consultas.Any(operacao => !operacao.FinishedAt.HasValue) ||
+                !cicloAtual.Envio.FinishedAt.HasValue)
             {
                 await transaction.CommitAsync(cancellationToken);
-                return ResultadoPersistenciaAplicacaoPagamentoPix.JaAplicado;
+                return ResultadoPersistenciaAplicacaoPagamentoPix.RequerReconciliacao();
             }
 
-            ValidarEstadoInicial(pagamentoPix, cashback, request);
-            if (await AtualizarPagamentoPixAsync(connection, transaction, request, cancellationToken) != 1)
+            if (!resultadoConclusivo.HasValue)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return ResultadoPersistenciaAplicacaoPagamentoPix.SemResultadoConclusivo();
+            }
+
+            var cashback = await ObterCashbackParaAtualizacaoAsync(
+                connection, transaction, pagamentoPix.CashbackId, cancellationToken);
+            ValidarSnapshotsPersistidos(pagamentoPix, cashback);
+
+            if (EstadoJaAplicado(pagamentoPix, cashback, resultadoConclusivo.Value))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return ResultadoPersistenciaAplicacaoPagamentoPix.JaAplicado(resultadoConclusivo.Value);
+            }
+
+            ValidarEstadoInicial(pagamentoPix, cashback);
+            var statusPagamentoPixFinal = ObterStatusPagamentoPixFinal(
+                resultadoConclusivo.Value,
+                pagamentoPix.QuantidadeTentativas);
+
+            if (await AtualizarPagamentoPixAsync(
+                    connection,
+                    transaction,
+                    pagamentoPixId,
+                    pagamentoPix.QuantidadeTentativas,
+                    statusPagamentoPixFinal,
+                    cancellationToken) != 1)
             {
                 throw new InvalidOperationException(
                     "A atualização condicional do Pagamento Pix não foi aplicada e requer intervenção técnica.");
             }
 
-            if (request.ResultadoConclusivo == ResultadoOperacaoPagamentoPix.Confirmado &&
-                await AtualizarCashbackAsync(connection, transaction, request, cancellationToken) != 1)
+            if (resultadoConclusivo == ResultadoOperacaoPagamentoPix.Confirmado &&
+                await AtualizarCashbackAsync(connection, transaction, pagamentoPix.CashbackId, cancellationToken) != 1)
             {
                 throw new InvalidOperationException(
                     "A atualização condicional do Cashback não foi aplicada e a transação foi revertida.");
             }
 
             await transaction.CommitAsync(cancellationToken);
-            return ResultadoPersistenciaAplicacaoPagamentoPix.Aplicado;
+            return ResultadoPersistenciaAplicacaoPagamentoPix.Aplicado(resultadoConclusivo.Value);
         }
         catch
         {
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
-        }
-    }
-
-    private static void ValidarRequest(AplicacaoResultadoPagamentoPixRequest request)
-    {
-        if (request.PagamentoPixId == Guid.Empty || request.CashbackId == Guid.Empty ||
-            request.UsuarioBeneficiarioId == Guid.Empty || request.UsuarioIndicadorId == Guid.Empty ||
-            request.Valor <= 0 || request.QuantidadeTentativas is < 1 or > 5)
-        {
-            throw new ArgumentException("A solicitação de aplicação financeira é inválida.", nameof(request));
-        }
-
-        var combinacaoValida = request.ResultadoConclusivo switch
-        {
-            ResultadoOperacaoPagamentoPix.Confirmado =>
-                request.StatusPagamentoPixFinal == StatusPagamentoPix.Concluido &&
-                request.StatusCashbackFinal == StatusCashback.Pago,
-            ResultadoOperacaoPagamentoPix.FalhaConfirmada =>
-                (request.StatusPagamentoPixFinal is StatusPagamentoPix.Falhou or StatusPagamentoPix.FalhaDefinitiva) &&
-                request.StatusCashbackFinal == StatusCashback.Disponivel,
-            _ => false
-        };
-        if (!combinacaoValida)
-        {
-            throw new ArgumentException(
-                "A solicitação possui uma combinação inválida entre evidência e estado financeiro final.",
-                nameof(request));
         }
     }
 
@@ -129,6 +123,40 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")));
     }
 
+    private static async Task<IReadOnlyCollection<OperacaoPersistida>> ObterOperacoesParaAtualizacaoAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        Guid pagamentoPixId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT tipo_operacao, numero_tentativa_envio, resultado, started_at, finished_at
+            FROM operacoes_pagamento_pix
+            WHERE pagamento_pix_id = @pagamentoPixId
+            ORDER BY started_at, id
+            FOR UPDATE;
+            """;
+
+        var operacoes = new List<OperacaoPersistida>();
+        await using var command = new MySqlCommand(sql, connection, transaction);
+        AdicionarGuid(command, "@pagamentoPixId", pagamentoPixId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var tentativaOrdinal = reader.GetOrdinal("numero_tentativa_envio");
+            var resultadoOrdinal = reader.GetOrdinal("resultado");
+            var finalizadaOrdinal = reader.GetOrdinal("finished_at");
+            operacoes.Add(new OperacaoPersistida(
+                ObterEnum<TipoOperacaoPagamentoPix>(reader, "tipo_operacao"),
+                reader.IsDBNull(tentativaOrdinal) ? null : reader.GetInt32(tentativaOrdinal),
+                reader.IsDBNull(resultadoOrdinal) ? null : ObterEnum<ResultadoOperacaoPagamentoPix>(reader, "resultado"),
+                EmUtc(reader.GetDateTime(reader.GetOrdinal("started_at"))),
+                reader.IsDBNull(finalizadaOrdinal) ? null : EmUtc(reader.GetDateTime(finalizadaOrdinal))));
+        }
+
+        return operacoes.AsReadOnly();
+    }
+
     private static async Task<CashbackPersistido> ObterCashbackParaAtualizacaoAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
@@ -154,16 +182,61 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             ObterEnum<StatusCashback>(reader, "status"));
     }
 
-    private static void ValidarSnapshotsPersistidos(
-        PagamentoPixPersistido pagamentoPix,
-        CashbackPersistido cashback,
-        AplicacaoResultadoPagamentoPixRequest request)
+    private static CicloAtual IdentificarCicloAtual(
+        IReadOnlyCollection<OperacaoPersistida> historico,
+        int tentativaAtual)
     {
-        if (pagamentoPix.CashbackId != request.CashbackId ||
-            pagamentoPix.UsuarioBeneficiarioId != request.UsuarioBeneficiarioId ||
-            cashback.UsuarioIndicadorId != request.UsuarioIndicadorId ||
-            pagamentoPix.Valor != request.Valor ||
-            cashback.Valor != request.Valor)
+        var enviosDaTentativaAtual = historico
+            .Where(operacao =>
+                operacao.TipoOperacao == TipoOperacaoPagamentoPix.Envio &&
+                operacao.NumeroTentativaEnvio == tentativaAtual)
+            .ToArray();
+        if (enviosDaTentativaAtual.Length != 1)
+        {
+            throw new InvalidOperationException(
+                "Pagamento Pix deve possuir exatamente um envio para a tentativa atual.");
+        }
+
+        if (historico.Any(operacao =>
+                operacao.TipoOperacao == TipoOperacaoPagamentoPix.Envio &&
+                operacao.NumeroTentativaEnvio < tentativaAtual &&
+                !operacao.FinishedAt.HasValue))
+        {
+            throw new InvalidOperationException(
+                "Pagamento Pix possui envio aberto de tentativa anterior e requer intervenção técnica.");
+        }
+
+        var envioAtual = enviosDaTentativaAtual[0];
+        return new CicloAtual(
+            envioAtual,
+            historico
+                .Where(operacao =>
+                    operacao.TipoOperacao == TipoOperacaoPagamentoPix.Consulta &&
+                    operacao.CreatedAt > envioAtual.CreatedAt)
+                .ToArray());
+    }
+
+    private static ResultadoOperacaoPagamentoPix? ObterResultadoConclusivo(CicloAtual cicloAtual)
+    {
+        var resultados = new[] { cicloAtual.Envio }
+            .Concat(cicloAtual.Consultas)
+            .Where(operacao => EhConclusivo(operacao.Resultado))
+            .Select(operacao => operacao.Resultado!.Value)
+            .Distinct()
+            .ToArray();
+        if (resultados.Length > 1)
+        {
+            throw new InvalidOperationException(
+                "Pagamento Pix possui evidências conclusivas conflitantes no ciclo da tentativa atual.");
+        }
+
+        return resultados.Length == 0 ? null : resultados[0];
+    }
+
+    private static void ValidarSnapshotsPersistidos(PagamentoPixPersistido pagamentoPix, CashbackPersistido cashback)
+    {
+        if (pagamentoPix.UsuarioBeneficiarioId != cashback.UsuarioIndicadorId ||
+            pagamentoPix.Valor != cashback.Valor)
         {
             throw new InvalidOperationException(
                 "Os snapshots persistidos de Pagamento Pix e Cashback são incompatíveis e requerem intervenção técnica.");
@@ -173,18 +246,21 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
     private static bool EstadoJaAplicado(
         PagamentoPixPersistido pagamentoPix,
         CashbackPersistido cashback,
-        AplicacaoResultadoPagamentoPixRequest request) =>
-        pagamentoPix.Status == request.StatusPagamentoPixFinal &&
-        pagamentoPix.QuantidadeTentativas == request.QuantidadeTentativas &&
-        cashback.Status == request.StatusCashbackFinal;
+        ResultadoOperacaoPagamentoPix resultadoConclusivo) =>
+        resultadoConclusivo switch
+        {
+            ResultadoOperacaoPagamentoPix.Confirmado =>
+                pagamentoPix.Status == StatusPagamentoPix.Concluido && cashback.Status == StatusCashback.Pago,
+            ResultadoOperacaoPagamentoPix.FalhaConfirmada =>
+                (pagamentoPix.Status is StatusPagamentoPix.Falhou or StatusPagamentoPix.FalhaDefinitiva) &&
+                cashback.Status == StatusCashback.Disponivel &&
+                StatusFalhaCoerente(pagamentoPix.Status, pagamentoPix.QuantidadeTentativas),
+            _ => false
+        };
 
-    private static void ValidarEstadoInicial(
-        PagamentoPixPersistido pagamentoPix,
-        CashbackPersistido cashback,
-        AplicacaoResultadoPagamentoPixRequest request)
+    private static void ValidarEstadoInicial(PagamentoPixPersistido pagamentoPix, CashbackPersistido cashback)
     {
         if (pagamentoPix.Status != StatusPagamentoPix.Processando ||
-            pagamentoPix.QuantidadeTentativas != request.QuantidadeTentativas ||
             cashback.Status != StatusCashback.Disponivel)
         {
             throw new InvalidOperationException(
@@ -192,10 +268,27 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
         }
     }
 
+    private static StatusPagamentoPix ObterStatusPagamentoPixFinal(
+        ResultadoOperacaoPagamentoPix resultadoConclusivo,
+        int quantidadeTentativas) =>
+        resultadoConclusivo switch
+        {
+            ResultadoOperacaoPagamentoPix.Confirmado => StatusPagamentoPix.Concluido,
+            ResultadoOperacaoPagamentoPix.FalhaConfirmada when quantidadeTentativas is >= 1 and < 5 => StatusPagamentoPix.Falhou,
+            ResultadoOperacaoPagamentoPix.FalhaConfirmada when quantidadeTentativas == 5 => StatusPagamentoPix.FalhaDefinitiva,
+            _ => throw new InvalidOperationException("A combinação entre evidência conclusiva e tentativa é inválida.")
+        };
+
+    private static bool StatusFalhaCoerente(StatusPagamentoPix status, int quantidadeTentativas) =>
+        (status == StatusPagamentoPix.Falhou && quantidadeTentativas is >= 1 and < 5) ||
+        (status == StatusPagamentoPix.FalhaDefinitiva && quantidadeTentativas == 5);
+
     private static async Task<int> AtualizarPagamentoPixAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
-        AplicacaoResultadoPagamentoPixRequest request,
+        Guid pagamentoPixId,
+        int quantidadeTentativas,
+        StatusPagamentoPix statusFinal,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -207,18 +300,18 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             """;
 
         await using var command = new MySqlCommand(sql, connection, transaction);
-        AdicionarGuid(command, "@id", request.PagamentoPixId);
-        command.Parameters.Add("@statusFinal", MySqlDbType.Int32).Value = (int)request.StatusPagamentoPixFinal;
+        AdicionarGuid(command, "@id", pagamentoPixId);
+        command.Parameters.Add("@statusFinal", MySqlDbType.Int32).Value = (int)statusFinal;
         command.Parameters.Add("@statusProcessando", MySqlDbType.Int32).Value = (int)StatusPagamentoPix.Processando;
-        command.Parameters.Add("@quantidadeTentativas", MySqlDbType.Int32).Value = request.QuantidadeTentativas;
-        command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = request.PagamentoPixUpdatedAt;
+        command.Parameters.Add("@quantidadeTentativas", MySqlDbType.Int32).Value = quantidadeTentativas;
+        command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = DateTime.UtcNow;
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<int> AtualizarCashbackAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
-        AplicacaoResultadoPagamentoPixRequest request,
+        Guid cashbackId,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -229,12 +322,15 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             """;
 
         await using var command = new MySqlCommand(sql, connection, transaction);
-        AdicionarGuid(command, "@id", request.CashbackId);
-        command.Parameters.Add("@statusFinal", MySqlDbType.Int32).Value = (int)request.StatusCashbackFinal;
+        AdicionarGuid(command, "@id", cashbackId);
+        command.Parameters.Add("@statusFinal", MySqlDbType.Int32).Value = (int)StatusCashback.Pago;
         command.Parameters.Add("@statusDisponivel", MySqlDbType.Int32).Value = (int)StatusCashback.Disponivel;
-        command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = request.CashbackUpdatedAt;
+        command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = DateTime.UtcNow;
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    private static bool EhConclusivo(ResultadoOperacaoPagamentoPix? resultado) =>
+        resultado is ResultadoOperacaoPagamentoPix.Confirmado or ResultadoOperacaoPagamentoPix.FalhaConfirmada;
 
     private static Guid ObterGuid(MySqlDataReader reader, string coluna) =>
         Guid.TryParse(reader.GetString(reader.GetOrdinal(coluna)), out var valor) && valor != Guid.Empty
@@ -250,6 +346,8 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             : throw new InvalidOperationException("O status financeiro persistido é inválido.");
     }
 
+    private static DateTime EmUtc(DateTime data) => DateTime.SpecifyKind(data, DateTimeKind.Utc);
+
     private static void AdicionarGuid(MySqlCommand command, string nome, Guid valor) =>
         command.Parameters.Add(nome, MySqlDbType.VarChar).Value = valor.ToString();
 
@@ -260,8 +358,14 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
         StatusPagamentoPix Status,
         int QuantidadeTentativas);
 
-    private sealed record CashbackPersistido(
-        Guid UsuarioIndicadorId,
-        decimal Valor,
-        StatusCashback Status);
+    private sealed record CashbackPersistido(Guid UsuarioIndicadorId, decimal Valor, StatusCashback Status);
+
+    private sealed record OperacaoPersistida(
+        TipoOperacaoPagamentoPix TipoOperacao,
+        int? NumeroTentativaEnvio,
+        ResultadoOperacaoPagamentoPix? Resultado,
+        DateTime CreatedAt,
+        DateTime? FinishedAt);
+
+    private sealed record CicloAtual(OperacaoPersistida Envio, IReadOnlyCollection<OperacaoPersistida> Consultas);
 }
