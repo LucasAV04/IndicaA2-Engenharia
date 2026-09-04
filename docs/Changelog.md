@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-09-04 — Coordenação de Reconciliação e Aplicação de Resultado Pix
+
+### Corrigido
+
+- Eliminado o intervalo entre a leitura da auditoria e a liquidação financeira: aplicação e preparação de reconciliação agora se serializam pelo mesmo registro persistido de `pagamentos_pix`.
+- A aplicação relê o ciclo atual sob transação e bloqueio de linhas, bloqueando liquidação quando existir Consulta aberta; evidências conclusivas conflitantes falham fechadas antes de qualquer alteração financeira.
+- A preparação de Consulta foi movida para store transacional próprio. Ela persiste a auditoria antes da chamada ao provider e não cria Consulta nem chama provider quando a aplicação financeira já tiver concluído a ordem.
+- Reforçada a coerência de `FalhaConfirmada`: tentativas 1–4 resultam em `Falhou`; somente a quinta resulta em `FalhaDefinitiva`.
+
+### Validação
+
+- Build da solução: sucesso, 0 erros e um aviso preexistente de nulabilidade em `UsuarioService`.
+- Suíte local sem Efí externo: 442 aprovados, 0 falhos e 89 integrações MySQL ignoradas por ausência de `INDICA2_TEST_MYSQL_CONNECTION` no processo.
+
+## 2026-09-04 — Aplicação Segura do Resultado de PagamentoPix
+
+### Adicionado
+
+- Caso de uso interno para transformar somente evidência conclusiva e já auditada do ciclo atual em estado financeiro interno, sem provider, envio, consulta ou mutação da auditoria.
+- Transição de domínio `Cashback.Disponivel → Pago`, com idempotência em `Pago` e rejeição de estados não elegíveis.
+- Store transacional MySQL que coordena `PagamentoPix.Concluido + Cashback.Pago` de forma atômica e aplica `FalhaConfirmada` sem alterar o Cashback.
+- Cobertura para idempotência, concorrência, rollback e preservação de snapshots financeiros e da auditoria.
+
+### Decisões
+
+- `Confirmado` e `FalhaConfirmada` são descobertos exclusivamente no histórico persistido do ciclo atual; resultados de tentativas anteriores e evidências conflitantes não são aplicados.
+- `FalhaConfirmada` não inicia retry. Política de nova tentativa, worker, webhook, seleção automática e observabilidade permanecem pendentes.
+
 ## 2026-09-03 — Reconciliação Segura de PagamentoPix
 
 ### Adicionado
