@@ -1,12 +1,20 @@
+#requires -Version 7.4
 [CmdletBinding()]
-param()
+param(
+    [switch]$RequireMySql
+)
 
 $connectionName = 'INDICA2_TEST_MYSQL_CONNECTION'
 $connectionString = [Environment]::GetEnvironmentVariable($connectionName)
 
 if ([string]::IsNullOrWhiteSpace($connectionString)) {
-    Write-Error "A variavel $connectionName nao esta configurada. As integracoes MySQL nao foram executadas."
-    exit 2
+    if ($RequireMySql) {
+        Write-Output "ERROR: A variavel $connectionName e obrigatoria neste ambiente."
+        exit 2
+    }
+
+    Write-Output "SKIPPED: A variavel $connectionName nao esta configurada. As integracoes MySQL nao foram executadas."
+    exit 0
 }
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -21,7 +29,10 @@ if (-not (Test-Path $connector)) {
 try {
     Add-Type -Path $connector
     $builder = [MySqlConnector.MySqlConnectionStringBuilder]::new($connectionString)
-    $normalizedConnectionString = $builder.ConnectionString
+    if ([string]::IsNullOrWhiteSpace($builder.Server) -or -not [string]::IsNullOrWhiteSpace($builder.Database)) {
+        throw 'A connection string deve apontar para um servidor MySQL administrativo sem database.'
+    }
+
     $connection = [MySqlConnector.MySqlConnection]::new($connectionString)
     try {
         $connection.Open()
@@ -43,7 +54,7 @@ catch {
     exit 1
 }
 
-$bytes = [Text.Encoding]::UTF8.GetBytes($normalizedConnectionString)
+$bytes = [Text.Encoding]::UTF8.GetBytes($connectionString)
 $hash = [Security.Cryptography.SHA256]::HashData($bytes)
 $env:INDICA2_TEST_MYSQL_PREFLIGHT_HASH = [Convert]::ToHexString($hash).ToLowerInvariant()
 

@@ -52,9 +52,10 @@ public sealed class MySqlIntegrationPreflightTests
     }
 
     [Fact]
-    public void Marker_QuandoForDaMesmaConexao_DevePermitirReutilizarPreflightSemExporSegredo()
+    public void Marker_QuandoUsarTextoOriginalNaoCanonico_DeveSerDeterministico()
     {
-        const string connectionString = "Server=teste;";
+        const string connectionString = "server=teste;uid=usuario;";
+        var normalizada = new MySqlConnector.MySqlConnectionStringBuilder(connectionString).ConnectionString;
         var anterior = Environment.GetEnvironmentVariable(MySqlIntegrationPreflightMarker.EnvironmentVariable);
         try
         {
@@ -62,7 +63,12 @@ public sealed class MySqlIntegrationPreflightTests
                 MySqlIntegrationPreflightMarker.EnvironmentVariable,
                 MySqlIntegrationPreflightMarker.Criar(connectionString));
 
+            Assert.Equal(
+                MySqlIntegrationPreflightMarker.Criar(connectionString),
+                MySqlIntegrationPreflightMarker.Criar(connectionString));
             Assert.True(MySqlIntegrationPreflightMarker.Corresponde(connectionString));
+            Assert.NotEqual(connectionString, normalizada);
+            Assert.False(MySqlIntegrationPreflightMarker.Corresponde(normalizada));
             Assert.False(MySqlIntegrationPreflightMarker.Corresponde("Server=outro;"));
         }
         finally
@@ -90,6 +96,61 @@ public sealed class MySqlIntegrationPreflightTests
             File.ReadAllText(arquivo)));
     }
 
+    [Fact]
+    public async Task Script_QuandoVariavelEstiverAusente_DeveRetornarCodigosCorretosSemChamarDotnet()
+    {
+        var resultadoOpcional = await ExecutarScriptSemVariavelAsync(requireMySql: false);
+        Assert.Equal(0, resultadoOpcional.ExitCode);
+        Assert.Contains("SKIPPED:", resultadoOpcional.Output);
+        Assert.False(resultadoOpcional.DotnetFoiChamado);
+
+        var resultadoObrigatorio = await ExecutarScriptSemVariavelAsync(requireMySql: true);
+        Assert.Equal(2, resultadoObrigatorio.ExitCode);
+        Assert.Contains("ERROR:", resultadoObrigatorio.Output);
+        Assert.False(resultadoObrigatorio.DotnetFoiChamado);
+    }
+
+    private static async Task<ResultadoScript> ExecutarScriptSemVariavelAsync(bool requireMySql)
+    {
+        var raiz = EncontrarRaizProjeto();
+        var diretorioTemporario = Path.Combine(Path.GetTempPath(), $"indicaa2-preflight-{Guid.NewGuid():N}");
+        var marcadorDotnet = Path.Combine(diretorioTemporario, "dotnet-foi-chamado.txt");
+        Directory.CreateDirectory(diretorioTemporario);
+        try
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(diretorioTemporario, "dotnet.cmd"),
+                $"@echo invoked > \"{marcadorDotnet}\"{Environment.NewLine}exit /b 99");
+
+            var inicio = new System.Diagnostics.ProcessStartInfo("pwsh")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                WorkingDirectory = raiz
+            };
+            inicio.ArgumentList.Add("-NoProfile");
+            inicio.ArgumentList.Add("-File");
+            inicio.ArgumentList.Add(Path.Combine(raiz, "scripts", "Invoke-MySqlIntegrationTests.ps1"));
+            if (requireMySql)
+                inicio.ArgumentList.Add("-RequireMySql");
+            inicio.Environment.Remove(MySqlIntegrationFixture.ConnectionStringEnvironmentVariable);
+            inicio.Environment["PATH"] = $"{diretorioTemporario};{inicio.Environment["PATH"]}";
+
+            using var processo = System.Diagnostics.Process.Start(inicio)
+                ?? throw new InvalidOperationException("Não foi possível iniciar o PowerShell suportado.");
+            var output = await processo.StandardOutput.ReadToEndAsync();
+            output += await processo.StandardError.ReadToEndAsync();
+            await processo.WaitForExitAsync();
+
+            return new ResultadoScript(processo.ExitCode, output, File.Exists(marcadorDotnet));
+        }
+        finally
+        {
+            Directory.Delete(diretorioTemporario, recursive: true);
+        }
+    }
+
     private static string EncontrarRaizProjeto()
     {
         for (var diretorio = new DirectoryInfo(AppContext.BaseDirectory); diretorio is not null; diretorio = diretorio.Parent)
@@ -111,4 +172,6 @@ public sealed class MySqlIntegrationPreflightTests
             return falha is null ? Task.CompletedTask : Task.FromException(falha);
         }
     }
+
+    private sealed record ResultadoScript(int ExitCode, string Output, bool DotnetFoiChamado);
 }

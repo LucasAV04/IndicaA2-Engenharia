@@ -39,9 +39,10 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
 
         try
         {
-            var inicializado = MySqlIntegrationPreflightMarker.Corresponde(_adminConnectionString)
+            var preflightDoScript = MySqlIntegrationPreflightMarker.Corresponde(connectionString);
+            var inicializado = preflightDoScript
                 || await BootstrapGate.ExecutarAsync(
-                    _adminConnectionString,
+                    connectionString,
                     _ => CriarBancoEAplicarSchemaAsync());
             if (!inicializado)
             {
@@ -49,7 +50,7 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
                     "O preflight MySQL falhou; a suíte de integração não foi iniciada e nenhuma migration foi executada.");
             }
 
-            if (MySqlIntegrationPreflightMarker.Corresponde(_adminConnectionString))
+            if (preflightDoScript)
                 await CriarBancoEAplicarSchemaAsync();
         }
         catch

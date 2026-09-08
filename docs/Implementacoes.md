@@ -6,7 +6,7 @@
 
 As **105 integrações MySQL** existentes, distribuídas em 13 classes, passaram a usar a categoria única `MySqlIntegration`. Elas permanecem intactas; nenhuma asserção de persistência, concorrência ou schema foi removida.
 
-O atributo existente apenas verificava a presença de `INDICA2_TEST_MYSQL_CONNECTION` por caso e atribuía `Skip`. Isso causava 105 testes descobertos/ignorados, mas **não abria conexão, não aplicava migration e não possuía retry**. A fixture única é responsável por criar o banco temporário e aplicar scripts somente quando integrações de fato são selecionadas.
+O atributo existente apenas verificava a presença de `INDICA2_TEST_MYSQL_CONNECTION` por caso e atribuía `Skip`. Isso causava 105 testes ignorados, mas **não abria conexão, não aplicava migration e não possuía retry**. A fixture única é responsável por criar o banco temporário e aplicar scripts somente quando integrações de fato são selecionadas.
 
 ### Comandos oficiais
 
@@ -19,19 +19,25 @@ dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlInteg
 Suíte exclusiva MySQL, depois de `dotnet build`:
 
 ```powershell
-.\scripts\Invoke-MySqlIntegrationTests.ps1
+# Execução local opcional
+pwsh -NoProfile -File .\scripts\Invoke-MySqlIntegrationTests.ps1
+
+# Ambiente em que MySQL é obrigatório
+pwsh -NoProfile -File .\scripts\Invoke-MySqlIntegrationTests.ps1 -RequireMySql
 ```
 
-O script encerra imediatamente, sem chamar `dotnet test`, quando a variável estiver ausente. Se ela existir, executa um único `SELECT 1` de preflight; somente depois inicia uma única execução de `Category=MySqlIntegration`. O marcador efêmero derivado da connection string é herdado somente pelo processo de teste e evita uma segunda sondagem da fixture. Não é persistido nem exibido.
+O script requer **PowerShell 7.4 ou superior**. Ele valida a connection string com `MySqlConnectionStringBuilder`, mas gera o marcador SHA-256 pelo **texto original** de `INDICA2_TEST_MYSQL_CONNECTION`; a fixture usa o mesmo texto original. O marcador efêmero é herdado somente pelo processo de teste, não é persistido nem exibido e evita uma segunda sondagem da fixture.
 
-Falha no preflight encerra a execução antes de bootstrap, migration, escrita ou testes MySQL. Não existem retries automáticos, descoberta de credenciais, criação automática de container ou tentativa de outra connection string. Variável ausente significa **integrações não executadas**, nunca aprovadas.
+Sem variável, o modo opcional retorna `0` com prefixo `SKIPPED`; `-RequireMySql` retorna `2` com erro explícito. Ambos encerram antes de `dotnet test`, conexão, migration, escrita ou retry. Com variável, o script executa um único `SELECT 1` de preflight e, apenas se aprovado, uma única execução de `Category=MySqlIntegration`; falha no preflight retorna código diferente de zero e não inicia bootstrap. Não existem retries automáticos, descoberta de credenciais, criação automática de container ou tentativa de outra connection string. Variável ausente significa **integrações não executadas**, nunca aprovadas.
+
+As integrações podem ser descobertas pelo VSTest para aplicação do filtro, mas não são executadas nem contabilizadas como ignoradas na suíte rápida. Isso preserva zero conexões, migrations, escritas, retries e integrações MySQL contabilizadas como aprovadas.
 
 ### Cobertura e validação
 
-- Testes unitários com probe falso confirmam: variável ausente = zero conexões; chamadas repetidas = uma sondagem; falha = bootstrap não iniciado; e classificação/cobertura = 13 classes e 105 casos preservados.
-- Build: sucesso, 0 erros e 0 warnings.
-- Testes específicos do preflight: 5 aprovados, 0 falhos, 0 ignorados.
-- Suíte rápida: 461 aprovados, 0 falhos, 0 ignorados. Os 105 testes MySQL ficaram fora do filtro.
+- Testes unitários com probe falso confirmam: variável ausente = zero conexões; chamadas repetidas = uma sondagem; falha = bootstrap não iniciado; marcador textual não canônico determinístico; os dois modos do script não chamam `dotnet`; e classificação/cobertura = 13 classes e 105 casos preservados.
+- Build: sucesso, 0 erros e 4 avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`, fora deste escopo.
+- A descoberta atual do VSTest lista **463 casos**: 457 testes anteriores + 6 testes de preflight. O resultado histórico 461 ocorreu quando existiam quatro testes de preflight; durante a investigação foram listados 462 após a inclusão do quinto; esta correção adicionou o sexto para validar os códigos de saída do script. Nenhum teste anterior deixou de ser descoberto.
+- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. A suíte rápida executou 463 casos: 434 aprovados e 29 falhos, todos em testes de integração da API fora desta alteração. A suíte não foi repetida, conforme o limite de validação.
 - `INDICA2_TEST_MYSQL_CONNECTION` permaneceu ausente: MySQL, migrations, Efí, OAuth e Pix real não foram executados.
 
 ## Lease de Reconciliação e Preservação da Auditoria — PR #31

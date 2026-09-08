@@ -5,15 +5,15 @@
 ### Alterado
 
 - Os 105 testes de integração MySQL, em 13 classes, receberam a categoria única `MySqlIntegration`; nenhum teste ou asserção foi removido.
-- A suíte rápida exclui a categoria antes da execução, portanto não descobre/ignora integrações nem abre MySQL, executa migrations ou realiza escrita.
-- Adicionado `scripts/Invoke-MySqlIntegrationTests.ps1`: variável ausente encerra antes de `dotnet test`; variável presente executa um único preflight `SELECT 1` e só então a suíte MySQL uma vez. Falha no preflight não inicia bootstrap/migrations e não há retries automáticos.
-- Fixture reutiliza o preflight verificado pelo script por meio de marcador efêmero não persistido; execução direta da categoria continua fazendo uma única sondagem por processo antes do bootstrap.
+- As integrações podem ser descobertas pelo VSTest para aplicação do filtro, mas não são executadas nem contabilizadas como ignoradas na suíte rápida; isso impede conexões, migrations, escritas e retries MySQL.
+- `scripts/Invoke-MySqlIntegrationTests.ps1` requer PowerShell 7.4+. Sem variável, o modo opcional retorna `0` com `SKIPPED`; `-RequireMySql` retorna `2`. Nenhum deles chama `dotnet test`. Com variável, há um único preflight `SELECT 1` e somente então a suíte MySQL; falha não inicia bootstrap/migrations e não há retries.
+- Script e fixture calculam o marcador efêmero SHA-256 sobre o mesmo texto original da variável, sem normalização. Execução direta da categoria continua fazendo uma única sondagem por processo antes do bootstrap.
 
 ### Validação
 
-- Build: sucesso, 0 erros, 0 warnings.
-- Testes unitários do preflight: 5 aprovados, 0 falhos, 0 ignorados.
-- Suíte rápida: 461 aprovados, 0 falhos, 0 ignorados; integrações MySQL excluídas pelo filtro.
+- Build: sucesso, 0 erros e 4 avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`, fora deste escopo.
+- A descoberta atual da suíte rápida é 463: 457 testes anteriores + 6 testes de preflight. O resultado histórico 461 corresponde a quando havia quatro testes; a investigação registrou 462 após o quinto; o sexto cobre os códigos de saída do script sem variável.
+- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. Suíte rápida: 434 aprovados, 29 falhos, 0 ignorados; as 29 falhas pertencem a testes de integração da API fora da infraestrutura MySQL e não houve repetição sem uma correção comprovada.
 - Sem `INDICA2_TEST_MYSQL_CONNECTION`, não houve MySQL, migration, Efí, OAuth ou Pix real. Integrações não foram declaradas aprovadas.
 
 ## 2026-09-08 — Recuperação de Reconciliação com Lease — PR #31
