@@ -1,6 +1,5 @@
 using Application.DTOs.Cashback;
 using Application.Interfaces.Services;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,29 +15,19 @@ using Xunit;
 
 namespace API.Tests.Integration;
 
-public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class CashbackAuthorizationPipelineTests : IClassFixture<ApiTestWebApplicationFactory>
 {
     private const string Issuer = "IndicA2.Api.Tests";
     private const string Audience = "IndicA2.Api.Tests.Client";
     private const string Key = "chave-ficticia-de-autorizacao-com-mais-de-trinta-e-dois-bytes";
     private readonly WebApplicationFactory<Program> _factory;
 
-    static CashbackAuthorizationPipelineTests()
-    {
-        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Server=localhost;Database=indicaa2_test;User Id=test;Password=test;");
-        Environment.SetEnvironmentVariable("Jwt__Issuer", Issuer);
-        Environment.SetEnvironmentVariable("Jwt__Audience", Audience);
-        Environment.SetEnvironmentVariable("Jwt__Key", Key);
-        Environment.SetEnvironmentVariable("Jwt__ExpirationMinutes", "60");
-    }
-
-    public CashbackAuthorizationPipelineTests(WebApplicationFactory<Program> factory) =>
-        _factory = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Development"));
+    public CashbackAuthorizationPipelineTests(ApiTestWebApplicationFactory factory) => _factory = factory;
 
     [Fact]
     public async Task Cashback_SemBearer_DeveRetornarUnauthorized()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
 
         var response = await client.GetAsync("/api/cashbacks");
 
@@ -48,7 +37,7 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplic
     [Fact]
     public async Task Cashback_ComTokenDeUsuario_DeveRetornarForbidden()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Usuario"));
 
         var response = await client.GetAsync("/api/cashbacks");
@@ -62,7 +51,7 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplic
         var service = new Mock<ICashbackService>();
         service.Setup(item => item.ObterTodosAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<CashbackResponseDto>());
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.GetAsync("/api/cashbacks");
@@ -80,7 +69,7 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplic
         service.Setup(item => item.GerarPorPagamentoAsync(pagamentoVistoriaId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(cashback);
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PostAsync($"/api/cashbacks/por-pagamento/{pagamentoVistoriaId}", content: null);
@@ -94,7 +83,7 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<WebApplic
     [Fact]
     public async Task OpenApi_DeveDocumentarEndpointsDeCashbackSemFluxoDePagamentoReal()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
         using var document = JsonDocument.Parse(await client.GetStringAsync("/openapi/v1.json"));
         var paths = document.RootElement.GetProperty("paths");
 
