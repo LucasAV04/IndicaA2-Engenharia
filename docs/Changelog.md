@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-08 — Execução Controlada de Integrações MySQL — PR #31
+
+### Alterado
+
+- Os 105 testes de integração MySQL, em 13 classes, receberam a categoria única `MySqlIntegration`; nenhum teste ou asserção foi removido.
+- A suíte rápida exclui a categoria antes da execução, portanto não descobre/ignora integrações nem abre MySQL, executa migrations ou realiza escrita.
+- Adicionado `scripts/Invoke-MySqlIntegrationTests.ps1`: variável ausente encerra antes de `dotnet test`; variável presente executa um único preflight `SELECT 1` e só então a suíte MySQL uma vez. Falha no preflight não inicia bootstrap/migrations e não há retries automáticos.
+- Fixture reutiliza o preflight verificado pelo script por meio de marcador efêmero não persistido; execução direta da categoria continua fazendo uma única sondagem por processo antes do bootstrap.
+
+### Validação
+
+- Build: sucesso, 0 erros, 0 warnings.
+- Testes unitários do preflight: 5 aprovados, 0 falhos, 0 ignorados.
+- Suíte rápida: 461 aprovados, 0 falhos, 0 ignorados; integrações MySQL excluídas pelo filtro.
+- Sem `INDICA2_TEST_MYSQL_CONNECTION`, não houve MySQL, migration, Efí, OAuth ou Pix real. Integrações não foram declaradas aprovadas.
+
 ## 2026-09-08 — Recuperação de Reconciliação com Lease — PR #31
 
 ### Corrigido

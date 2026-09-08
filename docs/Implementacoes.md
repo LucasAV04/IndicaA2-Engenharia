@@ -1,5 +1,39 @@
 # Implementações
 
+## Execução Controlada de Integrações MySQL — PR #31
+
+**Data:** 2026-09-08
+
+As **105 integrações MySQL** existentes, distribuídas em 13 classes, passaram a usar a categoria única `MySqlIntegration`. Elas permanecem intactas; nenhuma asserção de persistência, concorrência ou schema foi removida.
+
+O atributo existente apenas verificava a presença de `INDICA2_TEST_MYSQL_CONNECTION` por caso e atribuía `Skip`. Isso causava 105 testes descobertos/ignorados, mas **não abria conexão, não aplicava migration e não possuía retry**. A fixture única é responsável por criar o banco temporário e aplicar scripts somente quando integrações de fato são selecionadas.
+
+### Comandos oficiais
+
+Suíte rápida, sem MySQL e sem Efí externo:
+
+```powershell
+dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"
+```
+
+Suíte exclusiva MySQL, depois de `dotnet build`:
+
+```powershell
+.\scripts\Invoke-MySqlIntegrationTests.ps1
+```
+
+O script encerra imediatamente, sem chamar `dotnet test`, quando a variável estiver ausente. Se ela existir, executa um único `SELECT 1` de preflight; somente depois inicia uma única execução de `Category=MySqlIntegration`. O marcador efêmero derivado da connection string é herdado somente pelo processo de teste e evita uma segunda sondagem da fixture. Não é persistido nem exibido.
+
+Falha no preflight encerra a execução antes de bootstrap, migration, escrita ou testes MySQL. Não existem retries automáticos, descoberta de credenciais, criação automática de container ou tentativa de outra connection string. Variável ausente significa **integrações não executadas**, nunca aprovadas.
+
+### Cobertura e validação
+
+- Testes unitários com probe falso confirmam: variável ausente = zero conexões; chamadas repetidas = uma sondagem; falha = bootstrap não iniciado; e classificação/cobertura = 13 classes e 105 casos preservados.
+- Build: sucesso, 0 erros e 0 warnings.
+- Testes específicos do preflight: 5 aprovados, 0 falhos, 0 ignorados.
+- Suíte rápida: 461 aprovados, 0 falhos, 0 ignorados. Os 105 testes MySQL ficaram fora do filtro.
+- `INDICA2_TEST_MYSQL_CONNECTION` permaneceu ausente: MySQL, migrations, Efí, OAuth e Pix real não foram executados.
+
 ## Lease de Reconciliação e Preservação da Auditoria — PR #31
 
 **Data:** 2026-09-08
@@ -584,7 +618,7 @@ dotnet test IndicaA2.slnx --no-build --no-restore --filter "FullyQualifiedName!~
 - A fixture cria por execucao o database `indicaa2_test_<guid>`, aplica os scripts reais na ordem `002_create_usuarios.sql`, `003_create_vistorias.sql` e `001_create_indicacoes.sql`, limpa dados entre testes e remove o database ao final.
 - A configuracao obrigatoria e `INDICA2_TEST_MYSQL_CONNECTION`: uma conexao administrativa sem `Database`. A fixture valida o prefixo seguro antes de qualquer limpeza ou remocao, portanto nao usa automaticamente banco de desenvolvimento ou producao.
 - A cobertura inclui insert, select, update, filtros, reidratacao, `email` UNIQUE, FK de `vistorias.usuario_id`, `DECIMAL(10,2)` de `AreaM2`, timestamps UTC e `DataAgendada` preservada como valor de negocio. O schema atual de `indicacoes` nao declara FKs e os testes nao assumem integridade inexistente.
-- Para executar: `dotnet test tests/Infrastructure.Tests/Infrastructure.Tests.csproj --filter "Category=Integration"`. Para testes sem MySQL: `dotnet test IndicaA2.slnx --filter "Category!=Integration"`. Sem a variavel, os testes de integracao sao ignorados explicitamente com instrucao de configuracao, sem serem contabilizados como aprovados.
+- A orientação ativa de execução está em [Execução Controlada de Integrações MySQL](#execução-controlada-de-integrações-mysql--pr-31): use a categoria `MySqlIntegration`, a suíte rápida sem MySQL e o script com preflight único. Sem a variável, integrações não são executadas nem contabilizadas como aprovadas.
 
 - `IndicacoesController` e `VistoriasController` exigem autenticação Bearer; `POST /api/auth/login` permanece público.
 - `ICurrentUser` interpreta exclusivamente `sub` como `Guid` do usuário atual e `role` como papel. Claims ausentes ou inválidas não concedem acesso.
