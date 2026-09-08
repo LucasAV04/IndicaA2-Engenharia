@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-09-08 — Recuperação de Reconciliação com Lease — PR #31
+
+### Corrigido
+
+- A coordenação anterior deixava uma Consulta aberta bloquear permanentemente o pagamento após queda do processo. A migration 011 adiciona token e expiração em `pagamentos_pix`, sem tabela nova nem alteração financeira.
+- **Lease de reconciliação: 5 minutos, medidos pelo horário do MySQL.** Usa `UTC_TIMESTAMP(6)`, sem renovação automática. Após expiração, uma reconciliação explícita assume novo token e reutiliza a mesma Consulta aberta.
+- Consulta ativa impede nova reconciliação; token antigo ou expirado não autoriza finalização, liberação ou sobrescrita. Consulta, eventual recuperação do Envio e liberação do lease são atômicas. Expiração durante a finalização provoca rollback.
+- Exceção/cancelamento do provider finaliza `Indeterminado` e libera somente um lease válido; falha de persistência continua explícita e recuperável após expiração. Provider permanece fora da transação; nenhum retry automático foi criado.
+- Recuperação do Envio preserva `identificador_provider` e `codigo` da evidência conclusiva persistida, sem apagar valores válidos com null/branco.
+- Aplicação financeira bloqueia Consulta aberta ou qualquer lease pendente, inclusive expirado, sem recuperar auditoria. As transições de Domain existentes são executadas sobre entidades reidratadas sob lock antes dos updates atômicos de PagamentoPix/Cashback.
+
+### Testes e implantação
+
+- Nenhum teste do HEAD `f313f0c` foi removido. Cobertura anterior restaurada/substituída por testes de token, falhas, cancelamento, concorrência determinística, metadados, idempotência, rollback e tentativas 1–5. A tabela individual de substituições está em [Implementações](Implementacoes.md#cobertura-restauradasubstituída).
+- UP/DOWN da migration documentados. Interromper executores antigos antes da implantação; não há backfill. Consulta legada aberta sem lease exige regularização auditada separada, sem presumir abandono.
+- Build final: sucesso, 0 erros e 0 warnings; aviso preexistente de `UsuarioService` observado em execução anterior, sem alteração fora do escopo.
+- Suíte final: **562 testes; 457 aprovados; 0 falhos; 105 integrações MySQL ignoradas** por ausência de `INDICA2_TEST_MYSQL_CONNECTION`. Comando/filtro exatos em [Implementações](Implementacoes.md#validação-desta-revisão).
+- Integrações e migration não foram validadas contra MySQL nesta execução. `git diff --check` sem erros; zero chamadas Efí/OAuth/Pix real. Documentos binários preservados; sem push ou merge.
+
 ## 2026-09-04 — Coordenação de Reconciliação e Aplicação de Resultado Pix
 
 ### Corrigido

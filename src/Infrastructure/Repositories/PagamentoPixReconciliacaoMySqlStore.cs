@@ -43,16 +43,54 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
             var operacoes = await ObterOperacoesParaCoordenacaoAsync(
                 connection, transaction, pagamentoPixId, cancellationToken);
             var cicloAtual = IdentificarCicloAtual(operacoes, pagamentoPix.QuantidadeTentativas);
+            pagamentoPix = pagamentoPix with { Agora = await ObterAgoraAsync(connection, transaction, cancellationToken) };
             var resultadoConclusivo = ObterResultadoConclusivo(cicloAtual);
 
-            if (cicloAtual.Consultas.Any(operacao => !operacao.FinishedAt.HasValue))
+            var consultasAbertas = cicloAtual.Consultas
+                .Where(operacao => !operacao.FinishedAt.HasValue)
+                .ToArray();
+            if (consultasAbertas.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    "Pagamento Pix possui mais de uma consulta aberta no ciclo atual.");
+            }
+
+            if (consultasAbertas.Length == 1 && LeaseEstaValido(pagamentoPix))
             {
                 await transaction.CommitAsync(cancellationToken);
                 return PreparacaoReconciliacaoPagamentoPixResult.ConsultaEmAndamento();
             }
 
+            if (consultasAbertas.Length == 1 && !pagamentoPix.LeaseId.HasValue)
+                throw new InvalidOperationException("Consulta aberta sem lease: requer regularização explícita antes da recuperação.");
+
+            if (consultasAbertas.Length == 1 && !resultadoConclusivo.HasValue)
+            {
+                var leaseId = Guid.NewGuid();
+                await AssumirLeaseAsync(connection, transaction, pagamentoPixId, leaseId, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consultasAbertas[0].Id, leaseId);
+            }
+
             if (resultadoConclusivo.HasValue)
             {
+                if (LeaseEstaValido(pagamentoPix))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return PreparacaoReconciliacaoPagamentoPixResult.ConsultaEmAndamento();
+                }
+                Guid? leaseRecuperado = null;
+                if (pagamentoPix.LeaseId.HasValue)
+                {
+                    leaseRecuperado = Guid.NewGuid();
+                    await AssumirLeaseAsync(connection, transaction, pagamentoPixId, leaseRecuperado.Value, cancellationToken);
+                    // Sem HTTP adicional: preserva a identidade da Consulta abandonada,
+                    // registrando Indeterminado porque ela não obteve resposta confiável.
+                    if (consultasAbertas.Length == 1)
+                        await FinalizarOperacaoAbertaAsync(connection, transaction, consultasAbertas[0].Id,
+                            ResultadoOperacaoPagamentoPix.Indeterminado, null, null, cancellationToken);
+                }
+                var evidenciaConclusiva = ObterEvidenciaConclusiva(cicloAtual)!;
                 var envioResolvido = false;
                 if (!cicloAtual.Envio.FinishedAt.HasValue)
                 {
@@ -61,6 +99,8 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                         transaction,
                         cicloAtual.Envio.Id,
                         resultadoConclusivo.Value,
+                        evidenciaConclusiva.IdentificadorProvider,
+                        evidenciaConclusiva.Codigo,
                         cancellationToken);
                     if (!envioResolvido)
                     {
@@ -69,16 +109,117 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                     }
                 }
 
+                if (leaseRecuperado.HasValue)
+                    await LiberarLeaseAsync(connection, transaction, pagamentoPixId, leaseRecuperado.Value, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return PreparacaoReconciliacaoPagamentoPixResult.JaConclusivo(
                     resultadoConclusivo.Value,
                     envioResolvido);
             }
 
+            if (LeaseEstaValido(pagamentoPix))
+            {
+                throw new InvalidOperationException(
+                    "Pagamento Pix possui lease de reconciliação sem consulta aberta.");
+            }
+
+            var novoLeaseId = Guid.NewGuid();
+            await AssumirLeaseAsync(connection, transaction, pagamentoPixId, novoLeaseId, cancellationToken);
             var consulta = OperacaoPagamentoPix.IniciarConsulta(pagamentoPixId);
             await AdicionarConsultaAsync(connection, transaction, consulta, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consulta.Id);
+            return PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consulta.Id, novoLeaseId);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task<FinalizacaoConsultaPagamentoPixResult> FinalizarConsultaAsync(
+        Guid pagamentoPixId,
+        Guid operacaoConsultaId,
+        Guid leaseId,
+        ResultadoOperacaoPagamentoPix resultado,
+        string? identificadorProvider,
+        string? codigo,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfEqual(pagamentoPixId, Guid.Empty);
+        ArgumentOutOfRangeException.ThrowIfEqual(operacaoConsultaId, Guid.Empty);
+        ArgumentOutOfRangeException.ThrowIfEqual(leaseId, Guid.Empty);
+        if (!Enum.IsDefined(resultado))
+            throw new ArgumentOutOfRangeException(nameof(resultado));
+
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var pagamentoPix = await ObterPagamentoPixParaCoordenacaoAsync(
+                connection, transaction, pagamentoPixId, cancellationToken);
+            if (pagamentoPix.Status != StatusPagamentoPix.Processando ||
+                pagamentoPix.LeaseId != leaseId ||
+                !LeaseEstaValido(pagamentoPix))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new(false, false);
+            }
+
+            var operacoes = await ObterOperacoesParaCoordenacaoAsync(
+                connection, transaction, pagamentoPixId, cancellationToken);
+            var cicloAtual = IdentificarCicloAtual(operacoes, pagamentoPix.QuantidadeTentativas);
+            pagamentoPix = pagamentoPix with { Agora = await ObterAgoraAsync(connection, transaction, cancellationToken) };
+            if (!LeaseEstaValido(pagamentoPix))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new(false, false);
+            }
+            var evidencia = ObterResultadoConclusivo(cicloAtual);
+            if (EhConclusivo(resultado) && evidencia.HasValue && evidencia.Value != resultado)
+                throw new InvalidOperationException("Resposta conclusiva conflitante com a evidência persistida do ciclo atual.");
+            var consulta = cicloAtual.Consultas.SingleOrDefault(operacao => operacao.Id == operacaoConsultaId);
+            if (consulta is null || consulta.FinishedAt.HasValue ||
+                cicloAtual.Consultas.Count(operacao => !operacao.FinishedAt.HasValue) != 1)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new(false, false);
+            }
+
+            var auditoria = OperacaoPagamentoPix.Reidratar(consulta.Id, pagamentoPixId,
+                TipoOperacaoPagamentoPix.Consulta, null, pagamentoPixId.ToString("N"),
+                null, null, null, consulta.CreatedAt, consulta.CreatedAt, null);
+            auditoria.Finalizar(resultado, identificadorProvider, codigo);
+            if (!await FinalizarOperacaoAbertaAsync(
+                    connection,
+                    transaction,
+                    operacaoConsultaId,
+                    resultado,
+                    identificadorProvider,
+                    codigo,
+                    cancellationToken))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new(false, false);
+            }
+
+            if (EhConclusivo(resultado) && !cicloAtual.Envio.FinishedAt.HasValue &&
+                !await FinalizarEnvioAbertoAsync(
+                    connection,
+                    transaction,
+                    cicloAtual.Envio.Id,
+                    resultado,
+                    identificadorProvider,
+                    codigo,
+                    cancellationToken))
+            {
+                throw new InvalidOperationException("O envio aberto não pôde ser finalizado junto da consulta conclusiva.");
+            }
+
+            await LiberarLeaseAsync(connection, transaction, pagamentoPixId, leaseId, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new(true, EhConclusivo(resultado) && !cicloAtual.Envio.FinishedAt.HasValue);
         }
         catch
         {
@@ -94,7 +235,8 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT status, quantidade_tentativas
+            SELECT status, quantidade_tentativas, reconciliacao_lease_id, reconciliacao_lease_expira_em,
+                   UTC_TIMESTAMP(6) AS agora
             FROM pagamentos_pix
             WHERE id = @id
             FOR UPDATE;
@@ -106,9 +248,16 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         if (!await reader.ReadAsync(cancellationToken))
             throw new InvalidOperationException("O Pagamento Pix não foi encontrado para reconciliação.");
 
+        if (reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_id")) !=
+            reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_expira_em")))
+            throw new InvalidOperationException("O lease persistido está incompleto e requer regularização explícita.");
+
         return new PagamentoPixCoordenado(
             ObterEnum<StatusPagamentoPix>(reader, "status"),
-            reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")));
+            reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")),
+            ObterGuidOpcional(reader, "reconciliacao_lease_id"),
+            ObterDataOpcionalUtc(reader, "reconciliacao_lease_expira_em"),
+            EmUtc(reader.GetDateTime(reader.GetOrdinal("agora"))));
     }
 
     private static async Task<IReadOnlyCollection<OperacaoCoordenada>> ObterOperacoesParaCoordenacaoAsync(
@@ -118,7 +267,7 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT id, tipo_operacao, numero_tentativa_envio, resultado, started_at, finished_at
+            SELECT id, tipo_operacao, numero_tentativa_envio, resultado, identificador_provider, codigo, started_at, finished_at
             FROM operacoes_pagamento_pix
             WHERE pagamento_pix_id = @pagamentoPixId
             ORDER BY started_at, id
@@ -139,6 +288,8 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                 ObterEnum<TipoOperacaoPagamentoPix>(reader, "tipo_operacao"),
                 reader.IsDBNull(tentativaOrdinal) ? null : reader.GetInt32(tentativaOrdinal),
                 reader.IsDBNull(resultadoOrdinal) ? null : ObterEnum<ResultadoOperacaoPagamentoPix>(reader, "resultado"),
+                ObterTextoOpcional(reader, "identificador_provider"),
+                ObterTextoOpcional(reader, "codigo"),
                 EmUtc(reader.GetDateTime(reader.GetOrdinal("started_at"))),
                 reader.IsDBNull(finalizadaOrdinal) ? null : EmUtc(reader.GetDateTime(finalizadaOrdinal))));
         }
@@ -190,18 +341,64 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         return resultados.Length == 0 ? null : resultados[0];
     }
 
-    private static async Task<bool> FinalizarEnvioAbertoAsync(
+    private static OperacaoCoordenada? ObterEvidenciaConclusiva(CicloAtual cicloAtual) =>
+        new[] { cicloAtual.Envio }
+            .Concat(cicloAtual.Consultas)
+            .Where(operacao => EhConclusivo(operacao.Resultado))
+            .OrderByDescending(operacao => operacao.FinishedAt)
+            .ThenByDescending(operacao => operacao.CreatedAt)
+            .FirstOrDefault();
+
+    private static async Task AssumirLeaseAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        Guid pagamentoPixId,
+        Guid leaseId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE pagamentos_pix
+            SET reconciliacao_lease_id = @leaseId,
+                reconciliacao_lease_expira_em = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 5 MINUTE)
+            WHERE id = @id
+              AND (reconciliacao_lease_expira_em IS NULL OR reconciliacao_lease_expira_em <= UTC_TIMESTAMP(6));
+            """;
+        await using var command = new MySqlCommand(sql, connection, transaction);
+        AdicionarGuid(command, "@id", pagamentoPixId);
+        AdicionarGuid(command, "@leaseId", leaseId);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("O lease de reconciliação não pôde ser adquirido.");
+        }
+    }
+
+    private static Task<bool> FinalizarEnvioAbertoAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
         Guid operacaoId,
         ResultadoOperacaoPagamentoPix resultado,
+        string? identificadorProvider,
+        string? codigo,
+        CancellationToken cancellationToken) =>
+        FinalizarOperacaoAbertaAsync(connection, transaction, operacaoId, resultado,
+            identificadorProvider, codigo, cancellationToken);
+
+    private static async Task<bool> FinalizarOperacaoAbertaAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        Guid operacaoId,
+        ResultadoOperacaoPagamentoPix resultado,
+        string? identificadorProvider,
+        string? codigo,
         CancellationToken cancellationToken)
     {
         const string sql = """
             UPDATE operacoes_pagamento_pix
             SET resultado = @resultado,
-                finished_at = @finishedAt,
-                updated_at = @updatedAt
+                identificador_provider = COALESCE(NULLIF(@identificadorProvider, ''), identificador_provider),
+                codigo = COALESCE(NULLIF(@codigo, ''), codigo),
+                finished_at = GREATEST(started_at, UTC_TIMESTAMP(6)),
+                updated_at = GREATEST(started_at, UTC_TIMESTAMP(6))
             WHERE id = @id
               AND finished_at IS NULL;
             """;
@@ -209,9 +406,35 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         await using var command = new MySqlCommand(sql, connection, transaction);
         AdicionarGuid(command, "@id", operacaoId);
         command.Parameters.Add("@resultado", MySqlDbType.Int32).Value = (int)resultado;
-        command.Parameters.Add("@finishedAt", MySqlDbType.DateTime).Value = DateTime.UtcNow;
-        command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = DateTime.UtcNow;
+        command.Parameters.Add("@identificadorProvider", MySqlDbType.VarChar).Value =
+            NormalizarOpcional(identificadorProvider) ?? (object)DBNull.Value;
+        command.Parameters.Add("@codigo", MySqlDbType.VarChar).Value =
+            NormalizarOpcional(codigo) ?? (object)DBNull.Value;
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    private static async Task LiberarLeaseAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        Guid pagamentoPixId,
+        Guid leaseId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE pagamentos_pix
+            SET reconciliacao_lease_id = NULL,
+                reconciliacao_lease_expira_em = NULL
+            WHERE id = @id
+              AND reconciliacao_lease_id = @leaseId
+              AND reconciliacao_lease_expira_em > UTC_TIMESTAMP(6);
+            """;
+        await using var command = new MySqlCommand(sql, connection, transaction);
+        AdicionarGuid(command, "@id", pagamentoPixId);
+        AdicionarGuid(command, "@leaseId", leaseId);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("O lease de reconciliação não pôde ser liberado.");
+        }
     }
 
     private static async Task AdicionarConsultaAsync(
@@ -244,6 +467,19 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
     private static bool EhConclusivo(ResultadoOperacaoPagamentoPix? resultado) =>
         resultado is ResultadoOperacaoPagamentoPix.Confirmado or ResultadoOperacaoPagamentoPix.FalhaConfirmada;
 
+    private static async Task<DateTime> ObterAgoraAsync(
+        MySqlConnection connection, MySqlTransaction transaction, CancellationToken cancellationToken)
+    {
+        // Um horário novo DEPOIS dos locks evita usar o início de um SELECT que ficou esperando.
+        await using var command = new MySqlCommand("SELECT UTC_TIMESTAMP(6);", connection, transaction);
+        return EmUtc((DateTime)(await command.ExecuteScalarAsync(cancellationToken))!);
+    }
+
+    private static bool LeaseEstaValido(PagamentoPixCoordenado pagamentoPix) =>
+        pagamentoPix.LeaseId.HasValue &&
+        pagamentoPix.LeaseExpiraEm.HasValue &&
+        pagamentoPix.LeaseExpiraEm.Value > pagamentoPix.Agora;
+
     private static Guid ObterGuid(MySqlDataReader reader, string coluna) =>
         Guid.TryParse(reader.GetString(reader.GetOrdinal(coluna)), out var valor) && valor != Guid.Empty
             ? valor
@@ -260,16 +496,37 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
 
     private static DateTime EmUtc(DateTime data) => DateTime.SpecifyKind(data, DateTimeKind.Utc);
 
+    private static DateTime? ObterDataOpcionalUtc(MySqlDataReader reader, string coluna) =>
+        reader.IsDBNull(reader.GetOrdinal(coluna))
+            ? null
+            : EmUtc(reader.GetDateTime(reader.GetOrdinal(coluna)));
+
+    private static Guid? ObterGuidOpcional(MySqlDataReader reader, string coluna) =>
+        reader.IsDBNull(reader.GetOrdinal(coluna)) ? null : ObterGuid(reader, coluna);
+
+    private static string? ObterTextoOpcional(MySqlDataReader reader, string coluna) =>
+        reader.IsDBNull(reader.GetOrdinal(coluna)) ? null : reader.GetString(reader.GetOrdinal(coluna));
+
+    private static string? NormalizarOpcional(string? valor) =>
+        string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+
     private static void AdicionarGuid(MySqlCommand command, string nome, Guid valor) =>
         command.Parameters.Add(nome, MySqlDbType.VarChar).Value = valor.ToString();
 
-    private sealed record PagamentoPixCoordenado(StatusPagamentoPix Status, int QuantidadeTentativas);
+    private sealed record PagamentoPixCoordenado(
+        StatusPagamentoPix Status,
+        int QuantidadeTentativas,
+        Guid? LeaseId,
+        DateTime? LeaseExpiraEm,
+        DateTime Agora);
 
     private sealed record OperacaoCoordenada(
         Guid Id,
         TipoOperacaoPagamentoPix TipoOperacao,
         int? NumeroTentativaEnvio,
         ResultadoOperacaoPagamentoPix? Resultado,
+        string? IdentificadorProvider,
+        string? Codigo,
         DateTime CreatedAt,
         DateTime? FinishedAt);
 

@@ -1,5 +1,104 @@
 # Implementações
 
+## Lease de Reconciliação e Preservação da Auditoria — PR #31
+
+**Data:** 2026-09-08
+
+### Política aprovada
+
+**Lease de reconciliação: 5 minutos, medidos pelo horário do MySQL.**
+
+A migration `011_add_reconciliacao_lease_pagamentos_pix.sql` adiciona somente `reconciliacao_lease_id CHAR(36) NULL`, `reconciliacao_lease_expira_em DATETIME(6) NULL` e índice da expiração em `pagamentos_pix`. UP executável e DOWN comentado estão no próprio script; nenhum script é executado no startup. Não há nova tabela, status financeiro, renovação automática ou retry.
+
+A revisão anterior bloqueava toda Consulta com `finished_at IS NULL`, sem distinguir um executor vivo de um processo que caiu. A nova coordenação bloqueia primeiro `pagamentos_pix`, depois a auditoria, usando `UTC_TIMESTAMP(6)`. Um horário novo é consultado depois de esperar pelos locks. Cada aquisição/retomada gera um novo Guid opaco.
+
+- Lease válido com Consulta aberta: retorna `ConsultaEmAndamento`, sem provider.
+- Lease expirado com uma Consulta aberta: substitui o token e reutiliza **o mesmo Id de Consulta**, preservando início e referência.
+- Sem Consulta aberta e sem lease válido: adquire lease e persiste uma Consulta antes de liberar a transação e chamar o provider.
+- Mais de uma Consulta aberta, ciclo inconsistente ou conclusões conflitantes: erro explícito, sem liquidação.
+- Evidência conclusiva existente: dispensa provider; recupera o Envio com metadados persistidos. Se houver uma Consulta abandonada com lease expirado, assume token, encerra essa Consulta como `Indeterminado` e libera o lease na mesma transação.
+- Pagamento que saiu de `Processando`: não prepara Consulta nem chama provider.
+
+Expiração torna a ordem **elegível** para uma próxima reconciliação; não agenda sua execução. Uma consulta HTTP antiga pode continuar após a expiração, mas perdeu a autorização para escrever. Não é iniciado envio Pix.
+
+### Finalização e falhas
+
+`FinalizarConsultaAsync` valida PagamentoPix, token, prazo e o Id da única Consulta aberta do ciclo atual sob locks. Resultado e metadados passam pela validação de `OperacaoPagamentoPix.Finalizar`. Consulta, recuperação do Envio e liberação condicional do lease são uma transação. Token antigo/expirado, operação diferente ou pagamento terminal não autorizam escrita. A liberação também exige lease ainda válido no relógio do MySQL; se expirar durante a finalização, ocorre rollback.
+
+Provider com exceção/cancelamento: tenta finalizar Consulta como `Indeterminado` com `CancellationToken.None`, libera somente o token ainda válido e propaga a falha. Se persistir a finalização falhar, a operação fica auditável e pode ser retomada após a expiração. Nenhum caminho liquida dinheiro ou reconsulta automaticamente.
+
+O Envio recuperado passa a receber `identificador_provider` e `codigo` junto do resultado e datas. Valores nulos/brancos não apagam metadados válidos. Datas finais são UTC, nunca anteriores ao início persistido. Snapshots, AES-GCM, AAD, referência idempotente, tentativa e `created_at` não são alterados.
+
+### Aplicação financeira
+
+Qualquer marker de lease (ativo **ou expirado pendente**) ou Consulta aberta bloqueia a aplicação com `RequerReconciliacao`. A aplicação não recupera leases nem altera auditoria. Sob a mesma ordem de locks, as entidades são reidratadas pelos materializadores existentes; `PagamentoPix.ConfirmarConclusao()`, `PagamentoPix.RegistrarFalha()` e `Cashback.RegistrarPagamento()` executam as regras de Domain antes dos updates condicionais. A confirmação persiste PagamentoPix e Cashback atomicamente; falha do Cashback reverte o PagamentoPix. Não há dependência de provider na aplicação financeira.
+
+### Implantação e limite para registros legados
+
+Antes do UP/DOWN, interromper executores antigos: versões anteriores não validam tokens. A migration não faz backfill e não altera auditorias existentes. Uma Consulta legada aberta sem lease, ou um lease parcialmente preenchido, é inconsistência explícita e exige regularização auditada separada; não se presume que esteja abandonada. Não foi executada migration nem saneamento em banco real nesta tarefa.
+
+### Cobertura restaurada/substituída
+
+Nenhum teste existente no HEAD `f313f0c` foi apagado. Cenários que antes decidiam sobre mocks de histórico na Application foram transferidos para testes dos stores com MySQL, pois a decisão agora deve ocorrer dentro da transação. Os testes de Application verificam contrato, propagação, falhas, cancelamento, token e ausência de escritas diretas. A tabela compara com `ad0c284` (parent de `f313f0c`); prefixos **R:** = `ReconciliarAsync_`, **A:** = `AplicarAsync_`, exceto `Servico_`.
+
+| Teste removido anteriormente | Motivo | Teste restaurado/substituto |
+|---|---|---|
+| R: QuandoIdForVazio_NaoDeveAcessarDependencias | Renomeado, preservado | ReconciliarAsync_QuandoIdentificadorForVazio_DeveRejeitar (Application) |
+| R: QuandoPagamentoNaoExistir_DeveLancarExcecaoEspecifica | Preservado | Mesmo nome (Application) |
+| R: QuandoStatusNaoForProcessando_DeveRetornarNaoAplicavel | Decisão movida ao store sob lock | EstadosNaoAplicaveis_DevePreservarHistoricoSemProvider (MySQL, todos os estados) |
+| R: QuandoProcessandoSemAuditoria_DeveLancarInconsistenciaSemConsultar | Decisão movida ao store | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (ausente) |
+| R: QuandoHistoricoJaForConclusivo_NaoDeveConsultar | Decisão movida ao store | ReconciliarAsync_QuandoEnvioAtualForConclusivo_NaoDeveConsultar (MySQL) |
+| R: QuandoConsultaConclusivaDoCicloAtualExistir_DeveRecuperarEnvioAberto | Recuperação agora transacional | ReconciliarAsync_QuandoConsultaConclusivaExistir_DeveRecuperarEnvioAtualAbertoSemConsultarProvider (MySQL; metadados, datas e snapshots) |
+| R: QuandoRecuperacaoDoEnvioConcorrer_DeveAceitarMesmoResultadoOuRejeitarConflito | Token substitui finalização direta concorrente | LeaseExpirado_DeveReutilizarConsultaERejeitarExecutorAntigo; FinalizacaoConflitante_DeveFalharFechadoSemLiquidacao |
+| R: QuandoTentativaAnteriorFalhou_DeveConsultarSomenteATentativaAtual | Teste com persistência real | ReconciliarAsync_QuandoTentativaAnteriorFalhou_DeveConsultarESomenteResolverEnvioAtual |
+| R: QuandoConsultaConclusivaForDeCicloAnterior_DeveConsultarTentativaAtual | Teste com persistência real | ReconciliarAsync_QuandoConsultaConclusivaForAnteriorAoEnvioAtual_DeveIgnoraLa |
+| R: QuandoConsultaDoCicloAtualForConclusiva_NaoDeveConsultarNovamente | Teste com persistência real | Mesmo nome (MySQL) |
+| R: QuandoCicloAtualTiverResultadosConclusivosConflitantes_DeveLancarInconsistencia | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (conflito) |
+| R: QuandoEnvioDaTentativaAtualEstiverAusente_DeveLancarInconsistencia | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (ausente) |
+| R: QuandoHouverMaisDeUmEnvioDaTentativaAtual_DeveLancarInconsistencia | MySQL impede esse estado pela UNIQUE existente | UnicidadeEnvio_DeveImpedirCicloComDoisEnviosPersistidos |
+| R: QuandoEnvioAnteriorEstiverAberto_DeveLancarInconsistencia | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (anterior-aberto) |
+| R: QuandoResultadoForConclusivo_DeveFinalizarSomenteEnvioAtual | Teste com persistência real | ReconciliarAsync_QuandoTentativaAnteriorFalhou_DeveConsultarESomenteResolverEnvioAtual |
+| R: QuandoConsultaAntigaEstiverAberta_NaoDeveFinalizaLa | Teste com persistência real | ConsultaAntigaAberta_DevePermanecerIntactaAoFinalizarCicloAtual |
+| R: QuandoEnvioEstiverAberto_DeveAuditarConsultaEMapearResultado | Mantidos os quatro resultados | ReconciliarAsync_QuandoConsultaForPreparada_DeveChamarProviderUmaVezEFinalizarAuditoria (Application) e integrações de Confirmado/Pendente |
+| R: QuandoConsultaAnteriorEstiverAberta_DevePermitirNovaConsulta | Semântica antiga violava exclusividade; retomada agora reutiliza operação | LeaseExpirado_DeveReutilizarConsultaERejeitarExecutorAntigo; DuasReconciliacoes_DeveManterUmaConsultaVivaEAuditoriaAntesDoProvider |
+| R: QuandoAdicionarConsultaFalhar_NaoDeveConsultarProvider | Preparação passou ao store | ReconciliarAsync_QuandoPreparacaoFalhar_NaoDeveChamarProvider |
+| R: QuandoProviderCancelarOuFalhar_DeveManterConsultaAberta | Agora finaliza Indeterminado e libera token quando ainda válido; crash continua recuperável | FalhaOuCancelamentoDoProvider_DeveAuditarIndeterminadoEPermitirConsultaPosterior e unitários de exceção/cancelamento |
+| R: QuandoFinalizacaoDaConsultaFalhar_NaoDeveConsultarNovamente | Acrescida prova de rollback e retomada | ReconciliarAsync_QuandoFinalizacaoFalhar_NaoDeveReconsultarOuEscreverForaDoLease; FalhaNaFinalizacao_DeveReverterAuditoriaERecuperarMesmaConsultaAposExpiracao |
+| R: QuandoCancelamentoForSolicitadoAposResposta_DeveFinalizarConsultaSemCancelar | Mantida finalização com CancellationToken.None | ReconciliarAsync_QuandoCancelamentoAposResposta_DevePersistirComTokenNone |
+| R: QuandoFinalizacaoConcorrenteDoEnvioOcorrer_DeveAceitarMesmoResultadoOuRejeitarConflito | Finalização única protegida por token e transação | LeaseExpirado_DeveReutilizarConsultaERejeitarExecutorAntigo; FinalizacaoConflitante_DeveFalharFechadoSemLiquidacao |
+| A: QuandoIdentificadorForVazio_DeveRejeitar | Asserção ampliada | AplicarAsync_QuandoIdentificadorForVazio_DeveRejeitarSemAcessarDependencias |
+| A: QuandoPagamentoNaoExistir_DeveLancarExcecaoEspecifica | Preservado | Mesmo nome (Application) |
+| A: QuandoCicloNaoTiverResultadoConclusivo_DeveRetornarSemResultado | Decisão movida ao store | AplicarAsync_QuandoStoreNaoEncontrarEvidencia_DeveRetornarSemResultado; integração de tentativa anterior com ciclo Pendente |
+| A: QuandoEnvioAtualEstiverAusente_DeveFalharFechado | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (ausente) |
+| A: QuandoEnvioAtualEstiverDuplicado_DeveFalharFechado | Garantia definitiva da UNIQUE | UnicidadeEnvio_DeveImpedirCicloComDoisEnviosPersistidos |
+| A: QuandoEnvioAnteriorEstiverAberto_DeveFalharFechado | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (anterior-aberto) |
+| A: QuandoResultadoConclusivoForDeTentativaAnterior_DeveIgnoraLo | Teste com persistência real | AplicarAsync_QuandoResultadoConclusivoForDeTentativaAnterior_NaoDeveAplicarCicloAtual |
+| A: QuandoConsultaConclusivaDoCicloAtualExistirEEnvioEstiverAberto_DeveRequererReconciliacao | Verifica auditoria imutável no MySQL | AplicarAsync_QuandoEnvioAbertoComConsultaConclusiva_DeveExigirReconciliacao |
+| A: QuandoCicloAtualPossuirResultadosConclusivosConflitantes_DeveFalharFechado | Rollback verificado | AplicarAsync_QuandoEvidenciasConclusivasConflitarem_NaoDeveAlterarEstadoFinanceiro |
+| A: QuandoConfirmado_DeveCoordenarConclusaoEPagamento | Transições Domain na transação | AplicarAsync_QuandoConfirmado_DeveConcluirPagamentoEPagarCashbackAtomicamente |
+| A: QuandoFalhaConfirmada_DeveRegistrarFalhaSemAlterarCashback | Ampliado para tentativas 1, 2, 3, 4 e 5 | AplicarAsync_QuandoFalhaConfirmada_DeveAtualizarSomentePagamento |
+| A: QuandoStoreIndicarAplicacaoConcorrenteJaConcluida_DeveSerIdempotente | Mantido e reforçado | AplicarAsync_QuandoStoreInformarJaAplicado_DeveSerIdempotente; AplicarAsync_QuandoCincoExecutoresConcorrerem_DeveSerIdempotente |
+| A: QuandoResultadoJaEstiverPersistidoDeFormaCoerente_DeveSerIdempotente | Reexecução no MySQL | AplicarAsync_QuandoExecutadoNovamenteAposConfirmacao_DeveRetornarJaAplicadoSemAlterarAuditoria |
+| A: QuandoEstadoFinanceiroForParcialOuIncompativel_DeveFalharFechado | Estado real persistido | AplicarAsync_QuandoEstadoParcialOuIncompativel_DeveFalharFechado |
+| A: QuandoSnapshotsFinanceirosDivergirem_DeveFalharFechado | Restauradas três divergências | AplicarAsync_QuandoSnapshotsDivergirem_DeveFalharAntesDoStore (beneficiário, valor, cashback) |
+| A: Servico_NaoDeveDependerDeIPixProvider | Asserção ampliada | Servico_NaoDeveDependerDeIPixProviderOuAuditoria |
+
+Novos testes específicos incluem expiração durante a finalização com rollback, duas reconciliações com provider bloqueável, recuperação da mesma Consulta, token antigo, falha ao finalizar auditoria, lease ativo/expirado bloqueando aplicação, referência/snapshots preservados e metadados nulos sem perda. Concorrência usa `TaskCompletionSource`; expiração é controlada por SQL somente no banco temporário de testes.
+
+### Validação desta revisão
+
+- `dotnet build`: sucesso, 0 erros e 0 warnings na execução final. Um build anterior desta revisão exibiu o aviso preexistente em `UsuarioService`; não foi corrigido fora do escopo.
+- Suíte final: **562 testes**, **457 aprovados**, **0 falhos**, **105 ignorados**. Domain: 132 aprovados; Application: 150; Infrastructure: 82 aprovados e 105 ignorados; API: 93 aprovados.
+- `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível no processo. Os 105 testes de integração foram ignorados; não há validação real MySQL nesta execução. A migration 011 e os testes de concorrência/rollback aguardam essa validação em banco temporário.
+- Testes externos Efí e diagnóstico TLS excluídos; zero OAuth, Efí ou Pix real. Nenhum banco real foi utilizado.
+- `git diff --check`: sem erros. `git status --short` e `git diff` revisados antes do staging explícito e do único commit local; sem push, merge ou alteração do PR.
+
+Comando da suíte final (inclui os testes específicos de aplicação/reconciliação):
+
+```powershell
+dotnet test IndicaA2.slnx --no-build --no-restore --filter "FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"
+```
+
 ## Coordenação Persistente entre Reconciliação e Aplicação de Resultado Pix
 
 **Data:** 2026-09-04

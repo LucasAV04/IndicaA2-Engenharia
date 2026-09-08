@@ -48,6 +48,9 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
         foreach (var (tentativas, statusEsperado) in new[]
                  {
                      (1, StatusPagamentoPix.Falhou),
+                     (2, StatusPagamentoPix.Falhou),
+                     (3, StatusPagamentoPix.Falhou),
+                     (4, StatusPagamentoPix.Falhou),
                      (5, StatusPagamentoPix.FalhaDefinitiva)
                  })
         {
@@ -189,11 +192,88 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
         Assert.Equal(StatusCashback.Disponivel, cashbackPersistido.Status);
     }
 
+    [MySqlIntegrationFact]
+    public async Task AplicarAsync_QuandoLeaseAtivoOuExpirado_DevePreservarEstadoEAuditoria()
+    {
+        foreach (var segundos in new[] { 300, -1 })
+        {
+            await fixture.LimparDadosAsync();
+            var contexto = await CriarContextoPersistidoAsync(ResultadoOperacaoPagamentoPix.Confirmado);
+            var auditoria = await ObterSnapshotAuditoriaAsync(contexto.PagamentoPix.Id);
+            var cashback = await ObterSnapshotCashbackAsync(contexto.Cashback.Id);
+            await using var connection = fixture.ConnectionFactory.Create();
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand("""
+                UPDATE pagamentos_pix SET reconciliacao_lease_id = @lease,
+                reconciliacao_lease_expira_em = TIMESTAMPADD(SECOND, @segundos, UTC_TIMESTAMP(6)) WHERE id = @id;
+                """, connection);
+            command.Parameters.AddWithValue("@id", contexto.PagamentoPix.Id.ToString());
+            command.Parameters.AddWithValue("@lease", Guid.NewGuid().ToString());
+            command.Parameters.AddWithValue("@segundos", segundos);
+            await command.ExecuteNonQueryAsync();
+            Assert.Equal(StatusAplicacaoPagamentoPix.RequerReconciliacao,
+                (await CriarService().AplicarAsync(contexto.PagamentoPix.Id)).Status);
+            Assert.Equal(auditoria, await ObterSnapshotAuditoriaAsync(contexto.PagamentoPix.Id));
+            Assert.Equal(cashback, await ObterSnapshotCashbackAsync(contexto.Cashback.Id));
+            Assert.Equal(StatusPagamentoPix.Processando,
+                (await CriarPagamentoRepository().ObterPorIdAsync(contexto.PagamentoPix.Id))!.Status);
+        }
+    }
+
+    [MySqlIntegrationFact]
+    public async Task AplicarAsync_QuandoEnvioAbertoComConsultaConclusiva_DeveExigirReconciliacao()
+    {
+        await fixture.LimparDadosAsync();
+        var contexto = await CriarContextoPersistidoAsync(ResultadoOperacaoPagamentoPix.Pendente);
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand("""
+            UPDATE operacoes_pagamento_pix SET resultado = NULL, identificador_provider = NULL,
+            codigo = NULL, finished_at = NULL WHERE pagamento_pix_id = @id;
+            """, connection);
+        command.Parameters.AddWithValue("@id", contexto.PagamentoPix.Id.ToString());
+        await command.ExecuteNonQueryAsync();
+        var repository = new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory);
+        await AdicionarEFinalizarAsync(repository, OperacaoPagamentoPix.IniciarConsulta(contexto.PagamentoPix.Id),
+            ResultadoOperacaoPagamentoPix.Confirmado);
+        var antes = await ObterSnapshotAuditoriaAsync(contexto.PagamentoPix.Id);
+        Assert.Equal(StatusAplicacaoPagamentoPix.RequerReconciliacao,
+            (await CriarService().AplicarAsync(contexto.PagamentoPix.Id)).Status);
+        Assert.Equal(antes, await ObterSnapshotAuditoriaAsync(contexto.PagamentoPix.Id));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task AplicarAsync_QuandoEstadoParcialOuIncompativel_DeveFalharFechado()
+    {
+        foreach (var (statusPagamento, statusCashback) in new[]
+                 { (StatusPagamentoPix.Concluido, StatusCashback.Disponivel),
+                   (StatusPagamentoPix.Processando, StatusCashback.Pago),
+                   (StatusPagamentoPix.Falhou, StatusCashback.Disponivel) })
+        {
+            await fixture.LimparDadosAsync();
+            var contexto = await CriarContextoPersistidoAsync(ResultadoOperacaoPagamentoPix.Confirmado);
+            await using var connection = fixture.ConnectionFactory.Create();
+            await connection.OpenAsync();
+            await using var command = new MySqlCommand("""
+                UPDATE pagamentos_pix SET status = @pagamento WHERE id = @id;
+                UPDATE cashbacks SET status = @cashback WHERE id = @cashbackId;
+                """, connection);
+            command.Parameters.AddWithValue("@id", contexto.PagamentoPix.Id.ToString());
+            command.Parameters.AddWithValue("@cashbackId", contexto.Cashback.Id.ToString());
+            command.Parameters.AddWithValue("@pagamento", (int)statusPagamento);
+            command.Parameters.AddWithValue("@cashback", (int)statusCashback);
+            await command.ExecuteNonQueryAsync();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => CriarService().AplicarAsync(contexto.PagamentoPix.Id));
+            Assert.Equal(statusPagamento, (await CriarPagamentoRepository().ObterPorIdAsync(contexto.PagamentoPix.Id))!.Status);
+            Assert.Equal(statusCashback, (await CriarCashbackRepository().ObterPorIdAsync(contexto.Cashback.Id))!.Status);
+        }
+    }
+
     private PagamentoPixAplicacaoResultadoService CriarService() =>
         new(
             CriarPagamentoRepository(),
             CriarCashbackRepository(),
-            new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory));
+            new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory, new AesGcmDadosPixProtector(CriarChave())));
 
     private async Task<ContextoFinanceiro> CriarContextoPersistidoAsync(
         ResultadoOperacaoPagamentoPix resultadoOperacao,

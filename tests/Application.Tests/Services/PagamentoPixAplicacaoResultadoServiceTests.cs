@@ -99,10 +99,14 @@ public sealed class PagamentoPixAplicacaoResultadoServiceTests
         Assert.Equal(evidencia, resultado.ResultadoOperacao);
     }
 
-    [Fact]
-    public async Task AplicarAsync_QuandoSnapshotsDivergirem_DeveFalharAntesDoStore()
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    public async Task AplicarAsync_QuandoSnapshotsDivergirem_DeveFalharAntesDoStore(
+        bool beneficiario, bool valor, bool cashback)
     {
-        var contexto = CriarContexto(beneficiarioDivergente: true);
+        var contexto = CriarContexto(beneficiario, valor, cashback);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             contexto.Service.AplicarAsync(contexto.Pagamento.Id, contexto.Token));
@@ -123,14 +127,36 @@ public sealed class PagamentoPixAplicacaoResultadoServiceTests
         Assert.DoesNotContain(typeof(IOperacaoPagamentoPixRepository), dependencias);
     }
 
-    private static Contexto CriarContexto(bool beneficiarioDivergente = false)
+    [Fact]
+    public async Task AplicarAsync_QuandoStoreFalhar_DevePropagarSemMutacaoLocal()
+    {
+        var contexto = CriarContexto();
+        contexto.Store.Setup(x => x.AplicarAsync(contexto.Pagamento.Id, contexto.Token))
+            .ThrowsAsync(new InvalidOperationException("conflito simulado"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.AplicarAsync(contexto.Pagamento.Id, contexto.Token));
+        Assert.Equal(StatusPagamentoPix.Processando, contexto.Pagamento.Status);
+    }
+
+    [Fact]
+    public async Task AplicarAsync_QuandoCancelado_NaoDeveAcessarStore()
+    {
+        var contexto = CriarContexto();
+        using var source = new CancellationTokenSource();
+        source.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            contexto.Service.AplicarAsync(contexto.Pagamento.Id, source.Token));
+        contexto.Store.Verify(x => x.AplicarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static Contexto CriarContexto(bool beneficiarioDivergente = false, bool valorDivergente = false, bool cashbackDivergente = false)
     {
         var cashback = Cashback.Criar(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 100m);
         cashback.Aprovar();
         var pagamento = PagamentoPix.Criar(
-            cashback.Id,
+            cashbackDivergente ? Guid.NewGuid() : cashback.Id,
             beneficiarioDivergente ? Guid.NewGuid() : cashback.UsuarioIndicadorId,
-            cashback.Valor,
+            valorDivergente ? cashback.Valor + 1m : cashback.Valor,
             TipoChavePix.Email,
             "snapshot@exemplo.com");
         pagamento.IniciarTentativa();
@@ -139,7 +165,7 @@ public sealed class PagamentoPixAplicacaoResultadoServiceTests
         var cashbackRepository = new Mock<ICashbackRepository>();
         var store = new Mock<IPagamentoPixAplicacaoResultadoStore>();
         pagamentoRepository.Setup(value => value.ObterPorIdAsync(pagamento.Id, token)).ReturnsAsync(pagamento);
-        cashbackRepository.Setup(value => value.ObterPorIdAsync(cashback.Id, token)).ReturnsAsync(cashback);
+        cashbackRepository.Setup(value => value.ObterPorIdAsync(pagamento.CashbackId, token)).ReturnsAsync(cashback);
 
         return new Contexto(
             new PagamentoPixAplicacaoResultadoService(

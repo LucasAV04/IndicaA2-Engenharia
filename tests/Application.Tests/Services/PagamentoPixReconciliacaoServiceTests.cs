@@ -96,18 +96,26 @@ public sealed class PagamentoPixReconciliacaoServiceTests
     {
         var contexto = CriarContexto();
         var consulta = OperacaoPagamentoPix.IniciarConsulta(contexto.Pagamento.Id);
+        var leaseId = Guid.NewGuid();
         contexto.Store
             .Setup(value => value.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
-            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consulta.Id));
+            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consulta.Id, leaseId));
         contexto.Operacoes
             .Setup(value => value.ObterPorIdAsync(consulta.Id, contexto.Token))
             .ReturnsAsync(consulta);
         contexto.Provider
             .Setup(value => value.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token))
             .ReturnsAsync(CriarResultadoProvider(statusProvider));
-        contexto.Operacoes
-            .Setup(value => value.FinalizarAsync(It.IsAny<OperacaoPagamentoPix>(), CancellationToken.None))
-            .ReturnsAsync(true);
+        contexto.Store
+            .Setup(value => value.FinalizarConsultaAsync(
+                contexto.Pagamento.Id,
+                consulta.Id,
+                leaseId,
+                It.IsAny<ResultadoOperacaoPagamentoPix>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoConsultaPagamentoPixResult(true, false));
         contexto.Operacoes
             .Setup(value => value.ObterPorPagamentoPixIdAsync(contexto.Pagamento.Id, CancellationToken.None))
             .ReturnsAsync([OperacaoPagamentoPix.Reidratar(
@@ -130,10 +138,56 @@ public sealed class PagamentoPixReconciliacaoServiceTests
         contexto.Provider.Verify(value => value.ConsultarAsync(
             It.Is<PixConsultaRequest>(request => request.PagamentoPixId == contexto.Pagamento.Id),
             contexto.Token), Times.Once);
-        contexto.Operacoes.Verify(value => value.FinalizarAsync(
-            It.Is<OperacaoPagamentoPix>(operacao =>
-                operacao.Id == consulta.Id && operacao.Resultado == resultadoEsperado),
+        contexto.Store.Verify(value => value.FinalizarConsultaAsync(
+            contexto.Pagamento.Id,
+            consulta.Id,
+            leaseId,
+            resultadoEsperado,
+            "provider-id",
+            "codigo",
             CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoProviderFalhar_DeveFinalizarConsultaComoIndeterminadaELiberarRecuperacao()
+    {
+        var contexto = CriarContexto();
+        var consulta = OperacaoPagamentoPix.IniciarConsulta(contexto.Pagamento.Id);
+        var leaseId = Guid.NewGuid();
+        contexto.Store.Setup(value => value.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consulta.Id, leaseId));
+        contexto.Operacoes.Setup(value => value.ObterPorIdAsync(consulta.Id, contexto.Token)).ReturnsAsync(consulta);
+        contexto.Provider.Setup(value => value.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token))
+            .ThrowsAsync(new HttpRequestException("falha simulada"));
+        contexto.Store.Setup(value => value.FinalizarConsultaAsync(
+                contexto.Pagamento.Id, consulta.Id, leaseId, ResultadoOperacaoPagamentoPix.Indeterminado,
+                null, null, CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoConsultaPagamentoPixResult(true, false));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token));
+
+        contexto.Store.Verify(value => value.FinalizarConsultaAsync(
+            contexto.Pagamento.Id, consulta.Id, leaseId, ResultadoOperacaoPagamentoPix.Indeterminado,
+            null, null, CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoTokenDoLeaseForPerdido_NaoDeveSobrescreverAuditoria()
+    {
+        var contexto = CriarContexto();
+        var consulta = OperacaoPagamentoPix.IniciarConsulta(contexto.Pagamento.Id);
+        var leaseId = Guid.NewGuid();
+        contexto.Store.Setup(value => value.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consulta.Id, leaseId));
+        contexto.Operacoes.Setup(value => value.ObterPorIdAsync(consulta.Id, contexto.Token)).ReturnsAsync(consulta);
+        contexto.Provider.Setup(value => value.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token))
+            .ReturnsAsync(PixProviderResult.Confirmado("provider", "code"));
+        contexto.Store.Setup(value => value.FinalizarConsultaAsync(
+                contexto.Pagamento.Id, consulta.Id, leaseId, ResultadoOperacaoPagamentoPix.Confirmado,
+                "provider", "code", CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoConsultaPagamentoPixResult(false, false));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token));
     }
 
     [Fact]
@@ -146,12 +200,156 @@ public sealed class PagamentoPixReconciliacaoServiceTests
         Assert.Contains(typeof(IPixProvider), dependencias);
     }
 
-    private static Contexto CriarContexto()
+    [Fact]
+    public async Task ReconciliarAsync_QuandoPreparacaoFalhar_NaoDeveChamarProvider()
+    {
+        var contexto = CriarContexto();
+        contexto.Store.Setup(x => x.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
+            .ThrowsAsync(new InvalidOperationException("falha de persistência"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token));
+        VerificarNenhumaChamadaProvider(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoAuditoriaPreparadaNaoExistir_NaoDeveChamarProvider()
+    {
+        var contexto = CriarContexto();
+        contexto.Store.Setup(x => x.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(Guid.NewGuid(), Guid.NewGuid()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token));
+        VerificarNenhumaChamadaProvider(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoProviderCancelar_DeveAuditarIndeterminadoSemCancelarPersistencia()
+    {
+        var (contexto, consulta, lease) = PrepararConsulta();
+        contexto.Provider.Setup(x => x.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token))
+            .ThrowsAsync(new OperationCanceledException(contexto.Token));
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token));
+        contexto.Store.Verify(x => x.FinalizarConsultaAsync(contexto.Pagamento.Id, consulta.Id, lease,
+            ResultadoOperacaoPagamentoPix.Indeterminado, null, null, CancellationToken.None), Times.Once);
+        VerificarAusenciaDeEscritaDireta(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoFinalizacaoFalhar_NaoDeveReconsultarOuEscreverForaDoLease()
+    {
+        var (contexto, consulta, lease) = PrepararConsulta();
+        contexto.Store.Setup(x => x.FinalizarConsultaAsync(contexto.Pagamento.Id, consulta.Id, lease,
+            It.IsAny<ResultadoOperacaoPagamentoPix>(), It.IsAny<string?>(), It.IsAny<string?>(), CancellationToken.None))
+            .ThrowsAsync(new InvalidOperationException("falha simulada"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token));
+        contexto.Provider.Verify(x => x.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token), Times.Once);
+        VerificarAusenciaDeEscritaDireta(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoProviderEAuditoriaFalharem_DeveExporFalhaDePersistencia()
+    {
+        var (contexto, consulta, lease) = PrepararConsulta();
+        contexto.Provider.Setup(x => x.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token))
+            .ThrowsAsync(new HttpRequestException("simulada"));
+        contexto.Store.Setup(x => x.FinalizarConsultaAsync(contexto.Pagamento.Id, consulta.Id, lease,
+            ResultadoOperacaoPagamentoPix.Indeterminado, null, null, CancellationToken.None))
+            .ThrowsAsync(new InvalidOperationException("auditoria indisponível"));
+        var falha = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token));
+        Assert.Equal("auditoria indisponível", falha.Message);
+        VerificarAusenciaDeEscritaDireta(contexto);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReconciliarAsync_DevePropagarRecuperacaoAtomicaDoEnvio(bool envioRecuperado)
+    {
+        var (contexto, consulta, lease) = PrepararConsulta();
+        contexto.Store.Setup(x => x.FinalizarConsultaAsync(contexto.Pagamento.Id, consulta.Id, lease,
+            It.IsAny<ResultadoOperacaoPagamentoPix>(), It.IsAny<string?>(), It.IsAny<string?>(), CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoConsultaPagamentoPixResult(true, envioRecuperado));
+        var resultado = await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token);
+        Assert.Equal(envioRecuperado, resultado.OperacaoEnvioAbertaResolvida);
+        VerificarAusenciaDeEscritaDireta(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoProviderBloqueado_DeveEsperarAuditoriaPreparadaAntesDaChamada()
+    {
+        var (contexto, consulta, lease) = PrepararConsulta();
+        var entrou = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var liberar = new TaskCompletionSource<PixProviderResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        contexto.Provider.Setup(x => x.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token))
+            .Callback(() =>
+            {
+                contexto.Store.Verify(x => x.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
+                contexto.Operacoes.Verify(x => x.ObterPorIdAsync(consulta.Id, contexto.Token), Times.Once);
+                entrou.SetResult();
+            }).Returns(liberar.Task);
+        var execucao = contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token);
+        await entrou.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        contexto.Store.Verify(x => x.FinalizarConsultaAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(),
+            It.IsAny<ResultadoOperacaoPagamentoPix>(), It.IsAny<string?>(), It.IsAny<string?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        liberar.SetResult(PixProviderResult.Pendente());
+        await execucao;
+        VerificarAusenciaDeEscritaDireta(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoCancelamentoAposResposta_DevePersistirComTokenNone()
+    {
+        using var cancelamento = new CancellationTokenSource();
+        var contexto = CriarContexto(cancelamento.Token);
+        var consulta = OperacaoPagamentoPix.IniciarConsulta(contexto.Pagamento.Id);
+        var lease = Guid.NewGuid();
+        contexto.Store.Setup(x => x.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consulta.Id, lease));
+        contexto.Operacoes.Setup(x => x.ObterPorIdAsync(consulta.Id, contexto.Token)).ReturnsAsync(consulta);
+        contexto.Provider.Setup(x => x.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token))
+            .Callback(cancelamento.Cancel).ReturnsAsync(PixProviderResult.Pendente());
+        contexto.Store.Setup(x => x.FinalizarConsultaAsync(contexto.Pagamento.Id, consulta.Id, lease,
+            ResultadoOperacaoPagamentoPix.Pendente, null, null, CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoConsultaPagamentoPixResult(true, false));
+        Assert.Equal(StatusReconciliacaoPagamentoPix.Consultado,
+            (await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token)).Status);
+    }
+
+    private static (Contexto Contexto, OperacaoPagamentoPix Consulta, Guid Lease) PrepararConsulta()
+    {
+        var contexto = CriarContexto();
+        var consulta = OperacaoPagamentoPix.IniciarConsulta(contexto.Pagamento.Id);
+        var lease = Guid.NewGuid();
+        contexto.Store.Setup(x => x.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.ConsultaPreparada(consulta.Id, lease));
+        contexto.Operacoes.Setup(x => x.ObterPorIdAsync(consulta.Id, contexto.Token)).ReturnsAsync(consulta);
+        contexto.Provider.Setup(x => x.ConsultarAsync(It.IsAny<PixConsultaRequest>(), contexto.Token))
+            .ReturnsAsync(PixProviderResult.Confirmado("provider", "codigo"));
+        contexto.Store.Setup(x => x.FinalizarConsultaAsync(contexto.Pagamento.Id, consulta.Id, lease,
+            It.IsAny<ResultadoOperacaoPagamentoPix>(), It.IsAny<string?>(), It.IsAny<string?>(), CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoConsultaPagamentoPixResult(true, true));
+        return (contexto, consulta, lease);
+    }
+
+    private static void VerificarAusenciaDeEscritaDireta(Contexto contexto)
+    {
+        contexto.Operacoes.Verify(x => x.FinalizarAsync(It.IsAny<OperacaoPagamentoPix>(), It.IsAny<CancellationToken>()), Times.Never);
+        contexto.Operacoes.Verify(x => x.AdicionarAsync(It.IsAny<OperacaoPagamentoPix>(), It.IsAny<CancellationToken>()), Times.Never);
+        contexto.Provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(StatusPagamentoPix.Processando, contexto.Pagamento.Status);
+        Assert.Equal(1, contexto.Pagamento.QuantidadeTentativas);
+    }
+
+    private static Contexto CriarContexto(CancellationToken? cancellationToken = null)
     {
         var pagamento = PagamentoPix.Criar(
             Guid.NewGuid(), Guid.NewGuid(), 50m, TipoChavePix.Email, "beneficiario@exemplo.com");
         pagamento.IniciarTentativa();
-        var token = new CancellationTokenSource().Token;
+        var token = cancellationToken ?? new CancellationTokenSource().Token;
         var pagamentos = new Mock<IPagamentoPixRepository>();
         var operacoes = new Mock<IOperacaoPagamentoPixRepository>();
         var store = new Mock<IPagamentoPixReconciliacaoStore>();

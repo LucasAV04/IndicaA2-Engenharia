@@ -1,4 +1,5 @@
 using Application.Models;
+using Domain.Enums;
 
 namespace Application.Interfaces.Stores;
 
@@ -10,5 +11,14 @@ public interface IPagamentoPixReconciliacaoStore
 {
     Task<PreparacaoReconciliacaoPagamentoPixResult> PrepararConsultaAsync(
         Guid pagamentoPixId,
+        CancellationToken cancellationToken = default);
+
+    Task<FinalizacaoConsultaPagamentoPixResult> FinalizarConsultaAsync(
+        Guid pagamentoPixId,
+        Guid operacaoConsultaId,
+        Guid leaseId,
+        ResultadoOperacaoPagamentoPix resultado,
+        string? identificadorProvider,
+        string? codigo,
         CancellationToken cancellationToken = default);
 }

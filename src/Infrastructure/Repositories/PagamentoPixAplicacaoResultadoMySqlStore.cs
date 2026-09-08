@@ -1,7 +1,9 @@
 using Application.Interfaces.Stores;
 using Application.Models;
+using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Database;
+using Infrastructure.Security;
 using MySqlConnector;
 
 namespace Infrastructure.Repositories;
@@ -14,10 +16,13 @@ namespace Infrastructure.Repositories;
 public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixAplicacaoResultadoStore
 {
     private readonly MySqlConnectionFactory _connectionFactory;
+    private readonly PagamentoPixMySqlRepository _materializador;
 
-    public PagamentoPixAplicacaoResultadoMySqlStore(MySqlConnectionFactory connectionFactory)
+    public PagamentoPixAplicacaoResultadoMySqlStore(
+        MySqlConnectionFactory connectionFactory, IDadosPixProtector protector)
     {
         _connectionFactory = connectionFactory;
+        _materializador = new PagamentoPixMySqlRepository(connectionFactory, protector);
     }
 
     public async Task<ResultadoPersistenciaAplicacaoPagamentoPix> AplicarAsync(
@@ -39,7 +44,8 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             var cicloAtual = IdentificarCicloAtual(operacoes, pagamentoPix.QuantidadeTentativas);
             var resultadoConclusivo = ObterResultadoConclusivo(cicloAtual);
 
-            if (cicloAtual.Consultas.Any(operacao => !operacao.FinishedAt.HasValue) ||
+            if (pagamentoPix.LeasePendenteDeRecuperacao ||
+                cicloAtual.Consultas.Any(operacao => !operacao.FinishedAt.HasValue) ||
                 !cicloAtual.Envio.FinishedAt.HasValue)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -63,9 +69,17 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             }
 
             ValidarEstadoInicial(pagamentoPix, cashback);
-            var statusPagamentoPixFinal = ObterStatusPagamentoPixFinal(
-                resultadoConclusivo.Value,
-                pagamentoPix.QuantidadeTentativas);
+            // As entidades reidratadas sob lock executam as regras de domínio.
+            if (resultadoConclusivo == ResultadoOperacaoPagamentoPix.Confirmado)
+            {
+                pagamentoPix.Entidade.ConfirmarConclusao();
+                cashback.Entidade.RegistrarPagamento();
+            }
+            else
+            {
+                pagamentoPix.Entidade.RegistrarFalha();
+            }
+            var statusPagamentoPixFinal = pagamentoPix.Entidade.Status;
 
             if (await AtualizarPagamentoPixAsync(
                     connection,
@@ -96,14 +110,17 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
         }
     }
 
-    private static async Task<PagamentoPixPersistido> ObterPagamentoPixParaAtualizacaoAsync(
+    private async Task<PagamentoPixPersistido> ObterPagamentoPixParaAtualizacaoAsync(
         MySqlConnection connection,
         MySqlTransaction transaction,
         Guid pagamentoPixId,
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT cashback_id, usuario_beneficiario_id, valor, status, quantidade_tentativas
+            SELECT id, cashback_id, usuario_beneficiario_id, valor, status, quantidade_tentativas,
+                   tipo_chave_pix, chave_pix_ciphertext, chave_pix_nonce, chave_pix_tag,
+                   encryption_version, created_at, updated_at,
+                   reconciliacao_lease_id, reconciliacao_lease_expira_em
             FROM pagamentos_pix
             WHERE id = @id
             FOR UPDATE;
@@ -120,7 +137,10 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             ObterGuid(reader, "usuario_beneficiario_id"),
             reader.GetDecimal(reader.GetOrdinal("valor")),
             ObterEnum<StatusPagamentoPix>(reader, "status"),
-            reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")));
+            reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")),
+            !reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_id")) ||
+            !reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_expira_em")),
+            _materializador.Materializar(reader));
     }
 
     private static async Task<IReadOnlyCollection<OperacaoPersistida>> ObterOperacoesParaAtualizacaoAsync(
@@ -164,7 +184,8 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT usuario_indicador_id, valor, status
+            SELECT id, indicacao_id, pagamento_vistoria_id, usuario_indicador_id,
+                   valor_total_pago, percentual, valor, status, created_at, updated_at
             FROM cashbacks
             WHERE id = @id
             FOR UPDATE;
@@ -179,7 +200,8 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
         return new CashbackPersistido(
             ObterGuid(reader, "usuario_indicador_id"),
             reader.GetDecimal(reader.GetOrdinal("valor")),
-            ObterEnum<StatusCashback>(reader, "status"));
+            ObterEnum<StatusCashback>(reader, "status"),
+            CashbackMySqlRepository.Materializar(reader));
     }
 
     private static CicloAtual IdentificarCicloAtual(
@@ -356,9 +378,11 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
         Guid UsuarioBeneficiarioId,
         decimal Valor,
         StatusPagamentoPix Status,
-        int QuantidadeTentativas);
+        int QuantidadeTentativas,
+        bool LeasePendenteDeRecuperacao,
+        PagamentoPix Entidade);
 
-    private sealed record CashbackPersistido(Guid UsuarioIndicadorId, decimal Valor, StatusCashback Status);
+    private sealed record CashbackPersistido(Guid UsuarioIndicadorId, decimal Valor, StatusCashback Status, Cashback Entidade);
 
     private sealed record OperacaoPersistida(
         TipoOperacaoPagamentoPix TipoOperacao,
