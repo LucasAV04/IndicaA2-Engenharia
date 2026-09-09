@@ -230,7 +230,7 @@ public sealed class PagamentoPixMySqlRepository : IPagamentoPixRepository
     private static void AdicionarGuid(MySqlCommand command, string nome, Guid valor) =>
         command.Parameters.Add(nome, MySqlDbType.VarChar).Value = valor.ToString();
 
-    private PagamentoPix Materializar(MySqlDataReader reader)
+    internal PagamentoPix Materializar(MySqlDataReader reader)
     {
         var id = reader.ObterGuid("id");
         var cashbackId = reader.ObterGuid("cashback_id");

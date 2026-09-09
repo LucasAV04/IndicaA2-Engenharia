@@ -2,7 +2,6 @@ using Application.DTOs.PagamentoPix;
 using Application.Interfaces.Services;
 using Domain.Enums;
 using Domain.Exceptions;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,31 +17,19 @@ using Xunit;
 
 namespace API.Tests.Integration;
 
-public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<ApiTestWebApplicationFactory>
 {
     private const string Issuer = "IndicA2.Api.Tests";
     private const string Audience = "IndicA2.Api.Tests.Client";
     private const string Key = "chave-ficticia-de-autorizacao-com-mais-de-trinta-e-dois-bytes";
     private readonly WebApplicationFactory<Program> _factory;
 
-    static PagamentoPixAuthorizationPipelineTests()
-    {
-        Environment.SetEnvironmentVariable(
-            "ConnectionStrings__DefaultConnection",
-            "Server=localhost;Database=indicaa2_test;User Id=test;Password=test;");
-        Environment.SetEnvironmentVariable("Jwt__Issuer", Issuer);
-        Environment.SetEnvironmentVariable("Jwt__Audience", Audience);
-        Environment.SetEnvironmentVariable("Jwt__Key", Key);
-        Environment.SetEnvironmentVariable("Jwt__ExpirationMinutes", "60");
-    }
-
-    public PagamentoPixAuthorizationPipelineTests(WebApplicationFactory<Program> factory) =>
-        _factory = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Development"));
+    public PagamentoPixAuthorizationPipelineTests(ApiTestWebApplicationFactory factory) => _factory = factory;
 
     [Fact]
     public async Task PagamentosPix_SemBearer_DeveRetornarUnauthorized()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
 
         var response = await client.GetAsync($"/api/pagamentos-pix/{Guid.NewGuid()}");
 
@@ -52,7 +39,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
     [Fact]
     public async Task PagamentosPix_ComTokenDeUsuario_DeveRetornarForbidden()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Usuario"));
 
         var response = await client.GetAsync($"/api/pagamentos-pix/{Guid.NewGuid()}");
@@ -69,7 +56,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
         service.Setup(item => item.CriarPorCashbackAsync(cashbackId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagamentoPix);
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PostAsync($"/api/pagamentos-pix/por-cashback/{cashbackId}", content: null);
@@ -101,7 +88,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagamentosPix);
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var porId = await client.GetAsync($"/api/pagamentos-pix/{pagamentoPix.Id}");
@@ -120,7 +107,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
         service.Setup(item => item.ObterPorIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new PagamentoPixNaoEncontradoException());
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.GetAsync($"/api/pagamentos-pix/{Guid.NewGuid()}");
@@ -135,7 +122,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
         service.Setup(item => item.ObterPorCashbackIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new PagamentoPixNaoEncontradoException());
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.GetAsync($"/api/pagamentos-pix/por-cashback/{Guid.NewGuid()}");
@@ -150,7 +137,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
         service.Setup(item => item.CriarPorCashbackAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new PagamentoPixJaExisteException());
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PostAsync($"/api/pagamentos-pix/por-cashback/{Guid.NewGuid()}", content: null);
@@ -165,7 +152,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
         var service = new Mock<IPagamentoPixService>();
         service.Setup(item => item.CancelarAsync(id, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PatchAsync($"/api/pagamentos-pix/{id}/cancelar", content: null);
@@ -181,7 +168,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
         service.Setup(item => item.CancelarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new TransicaoPagamentoPixInvalidaException("cancelar", "Processando"));
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PatchAsync($"/api/pagamentos-pix/{Guid.NewGuid()}/cancelar", content: null);
@@ -196,7 +183,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
         service.Setup(item => item.CancelarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new PagamentoPixNaoEncontradoException());
         using var factory = CriarFactory(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PatchAsync($"/api/pagamentos-pix/{Guid.NewGuid()}/cancelar", content: null);
@@ -207,7 +194,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<WebAp
     [Fact]
     public async Task OpenApi_DeveDocumentarEndpointsAdministrativosEProtegidosSemProcessamento()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
         using var document = JsonDocument.Parse(await client.GetStringAsync("/openapi/v1.json"));
         var paths = document.RootElement.GetProperty("paths");
 

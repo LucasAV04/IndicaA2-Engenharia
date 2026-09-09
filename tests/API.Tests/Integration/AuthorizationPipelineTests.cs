@@ -1,7 +1,6 @@
 using Application.DTOs.Indicacao;
 using Application.Interfaces.Services;
 using Domain.Exceptions;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,36 +17,19 @@ using Xunit;
 
 namespace API.Tests.Integration;
 
-public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class AuthorizationPipelineTests : IClassFixture<ApiTestWebApplicationFactory>
 {
     private const string Issuer = "IndicA2.Api.Tests";
     private const string Audience = "IndicA2.Api.Tests.Client";
     private const string Key = "chave-ficticia-de-autorizacao-com-mais-de-trinta-e-dois-bytes";
     private readonly WebApplicationFactory<Program> _factory;
 
-    static AuthorizationPipelineTests()
-    {
-        Environment.SetEnvironmentVariable(
-            "ConnectionStrings__DefaultConnection",
-            "Server=localhost;Database=indicaa2_test;User Id=test;Password=test;");
-        Environment.SetEnvironmentVariable("Jwt__Issuer", Issuer);
-        Environment.SetEnvironmentVariable("Jwt__Audience", Audience);
-        Environment.SetEnvironmentVariable("Jwt__Key", Key);
-        Environment.SetEnvironmentVariable("Jwt__ExpirationMinutes", "60");
-    }
-
-    public AuthorizationPipelineTests(WebApplicationFactory<Program> factory)
-    {
-        _factory = factory.WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Development");
-        });
-    }
+    public AuthorizationPipelineTests(ApiTestWebApplicationFactory factory) => _factory = factory;
 
     [Fact]
     public async Task EndpointProtegido_SemBearer_DeveRetornarUnauthorizedSemExecutarController()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
 
         var response = await client.GetAsync("/api/indicacoes");
 
@@ -57,7 +39,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
     [Fact]
     public async Task CriarPorCodigo_SemBearer_DeveRetornarUnauthorized()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
 
         var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
 
@@ -67,7 +49,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
     [Fact]
     public async Task CriarPorCodigo_ComTokenDeUsuario_DeveRetornarForbidden()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Usuario"));
 
         var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
@@ -78,7 +60,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
     [Fact]
     public async Task EndpointAdministrativo_ComTokenDeUsuario_DeveRetornarForbidden()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Usuario"));
 
         var response = await client.GetAsync("/api/indicacoes");
@@ -92,7 +74,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
     [InlineData("00000000-0000-0000-0000-000000000000")]
     public async Task EndpointAdministrativo_ComAdministradorSemSubValido_DeveRetornarForbidden(string? subject)
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new(
             "Bearer",
             CriarToken("Administrador", subject, includeSubject: subject is not null));
@@ -116,7 +98,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
                 services.AddScoped(_ => service.Object);
             });
         });
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.GetAsync("/api/indicacoes");
@@ -149,7 +131,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
                 services.AddScoped(_ => service.Object);
             });
         });
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
@@ -172,7 +154,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new CodigoIndicacaoNaoEncontradoException());
         using var factory = CriarFactoryComIndicacaoService(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
@@ -189,7 +171,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new DomainException("O código de indicação é inválido."));
         using var factory = CriarFactoryComIndicacaoService(service.Object);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
         var response = await client.PostAsJsonAsync("/api/indicacoes/por-codigo", CriarPorCodigoRequest());
@@ -200,7 +182,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
     [Fact]
     public async Task Login_SemBearer_DevePermanecerForaDaExigenciaDeAutenticacao()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
 
         var response = await client.PostAsync("/api/auth/login", content: null);
 
@@ -211,7 +193,7 @@ public sealed class AuthorizationPipelineTests : IClassFixture<WebApplicationFac
     [Fact]
     public async Task OpenApi_DeveAplicarBearerSomenteAsOperacoesProtegidas()
     {
-        using var client = _factory.CreateClient();
+        using var client = _factory.CreateHttpsClient();
 
         using var document = JsonDocument.Parse(await client.GetStringAsync("/openapi/v1.json"));
         var paths = document.RootElement.GetProperty("paths");

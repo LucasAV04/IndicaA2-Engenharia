@@ -1,5 +1,103 @@
 # Changelog
 
+## 2026-09-09 — Validação Definitiva do PR #31
+
+### Validação
+
+- Build limpo: sucesso, 0 erros e 0 warnings.
+- Preflight MySQL: 6 aprovados, 0 falhos, 0 ignorados.
+- Stores e reconciliação Pix: 33 aprovados, 0 falhos, 0 ignorados, em 15,7 segundos.
+- Script oficial MySQL (`pwsh -NoProfile -File .\scripts\Invoke-MySqlIntegrationTests.ps1 -RequireMySql`): 105 executados, 105 aprovados, 0 falhos, 0 ignorados; testes em 16,0 segundos, comando em 17,0 segundos, um único preflight `SELECT 1`, banco temporário exclusivo e migrations 001–011 aplicadas. A migration 011 e o lease persistente foram validados contra MySQL real.
+- Suíte rápida (`dotnet test IndicaA2.slnx --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=minimal"`): 463 executados, 463 aprovados, 0 falhos, 0 ignorados; testes em 44,1 segundos, comando em 69,9 segundos e exit code 0.
+
+### Confirmado
+
+- Materialização `CHAR(36)` como `Guid` pelo MySqlConnector tratada por `ObterGuid`/`ObterGuidOpcional`, inclusive no snapshot de integração.
+- Timeout concorrente anterior confirmado como consequência da `InvalidCastException` anterior ao provider.
+- Lease de cinco minutos pelo horário MySQL, recuperação da mesma Consulta, proteção contra executor antigo, preservação de `identificador_provider`/`codigo` e aplicação financeira atômica/idempotente validados.
+- Preflight mantém bloqueio contra execução acidental das 105 integrações sem configuração explícita.
+
+### Segurança e escopo
+
+- Nenhuma chamada Efí real, OAuth real, Pix real ou dado financeiro de produção foi utilizado. MySQL foi usado exclusivamente na suíte de integração.
+- O PR permanece draft e não há liberação para produção. Não foi fornecida confirmação independente sobre a inexistência posterior de bancos temporários; esta entrada não declara essa verificação.
+- Os registros abaixo que mencionam pendência MySQL ou 29 falhas de API são históricos intermediários, superados por esta validação definitiva.
+
+## 2026-09-09 — Compatibilidade de Materialização GUID no MySQL — PR #31
+
+### Corrigido
+
+- A primeira execução real MySQL revelou que `CHAR(36)` pode ser materializado pelo `MySqlConnector` como `Guid`, tornando incompatível o uso de `GetString` em identificadores.
+- Os stores de aplicação de resultado e reconciliação usam `MySqlDataReaderExtensions.ObterGuid`/`ObterGuidOpcional`; o snapshot de `usuario_indicador_id` do teste de integração usa a mesma extensão.
+- O timeout de duas reconciliações concorrentes era efeito da `InvalidCastException` anterior ao sinal do provider e não foi alterado.
+
+### Pendente
+
+- **Registro intermediário superado:** a validação completa posterior das 105 integrações MySQL foi concluída com 105 aprovados, conforme a entrada de validação definitiva.
+
+## 2026-09-08 — Execução Controlada de Integrações MySQL — PR #31
+
+### Alterado
+
+- Os 105 testes de integração MySQL, em 13 classes, receberam a categoria única `MySqlIntegration`; nenhum teste ou asserção foi removido.
+- As integrações podem ser descobertas pelo VSTest para aplicação do filtro, mas não são executadas nem contabilizadas como ignoradas na suíte rápida; isso impede conexões, migrations, escritas e retries MySQL.
+- `scripts/Invoke-MySqlIntegrationTests.ps1` requer PowerShell 7.4+. Sem variável, o modo opcional retorna `0` com `SKIPPED`; `-RequireMySql` retorna `2`. Nenhum deles chama `dotnet test`. Com variável, há um único preflight `SELECT 1` e somente então a suíte MySQL; falha não inicia bootstrap/migrations e não há retries.
+- Script e fixture calculam o marcador efêmero SHA-256 sobre o mesmo texto original da variável, sem normalização. Execução direta da categoria continua fazendo uma única sondagem por processo antes do bootstrap.
+
+### Validação
+
+- Build: sucesso, 0 erros e 4 avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`, fora deste escopo.
+- A descoberta atual da suíte rápida é 463: 457 testes anteriores + 6 testes de preflight. O resultado histórico 461 corresponde a quando havia quatro testes; a investigação registrou 462 após o quinto; o sexto cobre os códigos de saída do script sem variável.
+- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. **Registro intermediário superado:** essa execução apresentou 434 aprovados e 29 falhos. Uma execução limpa posterior da mesma suíte registrou 463 aprovados, 0 falhos e 0 ignorados. Nenhuma alteração de código da API faz parte dos commits corretivos desta etapa; portanto, esta documentação não atribui uma causa definitiva às falhas intermediárias.
+- Sem `INDICA2_TEST_MYSQL_CONNECTION`, não houve MySQL, migration, Efí, OAuth ou Pix real. Integrações não foram declaradas aprovadas.
+
+## 2026-09-08 — Recuperação de Reconciliação com Lease — PR #31
+
+### Corrigido
+
+- A coordenação anterior deixava uma Consulta aberta bloquear permanentemente o pagamento após queda do processo. A migration 011 adiciona token e expiração em `pagamentos_pix`, sem tabela nova nem alteração financeira.
+- **Lease de reconciliação: 5 minutos, medidos pelo horário do MySQL.** Usa `UTC_TIMESTAMP(6)`, sem renovação automática. Após expiração, uma reconciliação explícita assume novo token e reutiliza a mesma Consulta aberta.
+- Consulta ativa impede nova reconciliação; token antigo ou expirado não autoriza finalização, liberação ou sobrescrita. Consulta, eventual recuperação do Envio e liberação do lease são atômicas. Expiração durante a finalização provoca rollback.
+- Exceção/cancelamento do provider finaliza `Indeterminado` e libera somente um lease válido; falha de persistência continua explícita e recuperável após expiração. Provider permanece fora da transação; nenhum retry automático foi criado.
+- Recuperação do Envio preserva `identificador_provider` e `codigo` da evidência conclusiva persistida, sem apagar valores válidos com null/branco.
+- Aplicação financeira bloqueia Consulta aberta ou qualquer lease pendente, inclusive expirado, sem recuperar auditoria. As transições de Domain existentes são executadas sobre entidades reidratadas sob lock antes dos updates atômicos de PagamentoPix/Cashback.
+
+### Testes e implantação
+
+- Nenhum teste do HEAD `f313f0c` foi removido. Cobertura anterior restaurada/substituída por testes de token, falhas, cancelamento, concorrência determinística, metadados, idempotência, rollback e tentativas 1–5. A tabela individual de substituições está em [Implementações](Implementacoes.md#cobertura-restauradasubstituída).
+- UP/DOWN da migration documentados. Interromper executores antigos antes da implantação; não há backfill. Consulta legada aberta sem lease exige regularização auditada separada, sem presumir abandono.
+- Build final: sucesso, 0 erros e 0 warnings; aviso preexistente de `UsuarioService` observado em execução anterior, sem alteração fora do escopo.
+- Suíte final: **562 testes; 457 aprovados; 0 falhos; 105 integrações MySQL ignoradas** por ausência de `INDICA2_TEST_MYSQL_CONNECTION`. Comando/filtro exatos em [Implementações](Implementacoes.md#validação-desta-revisão).
+- Integrações e migration não foram validadas contra MySQL nesta execução. `git diff --check` sem erros; zero chamadas Efí/OAuth/Pix real. Documentos binários preservados; sem push ou merge.
+
+## 2026-09-04 — Coordenação de Reconciliação e Aplicação de Resultado Pix
+
+### Corrigido
+
+- Eliminado o intervalo entre a leitura da auditoria e a liquidação financeira: aplicação e preparação de reconciliação agora se serializam pelo mesmo registro persistido de `pagamentos_pix`.
+- A aplicação relê o ciclo atual sob transação e bloqueio de linhas, bloqueando liquidação quando existir Consulta aberta; evidências conclusivas conflitantes falham fechadas antes de qualquer alteração financeira.
+- A preparação de Consulta foi movida para store transacional próprio. Ela persiste a auditoria antes da chamada ao provider e não cria Consulta nem chama provider quando a aplicação financeira já tiver concluído a ordem.
+- Reforçada a coerência de `FalhaConfirmada`: tentativas 1–4 resultam em `Falhou`; somente a quinta resulta em `FalhaDefinitiva`.
+
+### Validação
+
+- Build da solução: sucesso, 0 erros e um aviso preexistente de nulabilidade em `UsuarioService`.
+- Suíte local sem Efí externo: 442 aprovados, 0 falhos e 89 integrações MySQL ignoradas por ausência de `INDICA2_TEST_MYSQL_CONNECTION` no processo.
+
+## 2026-09-04 — Aplicação Segura do Resultado de PagamentoPix
+
+### Adicionado
+
+- Caso de uso interno para transformar somente evidência conclusiva e já auditada do ciclo atual em estado financeiro interno, sem provider, envio, consulta ou mutação da auditoria.
+- Transição de domínio `Cashback.Disponivel → Pago`, com idempotência em `Pago` e rejeição de estados não elegíveis.
+- Store transacional MySQL que coordena `PagamentoPix.Concluido + Cashback.Pago` de forma atômica e aplica `FalhaConfirmada` sem alterar o Cashback.
+- Cobertura para idempotência, concorrência, rollback e preservação de snapshots financeiros e da auditoria.
+
+### Decisões
+
+- `Confirmado` e `FalhaConfirmada` são descobertos exclusivamente no histórico persistido do ciclo atual; resultados de tentativas anteriores e evidências conflitantes não são aplicados.
+- `FalhaConfirmada` não inicia retry. Política de nova tentativa, worker, webhook, seleção automática e observabilidade permanecem pendentes.
+
 ## 2026-09-03 — Reconciliação Segura de PagamentoPix
 
 ### Adicionado

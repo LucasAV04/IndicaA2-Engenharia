@@ -9,7 +9,7 @@ using Xunit;
 namespace Infrastructure.Tests.Integration;
 
 [Collection(MySqlIntegrationCollection.Name)]
-[Trait("Category", "Integration")]
+[Trait("Category", MySqlIntegrationCategory.Name)]
 public sealed class OperacaoPagamentoPixMySqlRepositoryIntegrationTests(MySqlIntegrationFixture fixture)
 {
     [MySqlIntegrationFact]

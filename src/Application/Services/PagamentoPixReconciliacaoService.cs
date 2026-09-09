@@ -1,5 +1,6 @@
 using Application.Interfaces.Providers;
 using Application.Interfaces.Services;
+using Application.Interfaces.Stores;
 using Application.Models;
 using Domain.Entities;
 using Domain.Enums;
@@ -16,15 +17,18 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
 {
     private readonly IPagamentoPixRepository _pagamentoPixRepository;
     private readonly IOperacaoPagamentoPixRepository _operacaoPagamentoPixRepository;
+    private readonly IPagamentoPixReconciliacaoStore _reconciliacaoStore;
     private readonly IPixProvider _pixProvider;
 
     public PagamentoPixReconciliacaoService(
         IPagamentoPixRepository pagamentoPixRepository,
         IOperacaoPagamentoPixRepository operacaoPagamentoPixRepository,
+        IPagamentoPixReconciliacaoStore reconciliacaoStore,
         IPixProvider pixProvider)
     {
         _pagamentoPixRepository = pagamentoPixRepository;
         _operacaoPagamentoPixRepository = operacaoPagamentoPixRepository;
+        _reconciliacaoStore = reconciliacaoStore;
         _pixProvider = pixProvider;
     }
 
@@ -37,65 +41,70 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
         if (pagamentoPixId == Guid.Empty)
             throw new ArgumentException("O identificador do Pagamento Pix é obrigatório.", nameof(pagamentoPixId));
 
-        var pagamentoPix = await ObterPagamentoPixOuLancarExceptionAsync(pagamentoPixId, cancellationToken);
-        if (pagamentoPix.Status != StatusPagamentoPix.Processando)
+        await ObterPagamentoPixOuLancarExceptionAsync(pagamentoPixId, cancellationToken);
+        var preparacao = await _reconciliacaoStore.PrepararConsultaAsync(pagamentoPixId, cancellationToken);
+        if (preparacao.Status == StatusPreparacaoReconciliacaoPagamentoPix.NaoAplicavel)
             return ResultadoReconciliacaoPagamentoPix.NaoAplicavel(pagamentoPixId);
 
-        var historico = await _operacaoPagamentoPixRepository.ObterPorPagamentoPixIdAsync(
-            pagamentoPixId,
-            cancellationToken);
-        var cicloAtual = IdentificarCicloAtual(historico, pagamentoPix.QuantidadeTentativas);
+        if (preparacao.Status == StatusPreparacaoReconciliacaoPagamentoPix.ConsultaEmAndamento)
+            return ResultadoReconciliacaoPagamentoPix.ConsultaEmAndamento(pagamentoPixId);
 
-        var evidenciaConclusiva = ObterEvidenciaConclusiva(cicloAtual);
-        if (evidenciaConclusiva is not null)
+        if (preparacao.Status == StatusPreparacaoReconciliacaoPagamentoPix.ResultadoJaConclusivo)
         {
-            if (!cicloAtual.Envio.FinishedAt.HasValue)
-            {
-                cicloAtual.Envio.Finalizar(
-                    evidenciaConclusiva.Resultado!.Value,
-                    evidenciaConclusiva.IdentificadorProvider,
-                    evidenciaConclusiva.Codigo);
-                await FinalizarEnvioAbertoAsync(cicloAtual.Envio, evidenciaConclusiva.Resultado.Value);
-            }
-
             return ResultadoReconciliacaoPagamentoPix.JaConclusivo(
                 pagamentoPixId,
-                evidenciaConclusiva.Resultado!.Value);
+                preparacao.ResultadoOperacao
+                ?? throw new InvalidOperationException("A preparação não informou a evidência conclusiva."),
+                preparacao.OperacaoEnvioAbertaResolvida);
         }
 
-        var consulta = OperacaoPagamentoPix.IniciarConsulta(pagamentoPixId);
-        await _operacaoPagamentoPixRepository.AdicionarAsync(consulta, cancellationToken);
+        if (preparacao.Status != StatusPreparacaoReconciliacaoPagamentoPix.ConsultaPreparada ||
+            !preparacao.OperacaoConsultaId.HasValue ||
+            !preparacao.LeaseId.HasValue)
+        {
+            throw new InvalidOperationException("A preparação de reconciliação retornou um estado inválido.");
+        }
 
-        var providerResult = await _pixProvider.ConsultarAsync(
-            new PixConsultaRequest(pagamentoPix.Id),
-            cancellationToken);
+        var consulta = await _operacaoPagamentoPixRepository.ObterPorIdAsync(
+            preparacao.OperacaoConsultaId.Value,
+            cancellationToken)
+            ?? throw new InvalidOperationException("A auditoria de consulta preparada não foi encontrada.");
+
+        PixProviderResult providerResult;
+        try
+        {
+            providerResult = await _pixProvider.ConsultarAsync(
+                new PixConsultaRequest(pagamentoPixId),
+                cancellationToken);
+        }
+        catch
+        {
+            await FinalizarConsultaOuLancarAsync(
+                pagamentoPixId,
+                consulta.Id,
+                preparacao.LeaseId.Value,
+                ResultadoOperacaoPagamentoPix.Indeterminado,
+                null,
+                null);
+            throw;
+        }
+
         var resultadoConsulta = MapearResultado(providerResult.Status);
-        consulta.Finalizar(
+        var finalizacao = await FinalizarConsultaOuLancarAsync(
+            pagamentoPixId,
+            consulta.Id,
+            preparacao.LeaseId.Value,
             resultadoConsulta,
             providerResult.IdentificadorProvider,
             providerResult.Codigo);
 
-        if (!await _operacaoPagamentoPixRepository.FinalizarAsync(consulta, CancellationToken.None))
-        {
-            throw new InvalidOperationException(
-                "A resposta da consulta foi obtida, mas sua auditoria não pôde ser finalizada.");
-        }
-
-        var envioResolvido = false;
-        if (EhConclusivo(resultadoConsulta) && !cicloAtual.Envio.FinishedAt.HasValue)
-        {
-            cicloAtual.Envio.Finalizar(
-                resultadoConsulta,
-                providerResult.IdentificadorProvider,
-                providerResult.Codigo);
-            envioResolvido = await FinalizarEnvioAbertoAsync(cicloAtual.Envio, resultadoConsulta);
-        }
-
+        // O store finaliza Consulta e Envio sob o mesmo token e transação.
+        // Não há segunda escrita de auditoria depois de liberar o lease.
         return ResultadoReconciliacaoPagamentoPix.Consultado(
             pagamentoPixId,
             consulta.Id,
             resultadoConsulta,
-            envioResolvido);
+            finalizacao.OperacaoEnvioAbertaResolvida);
     }
 
     #endregion
@@ -186,6 +195,31 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
 
         throw new InvalidOperationException(
             "A finalização concorrente da operação de envio é inconsistente e requer intervenção técnica.");
+    }
+
+    private async Task<FinalizacaoConsultaPagamentoPixResult> FinalizarConsultaOuLancarAsync(
+        Guid pagamentoPixId,
+        Guid consultaId,
+        Guid leaseId,
+        ResultadoOperacaoPagamentoPix resultado,
+        string? identificadorProvider,
+        string? codigo)
+    {
+        var finalizacao = await _reconciliacaoStore.FinalizarConsultaAsync(
+                pagamentoPixId,
+                consultaId,
+                leaseId,
+                resultado,
+                identificadorProvider,
+                codigo,
+                CancellationToken.None);
+        if (!finalizacao.Finalizada)
+        {
+            throw new InvalidOperationException(
+                "A consulta não pôde ser finalizada porque o lease de reconciliação não pertence mais ao executor.");
+        }
+
+        return finalizacao;
     }
 
     private static bool EhConclusivo(ResultadoOperacaoPagamentoPix? resultado) =>

@@ -8,6 +8,8 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
 {
     public const string ConnectionStringEnvironmentVariable = "INDICA2_TEST_MYSQL_CONNECTION";
     private const string DatabasePrefix = "indicaa2_test_";
+    private static readonly MySqlIntegrationBootstrapGate BootstrapGate = new(
+        new MySqlIntegrationPreflight(new MySqlIntegrationConnectionProbe()));
     private string? _adminConnectionString;
 
     public string DatabaseName { get; } = $"{DatabasePrefix}{Guid.NewGuid():N}";
@@ -37,7 +39,19 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
 
         try
         {
-            await CriarBancoEAplicarSchemaAsync();
+            var preflightDoScript = MySqlIntegrationPreflightMarker.Corresponde(connectionString);
+            var inicializado = preflightDoScript
+                || await BootstrapGate.ExecutarAsync(
+                    connectionString,
+                    _ => CriarBancoEAplicarSchemaAsync());
+            if (!inicializado)
+            {
+                throw new InvalidOperationException(
+                    "O preflight MySQL falhou; a suíte de integração não foi iniciada e nenhuma migration foi executada.");
+            }
+
+            if (preflightDoScript)
+                await CriarBancoEAplicarSchemaAsync();
         }
         catch
         {
@@ -92,6 +106,7 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
                      "database/008_create_dados_pix.sql"
                     , "database/009_create_pagamentos_pix.sql"
                     , "database/010_create_operacoes_pagamento_pix.sql"
+                    , "database/011_add_reconciliacao_lease_pagamentos_pix.sql"
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Combine(raiz, script));

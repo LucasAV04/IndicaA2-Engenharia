@@ -169,7 +169,7 @@ public sealed class CashbackMySqlRepository : ICashbackRepository
     private static void AdicionarGuid(MySqlCommand command, string nome, Guid valor) =>
         command.Parameters.Add(nome, MySqlDbType.VarChar).Value = valor.ToString();
 
-    private static Cashback Materializar(MySqlDataReader reader)
+    internal static Cashback Materializar(MySqlDataReader reader)
     {
         var statusPersistido = reader.GetInt32(reader.GetOrdinal("status"));
         if (!Enum.IsDefined(typeof(StatusCashback), statusPersistido))

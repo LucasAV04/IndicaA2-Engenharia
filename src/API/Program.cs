@@ -73,6 +73,7 @@ builder.Services.AddScoped<ICashbackService, CashbackService>();
 builder.Services.AddScoped<IPagamentoPixService, PagamentoPixService>();
 builder.Services.AddScoped<IPagamentoPixEnvioService, PagamentoPixEnvioService>();
 builder.Services.AddScoped<IPagamentoPixReconciliacaoService, PagamentoPixReconciliacaoService>();
+builder.Services.AddScoped<IPagamentoPixAplicacaoResultadoService, PagamentoPixAplicacaoResultadoService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 var app = builder.Build();

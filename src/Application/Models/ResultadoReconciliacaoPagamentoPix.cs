@@ -37,13 +37,17 @@ public sealed class ResultadoReconciliacaoPagamentoPix
 
     public static ResultadoReconciliacaoPagamentoPix JaConclusivo(
         Guid pagamentoPixId,
-        ResultadoOperacaoPagamentoPix resultadoOperacao) =>
+        ResultadoOperacaoPagamentoPix resultadoOperacao,
+        bool operacaoEnvioAbertaResolvida = false) =>
         new(
             pagamentoPixId,
             StatusReconciliacaoPagamentoPix.ResultadoJaConclusivo,
             null,
             resultadoOperacao,
-            false);
+            operacaoEnvioAbertaResolvida);
+
+    public static ResultadoReconciliacaoPagamentoPix ConsultaEmAndamento(Guid pagamentoPixId) =>
+        new(pagamentoPixId, StatusReconciliacaoPagamentoPix.ConsultaEmAndamento, null, null, false);
 
     public static ResultadoReconciliacaoPagamentoPix Consultado(
         Guid pagamentoPixId,

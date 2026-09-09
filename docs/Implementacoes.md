@@ -1,5 +1,222 @@
 # Implementações
 
+## Validação Definitiva — PR #31
+
+**Data:** 2026-09-09
+
+Esta seção consolida a validação definitiva do PR #31 e **supera os resultados intermediários de investigação registrados abaixo**. Eles permanecem no documento somente como histórico do diagnóstico.
+
+### Resultados confirmados
+
+- Build limpo no HEAD validado: sucesso, **0 erros** e **0 warnings**.
+- Preflight MySQL: **6 aprovados**, 0 falhos, 0 ignorados.
+- Stores e reconciliação Pix: **33 aprovados**, 0 falhos, 0 ignorados, em 15,7 segundos.
+- Suíte MySQL oficial (`pwsh -NoProfile -File .\scripts\Invoke-MySqlIntegrationTests.ps1 -RequireMySql`): **105 executados, 105 aprovados, 0 falhos, 0 ignorados**; testes em 16,0 segundos e comando em 17,0 segundos. O preflight real executou um único `SELECT 1`, criou banco temporário exclusivo, aplicou as migrations 001 a 011 e validou a migration 011 e o lease persistente contra MySQL real.
+- Suíte rápida, sem MySQL e sem integrações Efí: **463 executados, 463 aprovados, 0 falhos, 0 ignorados**; testes em 44,1 segundos, comando em 69,9 segundos e exit code 0.
+
+### Correções confirmadas
+
+- `CHAR(36)` pode ser materializado pelo MySqlConnector como `Guid`; os stores usam `ObterGuid`/`ObterGuidOpcional` e o snapshot de integração usa a mesma extensão.
+- O timeout concorrente anterior era efeito da falha de materialização antes do sinal do provider, não uma regra de timeout inadequada.
+- O lease de reconciliação permanece em cinco minutos, medidos pelo MySQL; a recuperação reutiliza a mesma Consulta aberta e bloqueia finalização por executor antigo.
+- A recuperação preserva `identificador_provider` e `codigo`; a aplicação financeira permanece atômica e idempotente.
+- O preflight impede execução acidental das 105 integrações sem configuração MySQL explícita.
+
+### Segurança e escopo
+
+Não houve Efí real, OAuth real, envio Pix real, uso de dados financeiros de produção ou liberação para produção. O MySQL foi utilizado exclusivamente pela suíte de integração. O PR continua draft. Não foi fornecida confirmação independente sobre a inexistência posterior de bancos temporários; portanto, esta documentação não declara essa verificação.
+
+## Compatibilidade de Materialização GUID no MySQL — PR #31
+
+**Data:** 2026-09-09
+
+A primeira execução real das integrações MySQL identificou que o `MySqlConnector` pode materializar colunas `CHAR(36)` como `Guid`. Leituras que assumiam `GetString` causavam `InvalidCastException` antes de alcançarem as regras exercitadas pelos testes.
+
+Os stores de aplicação de resultado e reconciliação passaram a usar `MySqlDataReaderExtensions.ObterGuid` e `ObterGuidOpcional`, que aceitam a materialização `Guid` ou texto válido e rejeitam `Guid.Empty`. O snapshot de `usuario_indicador_id` no teste de integração também passou a usar a mesma extensão. Leituras de campos realmente textuais — referência idempotente, identificador do provider, código e snapshots `CONCAT` — permanecem textuais.
+
+O timeout observado em duas reconciliações concorrentes foi consequência da exceção de materialização ocorrer antes de o provider sinalizar a consulta; o timeout não foi alterado. **Registro intermediário superado:** a validação completa posterior das 105 integrações MySQL foi concluída com aprovação total, conforme a seção de validação definitiva.
+
+## Execução Controlada de Integrações MySQL — PR #31
+
+**Data:** 2026-09-08
+
+As **105 integrações MySQL** existentes, distribuídas em 13 classes, passaram a usar a categoria única `MySqlIntegration`. Elas permanecem intactas; nenhuma asserção de persistência, concorrência ou schema foi removida.
+
+O atributo existente apenas verificava a presença de `INDICA2_TEST_MYSQL_CONNECTION` por caso e atribuía `Skip`. Isso causava 105 testes ignorados, mas **não abria conexão, não aplicava migration e não possuía retry**. A fixture única é responsável por criar o banco temporário e aplicar scripts somente quando integrações de fato são selecionadas.
+
+### Comandos oficiais
+
+Suíte rápida, sem MySQL e sem Efí externo:
+
+```powershell
+dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"
+```
+
+Suíte exclusiva MySQL, depois de `dotnet build`:
+
+```powershell
+# Execução local opcional
+pwsh -NoProfile -File .\scripts\Invoke-MySqlIntegrationTests.ps1
+
+# Ambiente em que MySQL é obrigatório
+pwsh -NoProfile -File .\scripts\Invoke-MySqlIntegrationTests.ps1 -RequireMySql
+```
+
+O script requer **PowerShell 7.4 ou superior**. Ele valida a connection string com `MySqlConnectionStringBuilder`, mas gera o marcador SHA-256 pelo **texto original** de `INDICA2_TEST_MYSQL_CONNECTION`; a fixture usa o mesmo texto original. O marcador efêmero é herdado somente pelo processo de teste, não é persistido nem exibido e evita uma segunda sondagem da fixture.
+
+Sem variável, o modo opcional retorna `0` com prefixo `SKIPPED`; `-RequireMySql` retorna `2` com erro explícito. Ambos encerram antes de `dotnet test`, conexão, migration, escrita ou retry. Com variável, o script executa um único `SELECT 1` de preflight e, apenas se aprovado, uma única execução de `Category=MySqlIntegration`; falha no preflight retorna código diferente de zero e não inicia bootstrap. Não existem retries automáticos, descoberta de credenciais, criação automática de container ou tentativa de outra connection string. Variável ausente significa **integrações não executadas**, nunca aprovadas.
+
+As integrações podem ser descobertas pelo VSTest para aplicação do filtro, mas não são executadas nem contabilizadas como ignoradas na suíte rápida. Isso preserva zero conexões, migrations, escritas, retries e integrações MySQL contabilizadas como aprovadas.
+
+### Cobertura e validação
+
+- Testes unitários com probe falso confirmam: variável ausente = zero conexões; chamadas repetidas = uma sondagem; falha = bootstrap não iniciado; marcador textual não canônico determinístico; os dois modos do script não chamam `dotnet`; e classificação/cobertura = 13 classes e 105 casos preservados.
+- Build: sucesso, 0 erros e 4 avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`, fora deste escopo.
+- A descoberta atual do VSTest lista **463 casos**: 457 testes anteriores + 6 testes de preflight. O resultado histórico 461 ocorreu quando existiam quatro testes de preflight; durante a investigação foram listados 462 após a inclusão do quinto; esta correção adicionou o sexto para validar os códigos de saída do script. Nenhum teste anterior deixou de ser descoberto.
+- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. **Registro intermediário superado:** essa execução apresentou 434 aprovados e 29 falhos. Uma execução limpa posterior da mesma suíte registrou 463 aprovados, 0 falhos e 0 ignorados. Nenhuma alteração de código da API faz parte dos commits corretivos desta etapa; portanto, esta documentação não atribui uma causa definitiva às falhas intermediárias.
+- `INDICA2_TEST_MYSQL_CONNECTION` permaneceu ausente: MySQL, migrations, Efí, OAuth e Pix real não foram executados.
+
+## Lease de Reconciliação e Preservação da Auditoria — PR #31
+
+**Data:** 2026-09-08
+
+### Política aprovada
+
+**Lease de reconciliação: 5 minutos, medidos pelo horário do MySQL.**
+
+A migration `011_add_reconciliacao_lease_pagamentos_pix.sql` adiciona somente `reconciliacao_lease_id CHAR(36) NULL`, `reconciliacao_lease_expira_em DATETIME(6) NULL` e índice da expiração em `pagamentos_pix`. UP executável e DOWN comentado estão no próprio script; nenhum script é executado no startup. Não há nova tabela, status financeiro, renovação automática ou retry.
+
+A revisão anterior bloqueava toda Consulta com `finished_at IS NULL`, sem distinguir um executor vivo de um processo que caiu. A nova coordenação bloqueia primeiro `pagamentos_pix`, depois a auditoria, usando `UTC_TIMESTAMP(6)`. Um horário novo é consultado depois de esperar pelos locks. Cada aquisição/retomada gera um novo Guid opaco.
+
+- Lease válido com Consulta aberta: retorna `ConsultaEmAndamento`, sem provider.
+- Lease expirado com uma Consulta aberta: substitui o token e reutiliza **o mesmo Id de Consulta**, preservando início e referência.
+- Sem Consulta aberta e sem lease válido: adquire lease e persiste uma Consulta antes de liberar a transação e chamar o provider.
+- Mais de uma Consulta aberta, ciclo inconsistente ou conclusões conflitantes: erro explícito, sem liquidação.
+- Evidência conclusiva existente: dispensa provider; recupera o Envio com metadados persistidos. Se houver uma Consulta abandonada com lease expirado, assume token, encerra essa Consulta como `Indeterminado` e libera o lease na mesma transação.
+- Pagamento que saiu de `Processando`: não prepara Consulta nem chama provider.
+
+Expiração torna a ordem **elegível** para uma próxima reconciliação; não agenda sua execução. Uma consulta HTTP antiga pode continuar após a expiração, mas perdeu a autorização para escrever. Não é iniciado envio Pix.
+
+### Finalização e falhas
+
+`FinalizarConsultaAsync` valida PagamentoPix, token, prazo e o Id da única Consulta aberta do ciclo atual sob locks. Resultado e metadados passam pela validação de `OperacaoPagamentoPix.Finalizar`. Consulta, recuperação do Envio e liberação condicional do lease são uma transação. Token antigo/expirado, operação diferente ou pagamento terminal não autorizam escrita. A liberação também exige lease ainda válido no relógio do MySQL; se expirar durante a finalização, ocorre rollback.
+
+Provider com exceção/cancelamento: tenta finalizar Consulta como `Indeterminado` com `CancellationToken.None`, libera somente o token ainda válido e propaga a falha. Se persistir a finalização falhar, a operação fica auditável e pode ser retomada após a expiração. Nenhum caminho liquida dinheiro ou reconsulta automaticamente.
+
+O Envio recuperado passa a receber `identificador_provider` e `codigo` junto do resultado e datas. Valores nulos/brancos não apagam metadados válidos. Datas finais são UTC, nunca anteriores ao início persistido. Snapshots, AES-GCM, AAD, referência idempotente, tentativa e `created_at` não são alterados.
+
+### Aplicação financeira
+
+Qualquer marker de lease (ativo **ou expirado pendente**) ou Consulta aberta bloqueia a aplicação com `RequerReconciliacao`. A aplicação não recupera leases nem altera auditoria. Sob a mesma ordem de locks, as entidades são reidratadas pelos materializadores existentes; `PagamentoPix.ConfirmarConclusao()`, `PagamentoPix.RegistrarFalha()` e `Cashback.RegistrarPagamento()` executam as regras de Domain antes dos updates condicionais. A confirmação persiste PagamentoPix e Cashback atomicamente; falha do Cashback reverte o PagamentoPix. Não há dependência de provider na aplicação financeira.
+
+### Implantação e limite para registros legados
+
+Antes do UP/DOWN, interromper executores antigos: versões anteriores não validam tokens. A migration não faz backfill e não altera auditorias existentes. Uma Consulta legada aberta sem lease, ou um lease parcialmente preenchido, é inconsistência explícita e exige regularização auditada separada; não se presume que esteja abandonada. Não foi executada migration nem saneamento em banco real nesta tarefa.
+
+### Cobertura restaurada/substituída
+
+Nenhum teste existente no HEAD `f313f0c` foi apagado. Cenários que antes decidiam sobre mocks de histórico na Application foram transferidos para testes dos stores com MySQL, pois a decisão agora deve ocorrer dentro da transação. Os testes de Application verificam contrato, propagação, falhas, cancelamento, token e ausência de escritas diretas. A tabela compara com `ad0c284` (parent de `f313f0c`); prefixos **R:** = `ReconciliarAsync_`, **A:** = `AplicarAsync_`, exceto `Servico_`.
+
+| Teste removido anteriormente | Motivo | Teste restaurado/substituto |
+|---|---|---|
+| R: QuandoIdForVazio_NaoDeveAcessarDependencias | Renomeado, preservado | ReconciliarAsync_QuandoIdentificadorForVazio_DeveRejeitar (Application) |
+| R: QuandoPagamentoNaoExistir_DeveLancarExcecaoEspecifica | Preservado | Mesmo nome (Application) |
+| R: QuandoStatusNaoForProcessando_DeveRetornarNaoAplicavel | Decisão movida ao store sob lock | EstadosNaoAplicaveis_DevePreservarHistoricoSemProvider (MySQL, todos os estados) |
+| R: QuandoProcessandoSemAuditoria_DeveLancarInconsistenciaSemConsultar | Decisão movida ao store | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (ausente) |
+| R: QuandoHistoricoJaForConclusivo_NaoDeveConsultar | Decisão movida ao store | ReconciliarAsync_QuandoEnvioAtualForConclusivo_NaoDeveConsultar (MySQL) |
+| R: QuandoConsultaConclusivaDoCicloAtualExistir_DeveRecuperarEnvioAberto | Recuperação agora transacional | ReconciliarAsync_QuandoConsultaConclusivaExistir_DeveRecuperarEnvioAtualAbertoSemConsultarProvider (MySQL; metadados, datas e snapshots) |
+| R: QuandoRecuperacaoDoEnvioConcorrer_DeveAceitarMesmoResultadoOuRejeitarConflito | Token substitui finalização direta concorrente | LeaseExpirado_DeveReutilizarConsultaERejeitarExecutorAntigo; FinalizacaoConflitante_DeveFalharFechadoSemLiquidacao |
+| R: QuandoTentativaAnteriorFalhou_DeveConsultarSomenteATentativaAtual | Teste com persistência real | ReconciliarAsync_QuandoTentativaAnteriorFalhou_DeveConsultarESomenteResolverEnvioAtual |
+| R: QuandoConsultaConclusivaForDeCicloAnterior_DeveConsultarTentativaAtual | Teste com persistência real | ReconciliarAsync_QuandoConsultaConclusivaForAnteriorAoEnvioAtual_DeveIgnoraLa |
+| R: QuandoConsultaDoCicloAtualForConclusiva_NaoDeveConsultarNovamente | Teste com persistência real | Mesmo nome (MySQL) |
+| R: QuandoCicloAtualTiverResultadosConclusivosConflitantes_DeveLancarInconsistencia | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (conflito) |
+| R: QuandoEnvioDaTentativaAtualEstiverAusente_DeveLancarInconsistencia | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (ausente) |
+| R: QuandoHouverMaisDeUmEnvioDaTentativaAtual_DeveLancarInconsistencia | MySQL impede esse estado pela UNIQUE existente | UnicidadeEnvio_DeveImpedirCicloComDoisEnviosPersistidos |
+| R: QuandoEnvioAnteriorEstiverAberto_DeveLancarInconsistencia | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (anterior-aberto) |
+| R: QuandoResultadoForConclusivo_DeveFinalizarSomenteEnvioAtual | Teste com persistência real | ReconciliarAsync_QuandoTentativaAnteriorFalhou_DeveConsultarESomenteResolverEnvioAtual |
+| R: QuandoConsultaAntigaEstiverAberta_NaoDeveFinalizaLa | Teste com persistência real | ConsultaAntigaAberta_DevePermanecerIntactaAoFinalizarCicloAtual |
+| R: QuandoEnvioEstiverAberto_DeveAuditarConsultaEMapearResultado | Mantidos os quatro resultados | ReconciliarAsync_QuandoConsultaForPreparada_DeveChamarProviderUmaVezEFinalizarAuditoria (Application) e integrações de Confirmado/Pendente |
+| R: QuandoConsultaAnteriorEstiverAberta_DevePermitirNovaConsulta | Semântica antiga violava exclusividade; retomada agora reutiliza operação | LeaseExpirado_DeveReutilizarConsultaERejeitarExecutorAntigo; DuasReconciliacoes_DeveManterUmaConsultaVivaEAuditoriaAntesDoProvider |
+| R: QuandoAdicionarConsultaFalhar_NaoDeveConsultarProvider | Preparação passou ao store | ReconciliarAsync_QuandoPreparacaoFalhar_NaoDeveChamarProvider |
+| R: QuandoProviderCancelarOuFalhar_DeveManterConsultaAberta | Agora finaliza Indeterminado e libera token quando ainda válido; crash continua recuperável | FalhaOuCancelamentoDoProvider_DeveAuditarIndeterminadoEPermitirConsultaPosterior e unitários de exceção/cancelamento |
+| R: QuandoFinalizacaoDaConsultaFalhar_NaoDeveConsultarNovamente | Acrescida prova de rollback e retomada | ReconciliarAsync_QuandoFinalizacaoFalhar_NaoDeveReconsultarOuEscreverForaDoLease; FalhaNaFinalizacao_DeveReverterAuditoriaERecuperarMesmaConsultaAposExpiracao |
+| R: QuandoCancelamentoForSolicitadoAposResposta_DeveFinalizarConsultaSemCancelar | Mantida finalização com CancellationToken.None | ReconciliarAsync_QuandoCancelamentoAposResposta_DevePersistirComTokenNone |
+| R: QuandoFinalizacaoConcorrenteDoEnvioOcorrer_DeveAceitarMesmoResultadoOuRejeitarConflito | Finalização única protegida por token e transação | LeaseExpirado_DeveReutilizarConsultaERejeitarExecutorAntigo; FinalizacaoConflitante_DeveFalharFechadoSemLiquidacao |
+| A: QuandoIdentificadorForVazio_DeveRejeitar | Asserção ampliada | AplicarAsync_QuandoIdentificadorForVazio_DeveRejeitarSemAcessarDependencias |
+| A: QuandoPagamentoNaoExistir_DeveLancarExcecaoEspecifica | Preservado | Mesmo nome (Application) |
+| A: QuandoCicloNaoTiverResultadoConclusivo_DeveRetornarSemResultado | Decisão movida ao store | AplicarAsync_QuandoStoreNaoEncontrarEvidencia_DeveRetornarSemResultado; integração de tentativa anterior com ciclo Pendente |
+| A: QuandoEnvioAtualEstiverAusente_DeveFalharFechado | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (ausente) |
+| A: QuandoEnvioAtualEstiverDuplicado_DeveFalharFechado | Garantia definitiva da UNIQUE | UnicidadeEnvio_DeveImpedirCicloComDoisEnviosPersistidos |
+| A: QuandoEnvioAnteriorEstiverAberto_DeveFalharFechado | Decisão sob lock | HistoricoInconsistente_DeveRejeitarReconciliacaoEAplicacaoSemProvider (anterior-aberto) |
+| A: QuandoResultadoConclusivoForDeTentativaAnterior_DeveIgnoraLo | Teste com persistência real | AplicarAsync_QuandoResultadoConclusivoForDeTentativaAnterior_NaoDeveAplicarCicloAtual |
+| A: QuandoConsultaConclusivaDoCicloAtualExistirEEnvioEstiverAberto_DeveRequererReconciliacao | Verifica auditoria imutável no MySQL | AplicarAsync_QuandoEnvioAbertoComConsultaConclusiva_DeveExigirReconciliacao |
+| A: QuandoCicloAtualPossuirResultadosConclusivosConflitantes_DeveFalharFechado | Rollback verificado | AplicarAsync_QuandoEvidenciasConclusivasConflitarem_NaoDeveAlterarEstadoFinanceiro |
+| A: QuandoConfirmado_DeveCoordenarConclusaoEPagamento | Transições Domain na transação | AplicarAsync_QuandoConfirmado_DeveConcluirPagamentoEPagarCashbackAtomicamente |
+| A: QuandoFalhaConfirmada_DeveRegistrarFalhaSemAlterarCashback | Ampliado para tentativas 1, 2, 3, 4 e 5 | AplicarAsync_QuandoFalhaConfirmada_DeveAtualizarSomentePagamento |
+| A: QuandoStoreIndicarAplicacaoConcorrenteJaConcluida_DeveSerIdempotente | Mantido e reforçado | AplicarAsync_QuandoStoreInformarJaAplicado_DeveSerIdempotente; AplicarAsync_QuandoCincoExecutoresConcorrerem_DeveSerIdempotente |
+| A: QuandoResultadoJaEstiverPersistidoDeFormaCoerente_DeveSerIdempotente | Reexecução no MySQL | AplicarAsync_QuandoExecutadoNovamenteAposConfirmacao_DeveRetornarJaAplicadoSemAlterarAuditoria |
+| A: QuandoEstadoFinanceiroForParcialOuIncompativel_DeveFalharFechado | Estado real persistido | AplicarAsync_QuandoEstadoParcialOuIncompativel_DeveFalharFechado |
+| A: QuandoSnapshotsFinanceirosDivergirem_DeveFalharFechado | Restauradas três divergências | AplicarAsync_QuandoSnapshotsDivergirem_DeveFalharAntesDoStore (beneficiário, valor, cashback) |
+| A: Servico_NaoDeveDependerDeIPixProvider | Asserção ampliada | Servico_NaoDeveDependerDeIPixProviderOuAuditoria |
+
+Novos testes específicos incluem expiração durante a finalização com rollback, duas reconciliações com provider bloqueável, recuperação da mesma Consulta, token antigo, falha ao finalizar auditoria, lease ativo/expirado bloqueando aplicação, referência/snapshots preservados e metadados nulos sem perda. Concorrência usa `TaskCompletionSource`; expiração é controlada por SQL somente no banco temporário de testes.
+
+### Validação desta revisão
+
+- `dotnet build`: sucesso, 0 erros e 0 warnings na execução final. Um build anterior desta revisão exibiu o aviso preexistente em `UsuarioService`; não foi corrigido fora do escopo.
+- Suíte final: **562 testes**, **457 aprovados**, **0 falhos**, **105 ignorados**. Domain: 132 aprovados; Application: 150; Infrastructure: 82 aprovados e 105 ignorados; API: 93 aprovados.
+- `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível no processo. Os 105 testes de integração foram ignorados; não há validação real MySQL nesta execução. A migration 011 e os testes de concorrência/rollback aguardam essa validação em banco temporário.
+- Testes externos Efí e diagnóstico TLS excluídos; zero OAuth, Efí ou Pix real. Nenhum banco real foi utilizado.
+- `git diff --check`: sem erros. `git status --short` e `git diff` revisados antes do staging explícito e do único commit local; sem push, merge ou alteração do PR.
+
+Comando da suíte final (inclui os testes específicos de aplicação/reconciliação):
+
+```powershell
+dotnet test IndicaA2.slnx --no-build --no-restore --filter "FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"
+```
+
+## Coordenação Persistente entre Reconciliação e Aplicação de Resultado Pix
+
+**Data:** 2026-09-04
+
+### Corrigido
+
+- A decisão financeira deixou de depender da auditoria lida antes da transação. `PagamentoPixAplicacaoResultadoMySqlStore` bloqueia a linha de `pagamentos_pix`, relê e bloqueia o histórico do ciclo atual e somente então decide se pode aplicar a evidência.
+- `PagamentoPixReconciliacaoMySqlStore` prepara a `Consulta` na mesma ordem de bloqueio persistente. Ele confirma que a ordem ainda está `Processando`, que não há Consulta atual aberta, que não surgiu evidência conclusiva nem conflito e só então insere a auditoria e faz commit. A chamada ao provider continua depois do commit.
+- Uma Consulta atual aberta faz a aplicação retornar `RequerReconciliacao`, sem alterar `PagamentoPix`, `Cashback` ou auditoria. Se a aplicação concluir primeiro, uma reconciliação posterior retorna `NaoAplicavel` e não consulta o provider.
+- Evidências `Confirmado` e `FalhaConfirmada` conflitantes no ciclo atual continuam falhando fechadas. A validação financeira também exige que `UsuarioBeneficiarioId` e `UsuarioIndicadorId` coincidam e que a falha resulte em `Falhou` somente nas tentativas 1–4 ou `FalhaDefinitiva` somente na quinta.
+- A aplicação não recebeu provider, não chama `EnviarAsync` nem `ConsultarAsync`, não cria/finaliza auditoria e não altera snapshots criptográficos ou a tentativa.
+
+### Testes
+
+- Adicionada cobertura de Application para resultados da decisão persistente e para a preparação segura da reconciliação.
+- Adicionada integração MySQL determinística com provider bloqueável: enquanto a Consulta preparada permanece aberta, a aplicação retorna `RequerReconciliacao`; após a auditoria ser finalizada, a aplicação usa o histórico completo e liquida o resultado.
+- Nesta execução local, a suíte aplicável registrou 531 testes: 442 aprovados, 0 falhos e 89 integrações MySQL ignoradas porque `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível no processo. Testes externos e diagnósticos Efí foram excluídos. O build preservou um aviso preexistente de nulabilidade em `UsuarioService`.
+
+## Aplicação Segura do Resultado de PagamentoPix
+
+**Data:** 2026-09-04
+
+### Implementado
+
+- `IPagamentoPixAplicacaoResultadoService` aplica exclusivamente uma evidência conclusiva já persistida na auditoria. A entrada é somente o identificador da ordem: nenhum chamador informa arbitrariamente se o pagamento foi confirmado ou recusado.
+- A evidência é limitada ao ciclo da tentativa atual: há exatamente um `Envio` cujo número corresponde a `QuantidadeTentativas`, e somente `Consulta` iniciada depois desse envio participa do ciclo. Evidências conclusivas anteriores são histórico e não decidem a tentativa atual; conflito entre `Confirmado` e `FalhaConfirmada` falha fechado.
+- Auditoria aberta não é modificada por este caso de uso. Se uma Consulta conclusiva existir enquanto o Envio atual permanecer aberto, o resultado é `RequerReconciliacao`, preservando a responsabilidade da reconciliação de recuperar a auditoria.
+- `Cashback.RegistrarPagamento()` formaliza a única nova transição de domínio: `Disponivel → Pago`, idempotente em `Pago` e proibida a partir de `Pendente` ou `Cancelado`.
+- `Confirmado` efetiva `PagamentoPix.Processando → Concluido` e `Cashback.Disponivel → Pago` em uma transação MySQL. `FalhaConfirmada` efetiva somente `PagamentoPix.Processando → Falhou` ou `FalhaDefinitiva`, conforme a tentativa, preservando o Cashback `Disponivel`.
+- `PagamentoPixAplicacaoResultadoMySqlStore` bloqueia as linhas envolvidas, valida snapshots financeiros, usa updates condicionais e reverte a transação quando qualquer etapa não pode ser concluída. Reexecuções concorrentes observam o estado final coerente e retornam resultado idempotente.
+- Não há chamada a `IPixProvider`, criação/finalização de `OperacaoPagamentoPix`, migration, endpoint, worker, webhook ou retentativa automática.
+
+### Testes
+
+- Cobertura de Domain para a transição `Disponivel → Pago`, idempotência, estados proibidos, `UpdatedAt` e preservação de snapshots.
+- Cobertura de Application para ciclo atual, histórico anterior, inconsistências, estados parciais, aplicação confirmada, falha até a quinta tentativa, idempotência, snapshots e ausência de provider/auditoria mutável.
+- Integrações MySQL condicionais para confirmação atômica, falha, quinta tentativa, rollback induzido, concorrência com cinco executores, idempotência, preservação de material criptográfico/auditoria, histórico anterior e conflito conclusivo.
+
+### Pendente
+
+- Política de retry após `Falhou`, seleção automática de pagamentos, recuperação operacional, worker, webhook, produção e observabilidade financeira.
+
 ## Reconciliação Segura de PagamentoPix
 
 **Data:** 2026-09-03
@@ -443,7 +660,7 @@
 - A fixture cria por execucao o database `indicaa2_test_<guid>`, aplica os scripts reais na ordem `002_create_usuarios.sql`, `003_create_vistorias.sql` e `001_create_indicacoes.sql`, limpa dados entre testes e remove o database ao final.
 - A configuracao obrigatoria e `INDICA2_TEST_MYSQL_CONNECTION`: uma conexao administrativa sem `Database`. A fixture valida o prefixo seguro antes de qualquer limpeza ou remocao, portanto nao usa automaticamente banco de desenvolvimento ou producao.
 - A cobertura inclui insert, select, update, filtros, reidratacao, `email` UNIQUE, FK de `vistorias.usuario_id`, `DECIMAL(10,2)` de `AreaM2`, timestamps UTC e `DataAgendada` preservada como valor de negocio. O schema atual de `indicacoes` nao declara FKs e os testes nao assumem integridade inexistente.
-- Para executar: `dotnet test tests/Infrastructure.Tests/Infrastructure.Tests.csproj --filter "Category=Integration"`. Para testes sem MySQL: `dotnet test IndicaA2.slnx --filter "Category!=Integration"`. Sem a variavel, os testes de integracao sao ignorados explicitamente com instrucao de configuracao, sem serem contabilizados como aprovados.
+- A orientação ativa de execução está em [Execução Controlada de Integrações MySQL](#execução-controlada-de-integrações-mysql--pr-31): use a categoria `MySqlIntegration`, a suíte rápida sem MySQL e o script com preflight único. Sem a variável, integrações não são executadas nem contabilizadas como aprovadas.
 
 - `IndicacoesController` e `VistoriasController` exigem autenticação Bearer; `POST /api/auth/login` permanece público.
 - `ICurrentUser` interpreta exclusivamente `sub` como `Guid` do usuário atual e `role` como papel. Claims ausentes ou inválidas não concedem acesso.

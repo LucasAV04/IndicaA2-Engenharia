@@ -2,6 +2,11 @@ using Xunit;
 
 namespace Infrastructure.Tests.Integration;
 
+public static class MySqlIntegrationCategory
+{
+    public const string Name = "MySqlIntegration";
+}
+
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class MySqlIntegrationCollection : ICollectionFixture<MySqlIntegrationFixture>
 {
