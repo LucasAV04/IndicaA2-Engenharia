@@ -1,5 +1,15 @@
 # Implementações
 
+## Compatibilidade de Materialização GUID no MySQL — PR #31
+
+**Data:** 2026-09-09
+
+A primeira execução real das integrações MySQL identificou que o `MySqlConnector` pode materializar colunas `CHAR(36)` como `Guid`. Leituras que assumiam `GetString` causavam `InvalidCastException` antes de alcançarem as regras exercitadas pelos testes.
+
+Os stores de aplicação de resultado e reconciliação passaram a usar `MySqlDataReaderExtensions.ObterGuid` e `ObterGuidOpcional`, que aceitam a materialização `Guid` ou texto válido e rejeitam `Guid.Empty`. O snapshot de `usuario_indicador_id` no teste de integração também passou a usar a mesma extensão. Leituras de campos realmente textuais — referência idempotente, identificador do provider, código e snapshots `CONCAT` — permanecem textuais.
+
+O timeout observado em duas reconciliações concorrentes foi consequência da exceção de materialização ocorrer antes de o provider sinalizar a consulta; o timeout não foi alterado. A validação completa das 105 integrações MySQL continua pendente após estas correções. Nenhum resultado MySQL é declarado aprovado nesta etapa.
+
 ## Execução Controlada de Integrações MySQL — PR #31
 
 **Data:** 2026-09-08

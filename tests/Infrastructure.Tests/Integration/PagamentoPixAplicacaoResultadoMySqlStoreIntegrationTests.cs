@@ -4,6 +4,7 @@ using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.Interfaces;
+using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Infrastructure.Security;
 using MySqlConnector;
@@ -402,7 +403,7 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
         return new SnapshotCashback(
-            Guid.Parse(reader.GetString(0)),
+            reader.ObterGuid("usuario_indicador_id"),
             reader.GetDecimal(1),
             DateTime.SpecifyKind(reader.GetDateTime(2), DateTimeKind.Utc));
     }

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-09 — Compatibilidade de Materialização GUID no MySQL — PR #31
+
+### Corrigido
+
+- A primeira execução real MySQL revelou que `CHAR(36)` pode ser materializado pelo `MySqlConnector` como `Guid`, tornando incompatível o uso de `GetString` em identificadores.
+- Os stores de aplicação de resultado e reconciliação usam `MySqlDataReaderExtensions.ObterGuid`/`ObterGuidOpcional`; o snapshot de `usuario_indicador_id` do teste de integração usa a mesma extensão.
+- O timeout de duas reconciliações concorrentes era efeito da `InvalidCastException` anterior ao sinal do provider e não foi alterado.
+
+### Pendente
+
+- A validação completa das 105 integrações MySQL permanece pendente após a correção. Nenhuma integração MySQL foi declarada aprovada nesta etapa.
+
 ## 2026-09-08 — Execução Controlada de Integrações MySQL — PR #31
 
 ### Alterado
