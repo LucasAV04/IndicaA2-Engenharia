@@ -113,6 +113,8 @@ public sealed class MySqlIntegrationPreflightTests
     private static async Task<ResultadoScript> ExecutarScriptSemVariavelAsync(bool requireMySql)
     {
         var raiz = EncontrarRaizProjeto();
+        var caminhoPwsh = EncontrarPowerShellSete();
+        var pathOriginal = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
         var diretorioTemporario = Path.Combine(Path.GetTempPath(), $"indicaa2-preflight-{Guid.NewGuid():N}");
         var marcadorDotnet = Path.Combine(diretorioTemporario, "dotnet-foi-chamado.txt");
         Directory.CreateDirectory(diretorioTemporario);
@@ -122,7 +124,7 @@ public sealed class MySqlIntegrationPreflightTests
                 Path.Combine(diretorioTemporario, "dotnet.cmd"),
                 $"@echo invoked > \"{marcadorDotnet}\"{Environment.NewLine}exit /b 99");
 
-            var inicio = new System.Diagnostics.ProcessStartInfo("pwsh")
+            var inicio = new System.Diagnostics.ProcessStartInfo(caminhoPwsh)
             {
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -135,7 +137,7 @@ public sealed class MySqlIntegrationPreflightTests
             if (requireMySql)
                 inicio.ArgumentList.Add("-RequireMySql");
             inicio.Environment.Remove(MySqlIntegrationFixture.ConnectionStringEnvironmentVariable);
-            inicio.Environment["PATH"] = $"{diretorioTemporario};{inicio.Environment["PATH"]}";
+            inicio.Environment["PATH"] = $"{diretorioTemporario}{Path.PathSeparator}{pathOriginal}";
 
             using var processo = System.Diagnostics.Process.Start(inicio)
                 ?? throw new InvalidOperationException("Não foi possível iniciar o PowerShell suportado.");
@@ -150,6 +152,38 @@ public sealed class MySqlIntegrationPreflightTests
             Directory.Delete(diretorioTemporario, recursive: true);
         }
     }
+
+    private static string EncontrarPowerShellSete()
+    {
+        var nomeExecutavel = OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh";
+        var pathOriginal = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+
+        foreach (var entrada in pathOriginal.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var diretorio = RemoverAspasExternas(entrada.Trim());
+            if (string.IsNullOrWhiteSpace(diretorio))
+                continue;
+
+            var candidato = Path.Combine(diretorio, nomeExecutavel);
+            if (File.Exists(candidato))
+                return candidato;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var candidato = Path.Combine(programFiles, "PowerShell", "7", "pwsh.exe");
+            if (File.Exists(candidato))
+                return candidato;
+        }
+
+        throw new FileNotFoundException("Não foi possível localizar o PowerShell 7 (pwsh) para o teste de preflight.");
+    }
+
+    private static string RemoverAspasExternas(string valor) =>
+        valor.Length >= 2 && valor.StartsWith('"') && valor.EndsWith('"')
+            ? valor[1..^1]
+            : valor;
 
     private static string EncontrarRaizProjeto()
     {
