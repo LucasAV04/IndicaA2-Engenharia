@@ -255,7 +255,7 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         return new PagamentoPixCoordenado(
             ObterEnum<StatusPagamentoPix>(reader, "status"),
             reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")),
-            ObterGuidOpcional(reader, "reconciliacao_lease_id"),
+            reader.ObterGuidOpcional("reconciliacao_lease_id"),
             ObterDataOpcionalUtc(reader, "reconciliacao_lease_expira_em"),
             EmUtc(reader.GetDateTime(reader.GetOrdinal("agora"))));
     }
@@ -284,7 +284,7 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
             var resultadoOrdinal = reader.GetOrdinal("resultado");
             var finalizadaOrdinal = reader.GetOrdinal("finished_at");
             operacoes.Add(new OperacaoCoordenada(
-                ObterGuid(reader, "id"),
+                reader.ObterGuid("id"),
                 ObterEnum<TipoOperacaoPagamentoPix>(reader, "tipo_operacao"),
                 reader.IsDBNull(tentativaOrdinal) ? null : reader.GetInt32(tentativaOrdinal),
                 reader.IsDBNull(resultadoOrdinal) ? null : ObterEnum<ResultadoOperacaoPagamentoPix>(reader, "resultado"),
@@ -480,11 +480,6 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         pagamentoPix.LeaseExpiraEm.HasValue &&
         pagamentoPix.LeaseExpiraEm.Value > pagamentoPix.Agora;
 
-    private static Guid ObterGuid(MySqlDataReader reader, string coluna) =>
-        Guid.TryParse(reader.GetString(reader.GetOrdinal(coluna)), out var valor) && valor != Guid.Empty
-            ? valor
-            : throw new InvalidOperationException("O identificador financeiro persistido é inválido.");
-
     private static TEnum ObterEnum<TEnum>(MySqlDataReader reader, string coluna)
         where TEnum : struct, Enum
     {
@@ -500,9 +495,6 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         reader.IsDBNull(reader.GetOrdinal(coluna))
             ? null
             : EmUtc(reader.GetDateTime(reader.GetOrdinal(coluna)));
-
-    private static Guid? ObterGuidOpcional(MySqlDataReader reader, string coluna) =>
-        reader.IsDBNull(reader.GetOrdinal(coluna)) ? null : ObterGuid(reader, coluna);
 
     private static string? ObterTextoOpcional(MySqlDataReader reader, string coluna) =>
         reader.IsDBNull(reader.GetOrdinal(coluna)) ? null : reader.GetString(reader.GetOrdinal(coluna));

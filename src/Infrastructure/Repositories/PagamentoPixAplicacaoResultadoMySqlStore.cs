@@ -133,8 +133,8 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             throw new InvalidOperationException("O Pagamento Pix não foi encontrado para aplicação financeira.");
 
         return new PagamentoPixPersistido(
-            ObterGuid(reader, "cashback_id"),
-            ObterGuid(reader, "usuario_beneficiario_id"),
+            reader.ObterGuid("cashback_id"),
+            reader.ObterGuid("usuario_beneficiario_id"),
             reader.GetDecimal(reader.GetOrdinal("valor")),
             ObterEnum<StatusPagamentoPix>(reader, "status"),
             reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")),
@@ -198,7 +198,7 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             throw new InvalidOperationException("O Cashback não foi encontrado para aplicação financeira.");
 
         return new CashbackPersistido(
-            ObterGuid(reader, "usuario_indicador_id"),
+            reader.ObterGuid("usuario_indicador_id"),
             reader.GetDecimal(reader.GetOrdinal("valor")),
             ObterEnum<StatusCashback>(reader, "status"),
             CashbackMySqlRepository.Materializar(reader));
@@ -353,11 +353,6 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
 
     private static bool EhConclusivo(ResultadoOperacaoPagamentoPix? resultado) =>
         resultado is ResultadoOperacaoPagamentoPix.Confirmado or ResultadoOperacaoPagamentoPix.FalhaConfirmada;
-
-    private static Guid ObterGuid(MySqlDataReader reader, string coluna) =>
-        Guid.TryParse(reader.GetString(reader.GetOrdinal(coluna)), out var valor) && valor != Guid.Empty
-            ? valor
-            : throw new InvalidOperationException("O identificador financeiro persistido é inválido.");
 
     private static TEnum ObterEnum<TEnum>(MySqlDataReader reader, string coluna)
         where TEnum : struct, Enum
