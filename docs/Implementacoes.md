@@ -73,7 +73,7 @@ As integrações podem ser descobertas pelo VSTest para aplicação do filtro, m
 - Testes unitários com probe falso confirmam: variável ausente = zero conexões; chamadas repetidas = uma sondagem; falha = bootstrap não iniciado; marcador textual não canônico determinístico; os dois modos do script não chamam `dotnet`; e classificação/cobertura = 13 classes e 105 casos preservados.
 - Build: sucesso, 0 erros e 4 avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`, fora deste escopo.
 - A descoberta atual do VSTest lista **463 casos**: 457 testes anteriores + 6 testes de preflight. O resultado histórico 461 ocorreu quando existiam quatro testes de preflight; durante a investigação foram listados 462 após a inclusão do quinto; esta correção adicionou o sexto para validar os códigos de saída do script. Nenhum teste anterior deixou de ser descoberto.
-- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. **Registro intermediário superado:** a execução que reportou 434 aprovados e 29 falhos em testes de integração da API foi corrigida posteriormente; a suíte rápida definitiva registrou 463 aprovados, 0 falhos e 0 ignorados.
+- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. **Registro intermediário superado:** essa execução apresentou 434 aprovados e 29 falhos. Uma execução limpa posterior da mesma suíte registrou 463 aprovados, 0 falhos e 0 ignorados. Nenhuma alteração de código da API faz parte dos commits corretivos desta etapa; portanto, esta documentação não atribui uma causa definitiva às falhas intermediárias.
 - `INDICA2_TEST_MYSQL_CONNECTION` permaneceu ausente: MySQL, migrations, Efí, OAuth e Pix real não foram executados.
 
 ## Lease de Reconciliação e Preservação da Auditoria — PR #31

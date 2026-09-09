@@ -48,7 +48,7 @@
 
 - Build: sucesso, 0 erros e 4 avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`, fora deste escopo.
 - A descoberta atual da suíte rápida é 463: 457 testes anteriores + 6 testes de preflight. O resultado histórico 461 corresponde a quando havia quatro testes; a investigação registrou 462 após o quinto; o sexto cobre os códigos de saída do script sem variável.
-- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. **Registro intermediário superado:** a suíte rápida que reportou 434 aprovados e 29 falhos foi corrigida posteriormente e a validação definitiva registrou 463 aprovados, 0 falhos e 0 ignorados.
+- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. **Registro intermediário superado:** essa execução apresentou 434 aprovados e 29 falhos. Uma execução limpa posterior da mesma suíte registrou 463 aprovados, 0 falhos e 0 ignorados. Nenhuma alteração de código da API faz parte dos commits corretivos desta etapa; portanto, esta documentação não atribui uma causa definitiva às falhas intermediárias.
 - Sem `INDICA2_TEST_MYSQL_CONNECTION`, não houve MySQL, migration, Efí, OAuth ou Pix real. Integrações não foram declaradas aprovadas.
 
 ## 2026-09-08 — Recuperação de Reconciliação com Lease — PR #31
