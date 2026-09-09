@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-09 — Validação Definitiva do PR #31
+
+### Validação
+
+- Build limpo: sucesso, 0 erros e 0 warnings.
+- Preflight MySQL: 6 aprovados, 0 falhos, 0 ignorados.
+- Stores e reconciliação Pix: 33 aprovados, 0 falhos, 0 ignorados, em 15,7 segundos.
+- Script oficial MySQL (`pwsh -NoProfile -File .\scripts\Invoke-MySqlIntegrationTests.ps1 -RequireMySql`): 105 executados, 105 aprovados, 0 falhos, 0 ignorados; testes em 16,0 segundos, comando em 17,0 segundos, um único preflight `SELECT 1`, banco temporário exclusivo e migrations 001–011 aplicadas. A migration 011 e o lease persistente foram validados contra MySQL real.
+- Suíte rápida (`dotnet test IndicaA2.slnx --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=minimal"`): 463 executados, 463 aprovados, 0 falhos, 0 ignorados; testes em 44,1 segundos, comando em 69,9 segundos e exit code 0.
+
+### Confirmado
+
+- Materialização `CHAR(36)` como `Guid` pelo MySqlConnector tratada por `ObterGuid`/`ObterGuidOpcional`, inclusive no snapshot de integração.
+- Timeout concorrente anterior confirmado como consequência da `InvalidCastException` anterior ao provider.
+- Lease de cinco minutos pelo horário MySQL, recuperação da mesma Consulta, proteção contra executor antigo, preservação de `identificador_provider`/`codigo` e aplicação financeira atômica/idempotente validados.
+- Preflight mantém bloqueio contra execução acidental das 105 integrações sem configuração explícita.
+
+### Segurança e escopo
+
+- Nenhuma chamada Efí real, OAuth real, Pix real ou dado financeiro de produção foi utilizado. MySQL foi usado exclusivamente na suíte de integração.
+- O PR permanece draft e não há liberação para produção. Não foi fornecida confirmação independente sobre a inexistência posterior de bancos temporários; esta entrada não declara essa verificação.
+- Os registros abaixo que mencionam pendência MySQL ou 29 falhas de API são históricos intermediários, superados por esta validação definitiva.
+
 ## 2026-09-09 — Compatibilidade de Materialização GUID no MySQL — PR #31
 
 ### Corrigido
@@ -10,7 +33,7 @@
 
 ### Pendente
 
-- A validação completa das 105 integrações MySQL permanece pendente após a correção. Nenhuma integração MySQL foi declarada aprovada nesta etapa.
+- **Registro intermediário superado:** a validação completa posterior das 105 integrações MySQL foi concluída com 105 aprovados, conforme a entrada de validação definitiva.
 
 ## 2026-09-08 — Execução Controlada de Integrações MySQL — PR #31
 
@@ -25,7 +48,7 @@
 
 - Build: sucesso, 0 erros e 4 avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`, fora deste escopo.
 - A descoberta atual da suíte rápida é 463: 457 testes anteriores + 6 testes de preflight. O resultado histórico 461 corresponde a quando havia quatro testes; a investigação registrou 462 após o quinto; o sexto cobre os códigos de saída do script sem variável.
-- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. Suíte rápida: 434 aprovados, 29 falhos, 0 ignorados; as 29 falhas pertencem a testes de integração da API fora da infraestrutura MySQL e não houve repetição sem uma correção comprovada.
+- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. **Registro intermediário superado:** a suíte rápida que reportou 434 aprovados e 29 falhos foi corrigida posteriormente e a validação definitiva registrou 463 aprovados, 0 falhos e 0 ignorados.
 - Sem `INDICA2_TEST_MYSQL_CONNECTION`, não houve MySQL, migration, Efí, OAuth ou Pix real. Integrações não foram declaradas aprovadas.
 
 ## 2026-09-08 — Recuperação de Reconciliação com Lease — PR #31

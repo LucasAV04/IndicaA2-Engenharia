@@ -1,5 +1,31 @@
 # Implementações
 
+## Validação Definitiva — PR #31
+
+**Data:** 2026-09-09
+
+Esta seção consolida a validação definitiva do PR #31 e **supera os resultados intermediários de investigação registrados abaixo**. Eles permanecem no documento somente como histórico do diagnóstico.
+
+### Resultados confirmados
+
+- Build limpo no HEAD validado: sucesso, **0 erros** e **0 warnings**.
+- Preflight MySQL: **6 aprovados**, 0 falhos, 0 ignorados.
+- Stores e reconciliação Pix: **33 aprovados**, 0 falhos, 0 ignorados, em 15,7 segundos.
+- Suíte MySQL oficial (`pwsh -NoProfile -File .\scripts\Invoke-MySqlIntegrationTests.ps1 -RequireMySql`): **105 executados, 105 aprovados, 0 falhos, 0 ignorados**; testes em 16,0 segundos e comando em 17,0 segundos. O preflight real executou um único `SELECT 1`, criou banco temporário exclusivo, aplicou as migrations 001 a 011 e validou a migration 011 e o lease persistente contra MySQL real.
+- Suíte rápida, sem MySQL e sem integrações Efí: **463 executados, 463 aprovados, 0 falhos, 0 ignorados**; testes em 44,1 segundos, comando em 69,9 segundos e exit code 0.
+
+### Correções confirmadas
+
+- `CHAR(36)` pode ser materializado pelo MySqlConnector como `Guid`; os stores usam `ObterGuid`/`ObterGuidOpcional` e o snapshot de integração usa a mesma extensão.
+- O timeout concorrente anterior era efeito da falha de materialização antes do sinal do provider, não uma regra de timeout inadequada.
+- O lease de reconciliação permanece em cinco minutos, medidos pelo MySQL; a recuperação reutiliza a mesma Consulta aberta e bloqueia finalização por executor antigo.
+- A recuperação preserva `identificador_provider` e `codigo`; a aplicação financeira permanece atômica e idempotente.
+- O preflight impede execução acidental das 105 integrações sem configuração MySQL explícita.
+
+### Segurança e escopo
+
+Não houve Efí real, OAuth real, envio Pix real, uso de dados financeiros de produção ou liberação para produção. O MySQL foi utilizado exclusivamente pela suíte de integração. O PR continua draft. Não foi fornecida confirmação independente sobre a inexistência posterior de bancos temporários; portanto, esta documentação não declara essa verificação.
+
 ## Compatibilidade de Materialização GUID no MySQL — PR #31
 
 **Data:** 2026-09-09
@@ -8,7 +34,7 @@ A primeira execução real das integrações MySQL identificou que o `MySqlConne
 
 Os stores de aplicação de resultado e reconciliação passaram a usar `MySqlDataReaderExtensions.ObterGuid` e `ObterGuidOpcional`, que aceitam a materialização `Guid` ou texto válido e rejeitam `Guid.Empty`. O snapshot de `usuario_indicador_id` no teste de integração também passou a usar a mesma extensão. Leituras de campos realmente textuais — referência idempotente, identificador do provider, código e snapshots `CONCAT` — permanecem textuais.
 
-O timeout observado em duas reconciliações concorrentes foi consequência da exceção de materialização ocorrer antes de o provider sinalizar a consulta; o timeout não foi alterado. A validação completa das 105 integrações MySQL continua pendente após estas correções. Nenhum resultado MySQL é declarado aprovado nesta etapa.
+O timeout observado em duas reconciliações concorrentes foi consequência da exceção de materialização ocorrer antes de o provider sinalizar a consulta; o timeout não foi alterado. **Registro intermediário superado:** a validação completa posterior das 105 integrações MySQL foi concluída com aprovação total, conforme a seção de validação definitiva.
 
 ## Execução Controlada de Integrações MySQL — PR #31
 
@@ -47,7 +73,7 @@ As integrações podem ser descobertas pelo VSTest para aplicação do filtro, m
 - Testes unitários com probe falso confirmam: variável ausente = zero conexões; chamadas repetidas = uma sondagem; falha = bootstrap não iniciado; marcador textual não canônico determinístico; os dois modos do script não chamam `dotnet`; e classificação/cobertura = 13 classes e 105 casos preservados.
 - Build: sucesso, 0 erros e 4 avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`, fora deste escopo.
 - A descoberta atual do VSTest lista **463 casos**: 457 testes anteriores + 6 testes de preflight. O resultado histórico 461 ocorreu quando existiam quatro testes de preflight; durante a investigação foram listados 462 após a inclusão do quinto; esta correção adicionou o sexto para validar os códigos de saída do script. Nenhum teste anterior deixou de ser descoberto.
-- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. A suíte rápida executou 463 casos: 434 aprovados e 29 falhos, todos em testes de integração da API fora desta alteração. A suíte não foi repetida, conforme o limite de validação.
+- Preflight específico: 6 aprovados, 0 falhos, 0 ignorados. **Registro intermediário superado:** a execução que reportou 434 aprovados e 29 falhos em testes de integração da API foi corrigida posteriormente; a suíte rápida definitiva registrou 463 aprovados, 0 falhos e 0 ignorados.
 - `INDICA2_TEST_MYSQL_CONNECTION` permaneceu ausente: MySQL, migrations, Efí, OAuth e Pix real não foram executados.
 
 ## Lease de Reconciliação e Preservação da Auditoria — PR #31
