@@ -12,17 +12,20 @@ O fluxo de Envio Pix passou a possuir proprietário persistente. Antes desta eta
 
 Na preparação, a mesma transação bloqueia primeiro `pagamentos_pix`, consulta `UTC_TIMESTAMP(6)` após o lock, valida leases e auditoria, gera token opaco, atualiza `Processando`, incrementa a tentativa e cria o único Envio aberto. O provider só é chamado após o commit. A finalização bloqueia a mesma ordem e a auditoria, reavalia o horário MySQL, exige token e prazo válidos, grava resultado/metadados e limpa o lease na mesma transação. Token inválido, expirado ou de executor antigo não altera auditoria, PagamentoPix ou Cashback.
 
-Expiração não autoriza novo envio. Enquanto o lease de Envio estiver válido, a reconciliação retorna operação em andamento sem consultar provider e a aplicação financeira retorna `RequerReconciliacao`. Depois da expiração, somente a reconciliação pode invalidar transacionalmente o token antigo, usando a mesma referência idempotente e sem criar novo Envio. Envio legado aberto sem lease continua sendo inconsistência que exige regularização auditada separada.
+O lease do MySQL protege a coordenação persistida, mas isoladamente não impede que um executor antigo, pausado antes da chamada HTTP, retome depois de expirar. A recuperação externa é segura porque a Efí documenta que o mesmo `idEnvio` representa uma única transação, inclusive quando reenviado após erro de comunicação. No IndicA2, `operacoes_pagamento_pix.referencia_idempotente` é a chave persistida e o adapter a envia diretamente como `idEnvio`; a retomada valida e reutiliza exatamente esse valor, o mesmo `OperacaoPagamentoPixId` e a mesma tentativa.
 
-Exceção ou cancelamento do provider tenta finalizar o Envio como `Indeterminado` com o token válido e `CancellationToken.None`; se a persistência dessa auditoria falhar, a falha permanece explícita e recuperável após a expiração. Nenhum caminho desta etapa liquida Cashback, envia novamente, inicia retry automático ou mantém transação aberta durante HTTP.
+Expiração não autoriza nova tentativa. Enquanto o lease de Envio estiver válido, a reconciliação retorna `EnvioEmAndamento`; com lease expirado e Envio aberto, retorna `EnvioPendenteRecuperacao`, sem limpar lease, criar Consulta, consultar provider ou alterar a auditoria. Uma invocação posterior do serviço de Envio assume um novo token no MySQL e recupera a mesma operação lógica. A aplicação financeira retorna `RequerReconciliacao` tanto para lease de Envio válido quanto expirado, Envio aberto, lease de reconciliação ou Consulta aberta. Envio legado aberto sem lease continua sendo inconsistência que exige regularização auditada separada.
+
+Depois de uma resposta, exceção ou cancelamento do provider, a finalização auditável usa `CancellationToken.None`: o token original só controla a preparação e a chamada externa. A atualização condicional valida operação, pagamento, tipo, tentativa, referência, abertura e timestamps persistidos antes de gravar resultado e metadados; inconsistências falham fechadas e fazem rollback. Se essa persistência falhar, a falha permanece explícita e recuperável após a expiração. Nenhum caminho desta etapa liquida Cashback, cria nova tentativa, inicia retry automático ou mantém transação aberta durante HTTP.
 
 ### Cobertura e validação
 
-- Os testes de `PagamentoPixEnvioService` foram adaptados ao contrato com token: resposta do provider finaliza usando o mesmo lease; exceção e cancelamento registram `Indeterminado`; perda do lease não reenvia Pix; cancelamento antes da preparação não chama provider.
-- As integrações de Envio passaram a verificar criação do token e expiração, preservação do material criptográfico e limpeza do lease após finalização. A fixture MySQL aplica a migration 012 no banco temporário.
+- Os testes de `PagamentoPixEnvioService` verificam referência persistida, ausência de chave Pix no resultado, ausência de atualização financeira pelo serviço, finalização com `CancellationToken.None`, exceção/cancelamento auditados como `Indeterminado`, perda do lease sem reenvio e falha fechada para referência adulterada.
+- As integrações de Envio verificam criação do token, expiração, recuperação da mesma auditoria sem incrementar tentativa nem criar segunda operação, preservação do material criptográfico e limpeza do lease após finalização. A fixture MySQL aplica a migration 012 no banco temporário.
+- Os testes de reconciliação cobrem `EnvioEmAndamento` e `EnvioPendenteRecuperacao`: nos dois casos o provider não é consultado.
 - Build: sucesso, **0 erros e 0 warnings**.
-- Testes específicos de Envio, reconciliação e aplicação: **45 aprovados**, 0 falhos, 0 ignorados.
-- Suíte rápida sem MySQL e sem Efí externo: **463 aprovados**, 0 falhos, 0 ignorados.
+- Testes específicos de `PagamentoPixEnvioService`: **13 aprovados**, 0 falhos, 0 ignorados.
+- Suíte rápida sem MySQL e sem Efí externo: **468 aprovados**, 0 falhos, 0 ignorados. As 106 integrações MySQL (as 105 já existentes, mais a cobertura de recuperação idempotente) ficaram excluídas por filtro e não foram declaradas aprovadas.
 - `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível neste processo; portanto, as integrações MySQL desta etapa não foram executadas nem declaradas aprovadas. Não houve Efí real, OAuth real ou envio Pix real.
 
 | Teste anterior | Motivo | Teste substituto |
@@ -31,6 +34,7 @@ Exceção ou cancelamento do provider tenta finalizar o Envio como `Indeterminad
 | `ProcessarEnvioAsync_QuandoProviderCancelar_DeveManterAuditoriaAbertaESemRetry` | Cancelamento agora tenta auditar `Indeterminado` pelo proprietário do lease. | `ProcessarEnvioAsync_QuandoProviderForCancelado_DeveRegistrarIndeterminadoESemPagamento` |
 | `ProcessarEnvioAsync_QuandoProviderLancarExcecaoInesperada_DeveManterAuditoriaAberta` | Exceção agora tem finalização auditável condicionada ao token. | `ProcessarEnvioAsync_QuandoProviderFalhar_DeveRegistrarIndeterminadoComTokenNoneEPropagar` |
 | `ProcessarEnvioAsync_QuandoFinalizacaoFalhar_NaoDeveReenviarPix` | A falha agora representa perda explícita de autorização do lease. | `ProcessarEnvioAsync_QuandoFinalizacaoPerderLease_NaoDeveReenviar` |
+| `ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarAuditoriaSemAlterarPagamento` | A finalização passou a ser feita pelo store transacional com lease. | `ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarComMesmoLease`, com asserção de ausência de atualização financeira e de chave Pix no resultado |
 
 Worker, seleção automática, retry automático, webhook, endpoint de disparo, Efí/OAuth/Pix real, produção e limpeza administrativa de registros legados continuam pendentes.
 

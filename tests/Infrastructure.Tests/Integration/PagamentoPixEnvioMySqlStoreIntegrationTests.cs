@@ -225,6 +225,31 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
+    [MySqlIntegrationFact]
+    public async Task TentarPrepararEnvioAsync_QuandoLeaseExpirar_DeveRecuperarMesmaOperacaoSemNovaTentativa()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var store = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+        var operacaoRepository = new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory);
+
+        var primeira = await store.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        await ExpirarLeaseEnvioAsync(pagamentoPix.Id, primeira.LeaseId!.Value);
+
+        var recuperada = await store.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        var pagamentoPersistido = (await CriarPagamentoRepository()
+            .ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+        var operacoes = await operacaoRepository.ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None);
+
+        Assert.True(recuperada.Adquirido);
+        Assert.Equal(primeira.OperacaoPagamentoPixId, recuperada.OperacaoPagamentoPixId);
+        Assert.Equal(primeira.NumeroTentativaEnvio, recuperada.NumeroTentativaEnvio);
+        Assert.Equal(primeira.ReferenciaIdempotente, recuperada.ReferenciaIdempotente);
+        Assert.NotEqual(primeira.LeaseId, recuperada.LeaseId);
+        Assert.Equal(1, pagamentoPersistido.QuantidadeTentativas);
+        Assert.Single(operacoes);
+    }
+
     private async Task<(Guid? LeaseId, DateTime? ExpiraEm, DateTime Agora)> ObterLeaseEnvioAsync(Guid pagamentoPixId)
     {
         await using var connection = fixture.ConnectionFactory.Create();
@@ -238,6 +263,18 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         Guid? id = reader.IsDBNull(0) ? null : reader.ObterGuid("envio_lease_id");
         DateTime? expira = reader.IsDBNull(1) ? null : DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc);
         return (id, expira, DateTime.SpecifyKind(reader.GetDateTime(2), DateTimeKind.Utc));
+    }
+
+    private async Task ExpirarLeaseEnvioAsync(Guid pagamentoPixId, Guid leaseId)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(
+            "UPDATE pagamentos_pix SET envio_lease_expira_em = UTC_TIMESTAMP(6) - INTERVAL 1 SECOND WHERE id = @id AND envio_lease_id = @leaseId;",
+            connection);
+        command.Parameters.Add("@id", MySqlDbType.VarChar).Value = pagamentoPixId.ToString();
+        command.Parameters.Add("@leaseId", MySqlDbType.VarChar).Value = leaseId.ToString();
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static string CriarChave() =>

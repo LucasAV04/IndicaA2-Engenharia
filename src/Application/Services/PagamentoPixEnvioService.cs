@@ -51,8 +51,10 @@ public sealed class PagamentoPixEnvioService : IPagamentoPixEnvioService
         var operacaoId = preparacao.OperacaoPagamentoPixId!.Value;
         var tentativa = preparacao.NumeroTentativaEnvio!.Value;
         var leaseId = preparacao.LeaseId!.Value;
+        var referenciaIdempotente = preparacao.ReferenciaIdempotente
+            ?? throw new InvalidOperationException("A preparação persistida não informou a referência idempotente do envio.");
         var pagamentoPix = await ObterPagamentoPixOuLancarExceptionAsync(pagamentoPixId, cancellationToken);
-        ValidarPreparacaoPersistida(pagamentoPix, tentativa);
+        ValidarPreparacaoPersistida(pagamentoPix, tentativa, referenciaIdempotente);
 
         PixProviderResult providerResult;
         try
@@ -62,7 +64,8 @@ public sealed class PagamentoPixEnvioService : IPagamentoPixEnvioService
                     pagamentoPix.Id,
                     pagamentoPix.Valor,
                     pagamentoPix.TipoChavePix,
-                    pagamentoPix.ChavePix),
+                    pagamentoPix.ChavePix,
+                    referenciaIdempotente),
                 cancellationToken);
         }
         catch (Exception exception)
@@ -80,7 +83,7 @@ public sealed class PagamentoPixEnvioService : IPagamentoPixEnvioService
             resultadoOperacao,
             providerResult.IdentificadorProvider,
             providerResult.Codigo,
-            cancellationToken);
+            CancellationToken.None);
         if (!finalizacao.Finalizada)
             throw new InvalidOperationException("A resposta do provider foi obtida, mas o lease de envio não autorizou a finalização da auditoria.");
 
@@ -101,10 +104,17 @@ public sealed class PagamentoPixEnvioService : IPagamentoPixEnvioService
         await _pagamentoPixRepository.ObterPorIdAsync(pagamentoPixId, cancellationToken)
         ?? throw new PagamentoPixNaoEncontradoException();
 
-    private static void ValidarPreparacaoPersistida(PagamentoPix pagamentoPix, int tentativa)
+    private static void ValidarPreparacaoPersistida(
+        PagamentoPix pagamentoPix,
+        int tentativa,
+        string referenciaIdempotente)
     {
         if (pagamentoPix.Status != StatusPagamentoPix.Processando ||
-            pagamentoPix.QuantidadeTentativas != tentativa)
+            pagamentoPix.QuantidadeTentativas != tentativa ||
+            !string.Equals(
+                referenciaIdempotente,
+                PixReferenciaIdempotente.Criar(pagamentoPix.Id),
+                StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 "A preparação persistida do envio Pix está inconsistente e requer reconciliação.");

@@ -7,20 +7,21 @@
 - Migration `012_add_envio_lease_pagamentos_pix.sql`, com `envio_lease_id` e `envio_lease_expira_em`; sem backfill, execução automática ou tabela genérica de locks.
 - Lease de Envio de cinco minutos, medido por `UTC_TIMESTAMP(6)` do MySQL, com token opaco por aquisição.
 - Preparação de Envio transacional: lock de PagamentoPix, token/expiração, mudança para `Processando`, incremento da tentativa e auditoria aberta antes do provider.
-- Finalização condicionada por token, operação e prazo: resultado, metadados e limpeza do lease ocorrem na mesma transação sem apagar metadados válidos com `null`/vazio.
+- Finalização condicionada por token, operação, pagamento, tentativa, referência e prazo: resultado, metadados e limpeza do lease ocorrem na mesma transação sem apagar metadados válidos com `null`/vazio.
 
 ### Alterado
 
-- Reconciliação bloqueia Consulta enquanto Envio com lease válido estiver ativo; após expiração, somente ela pode invalidar o token antigo e consultar pela mesma referência, sem segundo Envio.
+- A Efí documenta `idEnvio` como idempotente; a recuperação de Envio expirado assume novo token e reutiliza a mesma operação, tentativa e `referencia_idempotente` persistida, sem criar segundo Envio.
+- Reconciliação retorna `EnvioEmAndamento` para lease válido e `EnvioPendenteRecuperacao` para lease expirado com Envio aberto; nesses casos não limpa lease, não cria Consulta e não chama provider.
 - Aplicação financeira bloqueia qualquer marcador de lease de Envio, inclusive expirado pendente de recuperação, retornando `RequerReconciliacao` sem mutar auditoria ou valores.
-- Exceção/cancelamento do provider tenta registrar `Indeterminado` com `CancellationToken.None`; perda de autorização ou falha de persistência permanece explícita e não autoriza reenvio.
+- Após resposta, exceção ou cancelamento do provider, a finalização usa `CancellationToken.None`; perda de autorização ou falha de persistência permanece explícita e não autoriza reenvio.
 - Testes de envio adaptados ao contrato com token e integrações preparadas para a migration 012.
 
 ### Validação
 
 - Build: sucesso, 0 erros, 0 warnings.
-- Testes específicos de Envio, reconciliação e aplicação: 45 aprovados, 0 falhos, 0 ignorados.
-- Suíte rápida sem MySQL/Efí: 463 aprovados, 0 falhos, 0 ignorados.
+- Testes específicos de `PagamentoPixEnvioService`: 13 aprovados, 0 falhos, 0 ignorados.
+- Suíte rápida sem MySQL/Efí: 468 aprovados, 0 falhos, 0 ignorados. As 106 integrações MySQL permaneceram excluídas por filtro e não foram declaradas aprovadas.
 - Sem `INDICA2_TEST_MYSQL_CONNECTION`, as integrações MySQL desta etapa não foram executadas e não são declaradas aprovadas. Não houve Efí real, OAuth real ou Pix real.
 
 ### Escopo

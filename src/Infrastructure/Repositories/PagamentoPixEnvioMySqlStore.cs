@@ -1,4 +1,5 @@
 using Application.Interfaces.Stores;
+using Application.Interfaces.Providers;
 using Application.Models;
 using Domain.Entities;
 using Domain.Enums;
@@ -32,6 +33,15 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
             var agora = await ObterAgoraAsync(connection, transaction, cancellationToken);
             ValidarLeases(pagamento);
 
+            var operacoes = await ObterOperacoesAsync(connection, transaction, pagamentoPixId, cancellationToken);
+            if (pagamento.Status == StatusPagamentoPix.Processando)
+            {
+                var recuperacao = await TentarRecuperarEnvioAbertoAsync(
+                    connection, transaction, pagamentoPixId, pagamento, operacoes, agora, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return recuperacao;
+            }
+
             if (!PagamentoPix.StatusElegiveisParaIniciarTentativa.Contains(pagamento.Status) ||
                 pagamento.QuantidadeTentativas >= PagamentoPix.TentativasMaximas ||
                 pagamento.EnvioLeaseId.HasValue || pagamento.ReconciliacaoLeaseId.HasValue)
@@ -40,7 +50,11 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
                 return PreparacaoEnvioPagamentoPixResult.NaoAdquirido();
             }
 
-            var operacoes = await ObterOperacoesAsync(connection, transaction, pagamentoPixId, cancellationToken);
+            if (operacoes.Any(operacao =>
+                    operacao.Tipo == TipoOperacaoPagamentoPix.Consulta && !operacao.FinishedAt.HasValue))
+            {
+                throw new InvalidOperationException("Pagamento Pix possui consulta aberta incompatível com um novo envio.");
+            }
             if (operacoes.Any(operacao =>
                     operacao.Tipo == TipoOperacaoPagamentoPix.Envio && !operacao.FinishedAt.HasValue))
             {
@@ -59,7 +73,8 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
 
             await AdicionarOperacaoAsync(connection, transaction, operacao, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return PreparacaoEnvioPagamentoPixResult.AdquiridoCom(operacao.Id, tentativa, leaseId);
+            return PreparacaoEnvioPagamentoPixResult.AdquiridoCom(
+                operacao.Id, tentativa, leaseId, operacao.ReferenciaIdempotente);
         }
         catch
         {
@@ -113,13 +128,25 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
             }
 
             var envio = enviosAtuais[0];
+            if (envio.PagamentoPixId != pagamentoPixId ||
+                envio.Tipo != TipoOperacaoPagamentoPix.Envio ||
+                envio.NumeroTentativa != pagamento.QuantidadeTentativas ||
+                envio.Resultado.HasValue ||
+                !string.IsNullOrWhiteSpace(envio.IdentificadorProvider) ||
+                !string.IsNullOrWhiteSpace(envio.Codigo) ||
+                !string.Equals(envio.ReferenciaIdempotente, PixReferenciaIdempotente.Criar(pagamentoPixId), StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("A auditoria de envio persistida está inconsistente e não pode ser finalizada.");
+            }
+
             var auditoria = OperacaoPagamentoPix.Reidratar(
-                envio.Id, pagamentoPixId, TipoOperacaoPagamentoPix.Envio, envio.NumeroTentativa,
-                pagamentoPixId.ToString("N"), null, null, null, envio.CreatedAt, envio.CreatedAt, null);
+                envio.Id, envio.PagamentoPixId, envio.Tipo, envio.NumeroTentativa,
+                envio.ReferenciaIdempotente, envio.Resultado, envio.IdentificadorProvider, envio.Codigo,
+                envio.CreatedAt, envio.UpdatedAt, envio.FinishedAt);
             auditoria.Finalizar(resultado, identificadorProvider, codigo);
 
             if (!await FinalizarOperacaoAsync(
-                    connection, transaction, operacaoEnvioId, resultado, identificadorProvider, codigo, cancellationToken) ||
+                    connection, transaction, envio, auditoria, cancellationToken) ||
                 !await LiberarLeaseAsync(connection, transaction, pagamentoPixId, leaseId, cancellationToken))
             {
                 throw new InvalidOperationException("A finalização condicional do envio Pix não pôde ser persistida.");
@@ -163,7 +190,9 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
         MySqlConnection connection, MySqlTransaction transaction, Guid pagamentoPixId, CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT id, tipo_operacao, numero_tentativa_envio, started_at, finished_at
+            SELECT id, pagamento_pix_id, tipo_operacao, numero_tentativa_envio,
+                   referencia_idempotente, resultado, identificador_provider, codigo,
+                   started_at, updated_at, finished_at
             FROM operacoes_pagamento_pix
             WHERE pagamento_pix_id = @pagamentoPixId
             ORDER BY started_at, id
@@ -176,11 +205,18 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
         while (await reader.ReadAsync(cancellationToken))
         {
             var tentativa = reader.GetOrdinal("numero_tentativa_envio");
+            var resultado = reader.GetOrdinal("resultado");
             var finalizada = reader.GetOrdinal("finished_at");
             operacoes.Add(new OperacaoCoordenada(
-                reader.ObterGuid("id"), ObterEnum<TipoOperacaoPagamentoPix>(reader, "tipo_operacao"),
+                reader.ObterGuid("id"), reader.ObterGuid("pagamento_pix_id"),
+                ObterEnum<TipoOperacaoPagamentoPix>(reader, "tipo_operacao"),
                 reader.IsDBNull(tentativa) ? null : reader.GetInt32(tentativa),
+                reader.GetString(reader.GetOrdinal("referencia_idempotente")),
+                reader.IsDBNull(resultado) ? null : ObterEnum<ResultadoOperacaoPagamentoPix>(reader, "resultado"),
+                ObterTextoOpcional(reader, "identificador_provider"),
+                ObterTextoOpcional(reader, "codigo"),
                 EmUtc(reader.GetDateTime(reader.GetOrdinal("started_at"))),
+                EmUtc(reader.GetDateTime(reader.GetOrdinal("updated_at"))),
                 reader.IsDBNull(finalizada) ? null : EmUtc(reader.GetDateTime(finalizada))));
         }
         return operacoes.AsReadOnly();
@@ -214,9 +250,99 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
+    private static async Task<PreparacaoEnvioPagamentoPixResult> TentarRecuperarEnvioAbertoAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        Guid pagamentoPixId,
+        PagamentoCoordenado pagamento,
+        IReadOnlyCollection<OperacaoCoordenada> operacoes,
+        DateTime agora,
+        CancellationToken cancellationToken)
+    {
+        if (pagamento.ReconciliacaoLeaseId.HasValue)
+            return PreparacaoEnvioPagamentoPixResult.NaoAdquirido();
+
+        var enviosAtuais = operacoes.Where(operacao =>
+            operacao.Tipo == TipoOperacaoPagamentoPix.Envio &&
+            operacao.NumeroTentativa == pagamento.QuantidadeTentativas).ToArray();
+        if (enviosAtuais.Length != 1)
+            throw new InvalidOperationException("Pagamento Pix Processando deve possuir exatamente um envio no ciclo atual.");
+
+        var envio = enviosAtuais[0];
+        if (envio.FinishedAt.HasValue)
+            return PreparacaoEnvioPagamentoPixResult.NaoAdquirido();
+
+        if (operacoes.Any(operacao =>
+                operacao.Tipo == TipoOperacaoPagamentoPix.Consulta && !operacao.FinishedAt.HasValue))
+        {
+            return PreparacaoEnvioPagamentoPixResult.NaoAdquirido();
+        }
+
+        if (!pagamento.EnvioLeaseId.HasValue || !pagamento.EnvioLeaseExpiraEm.HasValue)
+        {
+            throw new InvalidOperationException(
+                "Envio aberto sem lease persistido exige regularização explícita antes da recuperação.");
+        }
+
+        if (pagamento.EnvioLeaseExpiraEm.Value > agora)
+            return PreparacaoEnvioPagamentoPixResult.NaoAdquirido();
+
+        if (envio.PagamentoPixId != pagamentoPixId ||
+            envio.Resultado.HasValue ||
+            !string.IsNullOrWhiteSpace(envio.IdentificadorProvider) ||
+            !string.IsNullOrWhiteSpace(envio.Codigo) ||
+            !string.Equals(envio.ReferenciaIdempotente, PixReferenciaIdempotente.Criar(pagamentoPixId), StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("O envio aberto persistido está inconsistente e não pode ser recuperado.");
+        }
+
+        var novoLeaseId = Guid.NewGuid();
+        if (!await AssumirLeaseEnvioExpiradoAsync(
+                connection, transaction, pagamentoPixId, pagamento, novoLeaseId, cancellationToken))
+        {
+            throw new InvalidOperationException("O lease expirado de envio não pôde ser recuperado com segurança.");
+        }
+
+        return PreparacaoEnvioPagamentoPixResult.AdquiridoCom(
+            envio.Id,
+            envio.NumeroTentativa!.Value,
+            novoLeaseId,
+            envio.ReferenciaIdempotente);
+    }
+
+    private static async Task<bool> AssumirLeaseEnvioExpiradoAsync(
+        MySqlConnection connection,
+        MySqlTransaction transaction,
+        Guid pagamentoPixId,
+        PagamentoCoordenado pagamento,
+        Guid novoLeaseId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE pagamentos_pix
+            SET envio_lease_id = @novoLeaseId,
+                envio_lease_expira_em = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 5 MINUTE),
+                updated_at = UTC_TIMESTAMP(6)
+            WHERE id = @id
+              AND status = @statusProcessando
+              AND quantidade_tentativas = @quantidadeTentativas
+              AND envio_lease_id = @leaseIdAnterior
+              AND envio_lease_expira_em <= UTC_TIMESTAMP(6)
+              AND reconciliacao_lease_id IS NULL
+              AND reconciliacao_lease_expira_em IS NULL;
+            """;
+        await using var command = new MySqlCommand(sql, connection, transaction);
+        AdicionarGuid(command, "@id", pagamentoPixId);
+        AdicionarGuid(command, "@novoLeaseId", novoLeaseId);
+        AdicionarGuid(command, "@leaseIdAnterior", pagamento.EnvioLeaseId!.Value);
+        command.Parameters.Add("@statusProcessando", MySqlDbType.Int32).Value = (int)StatusPagamentoPix.Processando;
+        command.Parameters.Add("@quantidadeTentativas", MySqlDbType.Int32).Value = pagamento.QuantidadeTentativas;
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
     private static async Task<bool> FinalizarOperacaoAsync(
-        MySqlConnection connection, MySqlTransaction transaction, Guid operacaoId,
-        ResultadoOperacaoPagamentoPix resultado, string? identificadorProvider, string? codigo,
+        MySqlConnection connection, MySqlTransaction transaction, OperacaoCoordenada envio,
+        OperacaoPagamentoPix auditoria,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -226,13 +352,29 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
                 codigo = COALESCE(NULLIF(@codigo, ''), codigo),
                 finished_at = GREATEST(started_at, UTC_TIMESTAMP(6)),
                 updated_at = GREATEST(started_at, UTC_TIMESTAMP(6))
-            WHERE id = @id AND finished_at IS NULL;
+            WHERE id = @id
+              AND pagamento_pix_id = @pagamentoPixId
+              AND tipo_operacao = @tipoOperacao
+              AND numero_tentativa_envio = @numeroTentativaEnvio
+              AND referencia_idempotente = @referenciaIdempotente
+              AND resultado IS NULL
+              AND identificador_provider IS NULL
+              AND codigo IS NULL
+              AND started_at = @startedAt
+              AND updated_at = @updatedAt
+              AND finished_at IS NULL;
             """;
         await using var command = new MySqlCommand(sql, connection, transaction);
-        AdicionarGuid(command, "@id", operacaoId);
-        command.Parameters.Add("@resultado", MySqlDbType.Int32).Value = (int)resultado;
-        command.Parameters.Add("@identificadorProvider", MySqlDbType.VarChar).Value = NormalizarOpcional(identificadorProvider) ?? (object)DBNull.Value;
-        command.Parameters.Add("@codigo", MySqlDbType.VarChar).Value = NormalizarOpcional(codigo) ?? (object)DBNull.Value;
+        AdicionarGuid(command, "@id", envio.Id);
+        AdicionarGuid(command, "@pagamentoPixId", envio.PagamentoPixId);
+        command.Parameters.Add("@tipoOperacao", MySqlDbType.Int32).Value = (int)envio.Tipo;
+        command.Parameters.Add("@numeroTentativaEnvio", MySqlDbType.Int32).Value = envio.NumeroTentativa!.Value;
+        command.Parameters.Add("@referenciaIdempotente", MySqlDbType.VarChar).Value = envio.ReferenciaIdempotente;
+        command.Parameters.Add("@startedAt", MySqlDbType.DateTime).Value = envio.CreatedAt;
+        command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = envio.UpdatedAt;
+        command.Parameters.Add("@resultado", MySqlDbType.Int32).Value = (int)auditoria.Resultado!.Value;
+        command.Parameters.Add("@identificadorProvider", MySqlDbType.VarChar).Value = NormalizarOpcional(auditoria.IdentificadorProvider) ?? (object)DBNull.Value;
+        command.Parameters.Add("@codigo", MySqlDbType.VarChar).Value = NormalizarOpcional(auditoria.Codigo) ?? (object)DBNull.Value;
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
@@ -302,6 +444,8 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
         reader.IsDBNull(reader.GetOrdinal(coluna)) ? null : EmUtc(reader.GetDateTime(reader.GetOrdinal(coluna)));
 
     private static DateTime EmUtc(DateTime data) => DateTime.SpecifyKind(data, DateTimeKind.Utc);
+    private static string? ObterTextoOpcional(MySqlDataReader reader, string coluna) =>
+        reader.IsDBNull(reader.GetOrdinal(coluna)) ? null : reader.GetString(reader.GetOrdinal(coluna));
     private static string? NormalizarOpcional(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
     private static void AdicionarGuid(MySqlCommand command, string nome, Guid valor) => command.Parameters.Add(nome, MySqlDbType.VarChar).Value = valor.ToString();
 
@@ -311,5 +455,15 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
         Guid? ReconciliacaoLeaseId, DateTime? ReconciliacaoLeaseExpiraEm);
 
     private sealed record OperacaoCoordenada(
-        Guid Id, TipoOperacaoPagamentoPix Tipo, int? NumeroTentativa, DateTime CreatedAt, DateTime? FinishedAt);
+        Guid Id,
+        Guid PagamentoPixId,
+        TipoOperacaoPagamentoPix Tipo,
+        int? NumeroTentativa,
+        string ReferenciaIdempotente,
+        ResultadoOperacaoPagamentoPix? Resultado,
+        string? IdentificadorProvider,
+        string? Codigo,
+        DateTime CreatedAt,
+        DateTime UpdatedAt,
+        DateTime? FinishedAt);
 }

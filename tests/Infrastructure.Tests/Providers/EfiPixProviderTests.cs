@@ -57,7 +57,8 @@ public sealed class EfiPixProviderTests
             OAuthComToken(),
             Json(HttpStatusCode.Created, """{"idEnvio":"94fd293e8ed946729a0763d4f1891c4d","status":"EM_PROCESSAMENTO"}"""));
         var provider = CriarProvider(handler);
-        var request = new PixEnvioRequest(pagamentoPixId, 12.34m, TipoChavePix.Email, "favorecido@exemplo.com");
+        var request = new PixEnvioRequest(
+            pagamentoPixId, 12.34m, TipoChavePix.Email, "favorecido@exemplo.com", pagamentoPixId.ToString("N"));
 
         var result = await provider.EnviarAsync(request);
 
@@ -171,9 +172,10 @@ public sealed class EfiPixProviderTests
         var provider = CriarProvider(new RoteadorHttpMessageHandler(
             OAuthComToken(),
             Json(HttpStatusCode.Created, "conteudo-invalido")));
+        var pagamentoPixId = Guid.NewGuid();
 
         var result = await provider.EnviarAsync(new PixEnvioRequest(
-            Guid.NewGuid(), 1m, TipoChavePix.Email, chavePix));
+            pagamentoPixId, 1m, TipoChavePix.Email, chavePix, pagamentoPixId.ToString("N")));
 
         Assert.Equal(StatusPixProvider.Indeterminado, result.Status);
         Assert.Equal("invalid-response", result.Codigo);
@@ -316,8 +318,16 @@ public sealed class EfiPixProviderTests
         ChavePixPagador = chavePixPagador
     };
 
-    private static PixEnvioRequest CriarEnvioRequest() =>
-        new(Guid.NewGuid(), 1.23m, TipoChavePix.Email, "favorecido@exemplo.com");
+    private static PixEnvioRequest CriarEnvioRequest()
+    {
+        var pagamentoPixId = Guid.NewGuid();
+        return new(
+            pagamentoPixId,
+            1.23m,
+            TipoChavePix.Email,
+            "favorecido@exemplo.com",
+            pagamentoPixId.ToString("N"));
+    }
 
     private static HttpResponseMessage OAuthComToken() =>
         Json(HttpStatusCode.OK, """{"access_token":"token-ficticio","expires_in":3600}""");

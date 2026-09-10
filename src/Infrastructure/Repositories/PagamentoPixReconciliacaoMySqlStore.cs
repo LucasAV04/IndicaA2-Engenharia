@@ -60,15 +60,11 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                 if (LeaseEnvioEstaValido(pagamentoPix))
                 {
                     await transaction.CommitAsync(cancellationToken);
-                    return PreparacaoReconciliacaoPagamentoPixResult.ConsultaEmAndamento();
+                    return PreparacaoReconciliacaoPagamentoPixResult.EnvioEmAndamento();
                 }
 
-                if (!await InvalidarLeaseEnvioExpiradoAsync(
-                        connection, transaction, pagamentoPixId, pagamentoPix.EnvioLeaseId.Value, cancellationToken))
-                {
-                    throw new InvalidOperationException("O lease expirado de envio não pôde ser invalidado para reconciliação.");
-                }
-                pagamentoPix = pagamentoPix with { EnvioLeaseId = null, EnvioLeaseExpiraEm = null };
+                await transaction.CommitAsync(cancellationToken);
+                return PreparacaoReconciliacaoPagamentoPixResult.EnvioPendenteRecuperacao();
             }
             else if (!cicloAtual.Envio.FinishedAt.HasValue)
             {
@@ -402,27 +398,6 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         {
             throw new InvalidOperationException("O lease de reconciliação não pôde ser adquirido.");
         }
-    }
-
-    private static async Task<bool> InvalidarLeaseEnvioExpiradoAsync(
-        MySqlConnection connection,
-        MySqlTransaction transaction,
-        Guid pagamentoPixId,
-        Guid leaseId,
-        CancellationToken cancellationToken)
-    {
-        const string sql = """
-            UPDATE pagamentos_pix
-            SET envio_lease_id = NULL,
-                envio_lease_expira_em = NULL
-            WHERE id = @id
-              AND envio_lease_id = @leaseId
-              AND envio_lease_expira_em <= UTC_TIMESTAMP(6);
-            """;
-        await using var command = new MySqlCommand(sql, connection, transaction);
-        AdicionarGuid(command, "@id", pagamentoPixId);
-        AdicionarGuid(command, "@leaseId", leaseId);
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     private static Task<bool> FinalizarEnvioAbertoAsync(

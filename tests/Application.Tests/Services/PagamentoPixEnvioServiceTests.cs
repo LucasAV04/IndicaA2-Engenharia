@@ -66,19 +66,21 @@ public sealed class PagamentoPixEnvioServiceTests
             .ReturnsAsync(CriarResultado(statusProvider));
         contexto.Store.Setup(x => x.FinalizarEnvioAsync(
                 contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId, resultadoEsperado,
-                "provider-id", "provider-code", contexto.Token))
+                "provider-id", "provider-code", CancellationToken.None))
             .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(true));
 
         var resultado = await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
 
         Assert.True(resultado.EnvioExecutado);
         Assert.Equal(resultadoEsperado, resultado.ResultadoOperacao);
+        Assert.Null(typeof(ResultadoEnvioPagamentoPix).GetProperty("ChavePix"));
         contexto.Provider.Verify(x => x.EnviarAsync(
             It.Is<PixEnvioRequest>(r => r.ReferenciaIdempotente == contexto.Pagamento.Id.ToString("N") &&
                                        r.ChavePix == contexto.Pagamento.ChavePix), contexto.Token), Times.Once);
         contexto.Store.Verify(x => x.FinalizarEnvioAsync(
             contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId, resultadoEsperado,
-            "provider-id", "provider-code", contexto.Token), Times.Once);
+            "provider-id", "provider-code", CancellationToken.None), Times.Once);
+        contexto.Pagamentos.Verify(x => x.AtualizarAsync(It.IsAny<PagamentoPix>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -127,7 +129,7 @@ public sealed class PagamentoPixEnvioServiceTests
             .ReturnsAsync(PixProviderResult.Confirmado());
         contexto.Store.Setup(x => x.FinalizarEnvioAsync(
                 contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId,
-                ResultadoOperacaoPagamentoPix.Confirmado, null, null, contexto.Token))
+                ResultadoOperacaoPagamentoPix.Confirmado, null, null, CancellationToken.None))
             .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(false));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -136,21 +138,108 @@ public sealed class PagamentoPixEnvioServiceTests
         contexto.Provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token), Times.Once);
     }
 
+    [Fact]
+    public async Task ProcessarEnvioAsync_QuandoReferenciaPreparadaNaoCorresponderAoPagamento_DeveFalharAntesDoProvider()
+    {
+        var contexto = CriarContexto();
+        contexto.Store.Setup(x => x.TentarPrepararEnvioAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoEnvioPagamentoPixResult.AdquiridoCom(
+                contexto.OperacaoId,
+                1,
+                contexto.LeaseId,
+                Guid.NewGuid().ToString("N")));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token));
+
+        contexto.Provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessarEnvioAsync_QuandoMesmaOperacaoForRecuperada_DeveReutilizarReferenciaIdempotente()
+    {
+        var contexto = CriarContexto();
+        var referencias = new HashSet<string>(StringComparer.Ordinal);
+        contexto.Provider
+            .Setup(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token))
+            .Callback<PixEnvioRequest, CancellationToken>((request, _) => referencias.Add(request.ReferenciaIdempotente))
+            .ReturnsAsync(PixProviderResult.Confirmado());
+        contexto.Store.Setup(x => x.FinalizarEnvioAsync(
+                contexto.Pagamento.Id,
+                contexto.OperacaoId,
+                contexto.LeaseId,
+                ResultadoOperacaoPagamentoPix.Confirmado,
+                null,
+                null,
+                CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(true));
+
+        await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
+        await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.Single(referencias);
+        Assert.Contains(contexto.Pagamento.Id.ToString("N"), referencias);
+        contexto.Provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ProcessarEnvioAsync_QuandoCanceladoAposResposta_DeveFinalizarAuditoriaComTokenNone()
+    {
+        var contexto = CriarContexto();
+        contexto.Provider.Setup(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token))
+            .Callback(() => contexto.CancellationSource.Cancel())
+            .ReturnsAsync(PixProviderResult.Confirmado());
+        contexto.Store.Setup(x => x.FinalizarEnvioAsync(
+                contexto.Pagamento.Id,
+                contexto.OperacaoId,
+                contexto.LeaseId,
+                ResultadoOperacaoPagamentoPix.Confirmado,
+                null,
+                null,
+                CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(true));
+
+        var resultado = await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.True(resultado.EnvioExecutado);
+        contexto.Store.Verify(x => x.FinalizarEnvioAsync(
+            contexto.Pagamento.Id,
+            contexto.OperacaoId,
+            contexto.LeaseId,
+            ResultadoOperacaoPagamentoPix.Confirmado,
+            null,
+            null,
+            CancellationToken.None), Times.Once);
+    }
+
     private static Contexto CriarContexto(bool adquirido = true)
     {
         var pagamento = PagamentoPix.Criar(Guid.NewGuid(), Guid.NewGuid(), 12.34m, TipoChavePix.Email, "destinatario@exemplo.com");
         var pagamentos = new Mock<IPagamentoPixRepository>();
         var store = new Mock<IPagamentoPixEnvioStore>();
         var provider = new Mock<IPixProvider>();
-        var token = new CancellationTokenSource().Token;
+        var cancellationSource = new CancellationTokenSource();
+        var token = cancellationSource.Token;
         var operacaoId = Guid.NewGuid();
         var leaseId = Guid.NewGuid();
         pagamentos.Setup(x => x.ObterPorIdAsync(pagamento.Id, token)).ReturnsAsync(pagamento);
         store.Setup(x => x.TentarPrepararEnvioAsync(pagamento.Id, token)).ReturnsAsync(
-            adquirido ? PreparacaoEnvioPagamentoPixResult.AdquiridoCom(operacaoId, 1, leaseId) : PreparacaoEnvioPagamentoPixResult.NaoAdquirido());
+            adquirido
+                ? PreparacaoEnvioPagamentoPixResult.AdquiridoCom(
+                    operacaoId, 1, leaseId, pagamento.Id.ToString("N"))
+                : PreparacaoEnvioPagamentoPixResult.NaoAdquirido());
         if (adquirido)
             pagamento.IniciarTentativa();
-        return new Contexto(CriarService(pagamentos, store, provider), pagamento, store, provider, token, operacaoId, leaseId);
+        return new Contexto(
+            CriarService(pagamentos, store, provider),
+            pagamento,
+            pagamentos,
+            store,
+            provider,
+            cancellationSource,
+            token,
+            operacaoId,
+            leaseId);
     }
 
     private static PagamentoPixEnvioService CriarService(
@@ -166,6 +255,8 @@ public sealed class PagamentoPixEnvioServiceTests
     };
 
     private sealed record Contexto(
-        PagamentoPixEnvioService Service, PagamentoPix Pagamento, Mock<IPagamentoPixEnvioStore> Store,
-        Mock<IPixProvider> Provider, CancellationToken Token, Guid OperacaoId, Guid LeaseId);
+        PagamentoPixEnvioService Service, PagamentoPix Pagamento, Mock<IPagamentoPixRepository> Pagamentos,
+        Mock<IPagamentoPixEnvioStore> Store,
+        Mock<IPixProvider> Provider, CancellationTokenSource CancellationSource, CancellationToken Token,
+        Guid OperacaoId, Guid LeaseId);
 }

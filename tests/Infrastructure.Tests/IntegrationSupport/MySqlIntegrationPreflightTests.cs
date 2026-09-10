@@ -88,7 +88,7 @@ public sealed class MySqlIntegrationPreflightTests
         var casos = arquivos.Sum(arquivo => File.ReadAllText(arquivo).Split("[MySqlIntegrationFact]").Length - 1);
 
         Assert.Equal(13, arquivos.Length);
-        Assert.Equal(105, casos);
+        Assert.Equal(106, casos);
         Assert.All(arquivos, arquivo => Assert.DoesNotContain("[Fact]", File.ReadAllText(arquivo)));
 
         Assert.All(arquivos, arquivo => Assert.Contains(
