@@ -156,33 +156,6 @@ public sealed class PagamentoPixEnvioServiceTests
     }
 
     [Fact]
-    public async Task ProcessarEnvioAsync_QuandoMesmaOperacaoForRecuperada_DeveReutilizarReferenciaIdempotente()
-    {
-        var contexto = CriarContexto();
-        var referencias = new HashSet<string>(StringComparer.Ordinal);
-        contexto.Provider
-            .Setup(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token))
-            .Callback<PixEnvioRequest, CancellationToken>((request, _) => referencias.Add(request.ReferenciaIdempotente))
-            .ReturnsAsync(PixProviderResult.Confirmado());
-        contexto.Store.Setup(x => x.FinalizarEnvioAsync(
-                contexto.Pagamento.Id,
-                contexto.OperacaoId,
-                contexto.LeaseId,
-                ResultadoOperacaoPagamentoPix.Confirmado,
-                null,
-                null,
-                CancellationToken.None))
-            .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(true));
-
-        await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
-        await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
-
-        Assert.Single(referencias);
-        Assert.Contains(contexto.Pagamento.Id.ToString("N"), referencias);
-        contexto.Provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token), Times.Exactly(2));
-    }
-
-    [Fact]
     public async Task ProcessarEnvioAsync_QuandoCanceladoAposResposta_DeveFinalizarAuditoriaComTokenNone()
     {
         var contexto = CriarContexto();

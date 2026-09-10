@@ -51,11 +51,19 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
             var cicloAtual = IdentificarCicloAtual(operacoes, pagamentoPix.QuantidadeTentativas);
             pagamentoPix = pagamentoPix with { Agora = await ObterAgoraAsync(connection, transaction, cancellationToken) };
             var resultadoConclusivo = ObterResultadoConclusivo(cicloAtual);
+            var consultasAbertas = cicloAtual.Consultas
+                .Where(operacao => !operacao.FinishedAt.HasValue)
+                .ToArray();
 
             if (pagamentoPix.EnvioLeaseId.HasValue)
             {
                 if (cicloAtual.Envio.FinishedAt.HasValue)
                     throw new InvalidOperationException("Lease de envio válido requer uma auditoria de envio aberta correspondente.");
+                if (consultasAbertas.Length > 0)
+                {
+                    throw new InvalidOperationException(
+                        "Pagamento Pix possui Envio e Consulta abertos simultaneamente no ciclo atual.");
+                }
 
                 if (LeaseEnvioEstaValido(pagamentoPix))
                 {
@@ -72,9 +80,6 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                     "Envio legado aberto sem lease exige regularização auditada antes da reconciliação.");
             }
 
-            var consultasAbertas = cicloAtual.Consultas
-                .Where(operacao => !operacao.FinishedAt.HasValue)
-                .ToArray();
             if (consultasAbertas.Length > 1)
             {
                 throw new InvalidOperationException(

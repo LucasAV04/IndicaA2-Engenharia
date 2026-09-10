@@ -15,13 +15,16 @@
 - Reconciliação retorna `EnvioEmAndamento` para lease válido e `EnvioPendenteRecuperacao` para lease expirado com Envio aberto; nesses casos não limpa lease, não cria Consulta e não chama provider.
 - Aplicação financeira bloqueia qualquer marcador de lease de Envio, inclusive expirado pendente de recuperação, retornando `RequerReconciliacao` sem mutar auditoria ou valores.
 - Após resposta, exceção ou cancelamento do provider, a finalização usa `CancellationToken.None`; perda de autorização ou falha de persistência permanece explícita e não autoriza reenvio.
-- Testes de envio adaptados ao contrato com token e integrações preparadas para a migration 012.
+- Envio e Consulta simultaneamente abertos no mesmo ciclo agora falham fechados e explicitamente; nenhum lease, auditoria, PagamentoPix ou Cashback é alterado durante a detecção.
+- Envio aberto com resultado ou metadados já preenchidos é inconsistência auditável: não sobrescreve, não apaga e não libera lease. O update de finalização exige metadados persistidos nulos e não usa `COALESCE` inalcançável.
+- A referência usada pelo adapter é documentada pela Efí no endpoint idempotente `PUT /v3/gn/pix/:idEnvio`; o IndicA2 a envia diretamente como segmento `idEnvio`.
+- O teste unitário de retomada artificial foi substituído por integração MySQL com expiração controlada, token antigo rejeitado e provider falso idempotente; testes adicionais cobrem os estados de lease de Envio na reconciliação.
 
 ### Validação
 
 - Build: sucesso, 0 erros, 0 warnings.
 - Testes específicos de `PagamentoPixEnvioService`: 13 aprovados, 0 falhos, 0 ignorados.
-- Suíte rápida sem MySQL/Efí: 468 aprovados, 0 falhos, 0 ignorados. As 106 integrações MySQL permaneceram excluídas por filtro e não foram declaradas aprovadas.
+- Suíte rápida sem MySQL/Efí: 467 aprovados, 0 falhos, 0 ignorados. As 110 integrações MySQL permaneceram excluídas por filtro e não foram declaradas aprovadas.
 - Sem `INDICA2_TEST_MYSQL_CONNECTION`, as integrações MySQL desta etapa não foram executadas e não são declaradas aprovadas. Não houve Efí real, OAuth real ou Pix real.
 
 ### Escopo

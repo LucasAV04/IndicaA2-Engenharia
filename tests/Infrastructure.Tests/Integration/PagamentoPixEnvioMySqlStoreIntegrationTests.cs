@@ -250,6 +250,59 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         Assert.Single(operacoes);
     }
 
+    [MySqlIntegrationFact]
+    public async Task ProcessarEnvioAsync_QuandoLeaseExpirar_DeveReutilizarIdEnvioERejeitarExecutorAntigo()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var store = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+        var primeira = await store.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        var provider = new PixProviderIdempotenteFake();
+
+        await provider.EnviarAsync(new PixEnvioRequest(
+            pagamentoPix.Id,
+            pagamentoPix.Valor,
+            pagamentoPix.TipoChavePix,
+            pagamentoPix.ChavePix,
+            primeira.ReferenciaIdempotente!));
+        await ExpirarLeaseEnvioAsync(pagamentoPix.Id, primeira.LeaseId!.Value);
+
+        var recuperada = await CriarOrquestrador(provider).ProcessarEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        var finalizacaoAntiga = await store.FinalizarEnvioAsync(
+            pagamentoPix.Id,
+            primeira.OperacaoPagamentoPixId!.Value,
+            primeira.LeaseId.Value,
+            ResultadoOperacaoPagamentoPix.Confirmado,
+            "executor-antigo",
+            null,
+            CancellationToken.None);
+
+        Assert.True(recuperada.EnvioExecutado);
+        Assert.Equal(2, provider.QuantidadeEnvios);
+        Assert.Equal(1, provider.QuantidadeEfeitosLogicos);
+        Assert.Equal(primeira.ReferenciaIdempotente, provider.Referencias.Single());
+        Assert.False(finalizacaoAntiga.Finalizada);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task TentarPrepararEnvioAsync_QuandoEnvioEConsultaEstiveremAbertos_DeveFalharSemMutacao()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var store = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+        var primeira = await store.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        var operacoes = new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory);
+        await operacoes.AdicionarAsync(OperacaoPagamentoPix.IniciarConsulta(pagamentoPix.Id), CancellationToken.None);
+        var leaseAntes = await ObterLeaseEnvioAsync(pagamentoPix.Id);
+
+        var excecao = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None));
+
+        Assert.Contains("Envio e Consulta abertos simultaneamente", excecao.Message);
+        Assert.Equal(leaseAntes, await ObterLeaseEnvioAsync(pagamentoPix.Id));
+        Assert.Equal(2, (await operacoes.ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None)).Count);
+    }
+
     private async Task<(Guid? LeaseId, DateTime? ExpiraEm, DateTime Agora)> ObterLeaseEnvioAsync(Guid pagamentoPixId)
     {
         await using var connection = fixture.ConnectionFactory.Create();
@@ -297,6 +350,26 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         public Task<PixProviderResult> ConsultarAsync(
             PixConsultaRequest request,
             CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class PixProviderIdempotenteFake : IPixProvider
+    {
+        private readonly HashSet<string> _referencias = new(StringComparer.Ordinal);
+        private int _quantidadeEnvios;
+
+        public int QuantidadeEnvios => _quantidadeEnvios;
+        public int QuantidadeEfeitosLogicos => _referencias.Count;
+        public IReadOnlyCollection<string> Referencias => _referencias;
+
+        public Task<PixProviderResult> EnviarAsync(PixEnvioRequest request, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _quantidadeEnvios);
+            _referencias.Add(request.ReferenciaIdempotente);
+            return Task.FromResult(PixProviderResult.Confirmado());
+        }
+
+        public Task<PixProviderResult> ConsultarAsync(PixConsultaRequest request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 }

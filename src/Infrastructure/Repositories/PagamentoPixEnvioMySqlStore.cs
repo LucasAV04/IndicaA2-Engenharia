@@ -275,7 +275,8 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
         if (operacoes.Any(operacao =>
                 operacao.Tipo == TipoOperacaoPagamentoPix.Consulta && !operacao.FinishedAt.HasValue))
         {
-            return PreparacaoEnvioPagamentoPixResult.NaoAdquirido();
+            throw new InvalidOperationException(
+                "Pagamento Pix possui Envio e Consulta abertos simultaneamente no ciclo atual.");
         }
 
         if (!pagamento.EnvioLeaseId.HasValue || !pagamento.EnvioLeaseExpiraEm.HasValue)
@@ -348,8 +349,8 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
         const string sql = """
             UPDATE operacoes_pagamento_pix
             SET resultado = @resultado,
-                identificador_provider = COALESCE(NULLIF(@identificadorProvider, ''), identificador_provider),
-                codigo = COALESCE(NULLIF(@codigo, ''), codigo),
+                identificador_provider = @identificadorProvider,
+                codigo = @codigo,
                 finished_at = GREATEST(started_at, UTC_TIMESTAMP(6)),
                 updated_at = GREATEST(started_at, UTC_TIMESTAMP(6))
             WHERE id = @id

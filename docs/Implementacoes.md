@@ -18,14 +18,24 @@ Expiração não autoriza nova tentativa. Enquanto o lease de Envio estiver vál
 
 Depois de uma resposta, exceção ou cancelamento do provider, a finalização auditável usa `CancellationToken.None`: o token original só controla a preparação e a chamada externa. A atualização condicional valida operação, pagamento, tipo, tentativa, referência, abertura e timestamps persistidos antes de gravar resultado e metadados; inconsistências falham fechadas e fazem rollback. Se essa persistência falhar, a falha permanece explícita e recuperável após a expiração. Nenhum caminho desta etapa liquida Cashback, cria nova tentativa, inicia retry automático ou mantém transação aberta durante HTTP.
 
+### Auditorias incompatíveis
+
+Um Envio aberto normal possui somente `resultado = NULL`, `identificador_provider = NULL`, `codigo = NULL` e `finished_at = NULL`. Qualquer valor prévio nesses campos torna a auditoria incompatível: a retomada falha fechada, não apaga nem sobrescreve metadados e não libera o lease. O SQL de finalização de Envio exige que esses campos persistidos sejam nulos; por isso não usa `COALESCE` para simular preservação inalcançável.
+
+`PagamentoPix.Processando` com Envio e Consulta simultaneamente abertos no ciclo atual também é corrupção persistida. Envio e reconciliação lançam erro explícito antes de adquirir, substituir ou liberar leases; a aplicação financeira continua bloqueada sem alterar valores ou auditorias. A recuperação de Envio a partir de Consulta conclusiva do fluxo anterior permanece distinta: ocorre somente na transação de reconciliação válida e copia os metadados conclusivos para o Envio.
+
+### Evidência de idempotência externa
+
+A evidência utilizada é a documentação oficial da Efí: <https://dev.efipay.com.br/docs/api-pix/envio-pagamento-pix/>. Ela define `PUT /v3/gn/pix/:idEnvio` como idempotente, orienta reutilizar o mesmo `idEnvio` após falha de comunicação e afirma que cada identificador representa uma única transação. O adapter atual usa `PUT /v3/gn/pix/{referencia_idempotente}`; testes HTTP simulados confirmam que a referência persistida ocupa diretamente o segmento `idEnvio` da rota.
+
 ### Cobertura e validação
 
 - Os testes de `PagamentoPixEnvioService` verificam referência persistida, ausência de chave Pix no resultado, ausência de atualização financeira pelo serviço, finalização com `CancellationToken.None`, exceção/cancelamento auditados como `Indeterminado`, perda do lease sem reenvio e falha fechada para referência adulterada.
-- As integrações de Envio verificam criação do token, expiração, recuperação da mesma auditoria sem incrementar tentativa nem criar segunda operação, preservação do material criptográfico e limpeza do lease após finalização. A fixture MySQL aplica a migration 012 no banco temporário.
-- Os testes de reconciliação cobrem `EnvioEmAndamento` e `EnvioPendenteRecuperacao`: nos dois casos o provider não é consultado.
+- As integrações de Envio verificam criação do token, expiração, recuperação da mesma auditoria sem incrementar tentativa nem criar segunda operação, idempotência lógica por `idEnvio`, rejeição do executor antigo, preservação do material criptográfico e limpeza do lease após finalização. A fixture MySQL aplica a migration 012 no banco temporário.
+- Os testes de reconciliação cobrem `EnvioEmAndamento` e `EnvioPendenteRecuperacao`: nos dois casos o provider não é consultado nem uma Consulta é criada. As integrações também cobrem a corrupção Envio + Consulta abertos simultaneamente, que agora falha explicitamente sem mutação.
 - Build: sucesso, **0 erros e 0 warnings**.
 - Testes específicos de `PagamentoPixEnvioService`: **13 aprovados**, 0 falhos, 0 ignorados.
-- Suíte rápida sem MySQL e sem Efí externo: **468 aprovados**, 0 falhos, 0 ignorados. As 106 integrações MySQL (as 105 já existentes, mais a cobertura de recuperação idempotente) ficaram excluídas por filtro e não foram declaradas aprovadas.
+- Suíte rápida sem MySQL e sem Efí externo: **467 aprovados**, 0 falhos, 0 ignorados. As 110 integrações MySQL (as 105 já existentes e cinco coberturas adicionadas no PR #32) ficaram excluídas por filtro e não foram declaradas aprovadas.
 - `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível neste processo; portanto, as integrações MySQL desta etapa não foram executadas nem declaradas aprovadas. Não houve Efí real, OAuth real ou envio Pix real.
 
 | Teste anterior | Motivo | Teste substituto |
@@ -34,7 +44,7 @@ Depois de uma resposta, exceção ou cancelamento do provider, a finalização a
 | `ProcessarEnvioAsync_QuandoProviderCancelar_DeveManterAuditoriaAbertaESemRetry` | Cancelamento agora tenta auditar `Indeterminado` pelo proprietário do lease. | `ProcessarEnvioAsync_QuandoProviderForCancelado_DeveRegistrarIndeterminadoESemPagamento` |
 | `ProcessarEnvioAsync_QuandoProviderLancarExcecaoInesperada_DeveManterAuditoriaAberta` | Exceção agora tem finalização auditável condicionada ao token. | `ProcessarEnvioAsync_QuandoProviderFalhar_DeveRegistrarIndeterminadoComTokenNoneEPropagar` |
 | `ProcessarEnvioAsync_QuandoFinalizacaoFalhar_NaoDeveReenviarPix` | A falha agora representa perda explícita de autorização do lease. | `ProcessarEnvioAsync_QuandoFinalizacaoPerderLease_NaoDeveReenviar` |
-| `ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarAuditoriaSemAlterarPagamento` | A finalização passou a ser feita pelo store transacional com lease. | `ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarComMesmoLease`, com asserção de ausência de atualização financeira e de chave Pix no resultado |
+| `ProcessarEnvioAsync_QuandoMesmaOperacaoForRecuperada_DeveReutilizarReferenciaIdempotente` | Mock repetia artificialmente a mesma preparação e o mesmo lease após finalização. | `ProcessarEnvioAsync_QuandoLeaseExpirar_DeveReutilizarIdEnvioERejeitarExecutorAntigo` (MySQL com provider falso idempotente) |
 
 Worker, seleção automática, retry automático, webhook, endpoint de disparo, Efí/OAuth/Pix real, produção e limpeza administrativa de registros legados continuam pendentes.
 
