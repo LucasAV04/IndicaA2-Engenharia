@@ -1,5 +1,41 @@
 # Implementações
 
+## Lease Persistente de Envio Pix — PR #32
+
+**Data:** 2026-09-10
+
+O fluxo de Envio Pix passou a possuir proprietário persistente. Antes desta etapa, a preparação registrava a operação de Envio e liberava a transação antes da chamada ao provider, mas não havia como distinguir o executor ainda ativo de um executor encerrado ou retardatário. Isso permitia que uma reconciliação futura consultasse prematuramente ou que um executor antigo tentasse finalizar uma auditoria já recuperada.
+
+### Política aprovada
+
+**Lease de Envio: 5 minutos, medidos pelo horário do MySQL.** A migration `012_add_envio_lease_pagamentos_pix.sql` adiciona somente `envio_lease_id` e `envio_lease_expira_em` em `pagamentos_pix`. Não há índice novo porque esta etapa não introduz seleção automática de candidatos. O script contém UP executável, DOWN comentado e a orientação de interromper executores antigos antes de aplicar ou reverter; não há backfill nem execução no startup.
+
+Na preparação, a mesma transação bloqueia primeiro `pagamentos_pix`, consulta `UTC_TIMESTAMP(6)` após o lock, valida leases e auditoria, gera token opaco, atualiza `Processando`, incrementa a tentativa e cria o único Envio aberto. O provider só é chamado após o commit. A finalização bloqueia a mesma ordem e a auditoria, reavalia o horário MySQL, exige token e prazo válidos, grava resultado/metadados e limpa o lease na mesma transação. Token inválido, expirado ou de executor antigo não altera auditoria, PagamentoPix ou Cashback.
+
+Expiração não autoriza novo envio. Enquanto o lease de Envio estiver válido, a reconciliação retorna operação em andamento sem consultar provider e a aplicação financeira retorna `RequerReconciliacao`. Depois da expiração, somente a reconciliação pode invalidar transacionalmente o token antigo, usando a mesma referência idempotente e sem criar novo Envio. Envio legado aberto sem lease continua sendo inconsistência que exige regularização auditada separada.
+
+Exceção ou cancelamento do provider tenta finalizar o Envio como `Indeterminado` com o token válido e `CancellationToken.None`; se a persistência dessa auditoria falhar, a falha permanece explícita e recuperável após a expiração. Nenhum caminho desta etapa liquida Cashback, envia novamente, inicia retry automático ou mantém transação aberta durante HTTP.
+
+### Cobertura e validação
+
+- Os testes de `PagamentoPixEnvioService` foram adaptados ao contrato com token: resposta do provider finaliza usando o mesmo lease; exceção e cancelamento registram `Indeterminado`; perda do lease não reenvia Pix; cancelamento antes da preparação não chama provider.
+- As integrações de Envio passaram a verificar criação do token e expiração, preservação do material criptográfico e limpeza do lease após finalização. A fixture MySQL aplica a migration 012 no banco temporário.
+- Build: sucesso, **0 erros e 0 warnings**.
+- Testes específicos de Envio, reconciliação e aplicação: **45 aprovados**, 0 falhos, 0 ignorados.
+- Suíte rápida sem MySQL e sem Efí externo: **463 aprovados**, 0 falhos, 0 ignorados.
+- `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível neste processo; portanto, as integrações MySQL desta etapa não foram executadas nem declaradas aprovadas. Não houve Efí real, OAuth real ou envio Pix real.
+
+| Teste anterior | Motivo | Teste substituto |
+|---|---|---|
+| `ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarAuditoriaSemAlterarPagamento` | A finalização genérica não é mais segura sem token. | `ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarComMesmoLease` |
+| `ProcessarEnvioAsync_QuandoProviderCancelar_DeveManterAuditoriaAbertaESemRetry` | Cancelamento agora tenta auditar `Indeterminado` pelo proprietário do lease. | `ProcessarEnvioAsync_QuandoProviderForCancelado_DeveRegistrarIndeterminadoESemPagamento` |
+| `ProcessarEnvioAsync_QuandoProviderLancarExcecaoInesperada_DeveManterAuditoriaAberta` | Exceção agora tem finalização auditável condicionada ao token. | `ProcessarEnvioAsync_QuandoProviderFalhar_DeveRegistrarIndeterminadoComTokenNoneEPropagar` |
+| `ProcessarEnvioAsync_QuandoFinalizacaoFalhar_NaoDeveReenviarPix` | A falha agora representa perda explícita de autorização do lease. | `ProcessarEnvioAsync_QuandoFinalizacaoPerderLease_NaoDeveReenviar` |
+
+Worker, seleção automática, retry automático, webhook, endpoint de disparo, Efí/OAuth/Pix real, produção e limpeza administrativa de registros legados continuam pendentes.
+
+O PR #31 foi concluído por **Squash and merge** no commit `6c259642c0c95764ff1d73aa8640b6b946861ddf`.
+
 ## Validação Definitiva — PR #31
 
 **Data:** 2026-09-09

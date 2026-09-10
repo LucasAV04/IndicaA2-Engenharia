@@ -107,6 +107,7 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
                     , "database/009_create_pagamentos_pix.sql"
                     , "database/010_create_operacoes_pagamento_pix.sql"
                     , "database/011_add_reconciliacao_lease_pagamentos_pix.sql"
+                    , "database/012_add_envio_lease_pagamentos_pix.sql"
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Combine(raiz, script));

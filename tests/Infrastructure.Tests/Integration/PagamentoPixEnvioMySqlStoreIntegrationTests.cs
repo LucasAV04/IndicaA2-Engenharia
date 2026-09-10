@@ -3,6 +3,7 @@ using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
 using Domain.Interfaces;
+using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Infrastructure.Security;
 using MySqlConnector;
@@ -30,6 +31,7 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         var operacao = (await operacaoRepository.ObterPorIdAsync(
             preparacao.OperacaoPagamentoPixId!.Value,
             CancellationToken.None))!;
+        var lease = await ObterLeaseEnvioAsync(pagamentoPix.Id);
         var materialDepois = await ObterMaterialProtegidoAsync(pagamentoPix.Id);
 
         Assert.True(preparacao.Adquirido);
@@ -41,6 +43,9 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         Assert.Equal(1, operacao.NumeroTentativaEnvio);
         Assert.Equal(pagamentoPix.Id.ToString("N"), operacao.ReferenciaIdempotente);
         Assert.False(operacao.FinishedAt.HasValue);
+        Assert.NotNull(preparacao.LeaseId);
+        Assert.Equal(preparacao.LeaseId, lease.LeaseId);
+        Assert.True(lease.ExpiraEm > lease.Agora);
         Assert.Equal(materialAntes, materialDepois);
     }
 
@@ -141,13 +146,15 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         Assert.Single(operacoes);
         Assert.True(operacoes.Single().FinishedAt.HasValue);
         Assert.Equal(ResultadoOperacaoPagamentoPix.Confirmado, operacoes.Single().Resultado);
+        var lease = await ObterLeaseEnvioAsync(pagamentoPix.Id);
+        Assert.Null(lease.LeaseId);
+        Assert.Null(lease.ExpiraEm);
     }
 
     private PagamentoPixEnvioService CriarOrquestrador(IPixProvider provider) =>
         new(
             CriarPagamentoRepository(),
             new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory),
-            new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory),
             provider);
 
     private async Task<PagamentoPix> CriarPagamentoPixPersistidoAsync(
@@ -216,6 +223,21 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
             connection);
         command.Parameters.Add("@id", MySqlDbType.VarChar).Value = pagamentoPixId.ToString();
         return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<(Guid? LeaseId, DateTime? ExpiraEm, DateTime Agora)> ObterLeaseEnvioAsync(Guid pagamentoPixId)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(
+            "SELECT envio_lease_id, envio_lease_expira_em, UTC_TIMESTAMP(6) FROM pagamentos_pix WHERE id = @id;",
+            connection);
+        command.Parameters.Add("@id", MySqlDbType.VarChar).Value = pagamentoPixId.ToString();
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Guid? id = reader.IsDBNull(0) ? null : reader.ObterGuid("envio_lease_id");
+        DateTime? expira = reader.IsDBNull(1) ? null : DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc);
+        return (id, expira, DateTime.SpecifyKind(reader.GetDateTime(2), DateTimeKind.Utc));
     }
 
     private static string CriarChave() =>

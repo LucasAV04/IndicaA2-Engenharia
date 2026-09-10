@@ -120,7 +120,8 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             SELECT id, cashback_id, usuario_beneficiario_id, valor, status, quantidade_tentativas,
                    tipo_chave_pix, chave_pix_ciphertext, chave_pix_nonce, chave_pix_tag,
                    encryption_version, created_at, updated_at,
-                   reconciliacao_lease_id, reconciliacao_lease_expira_em
+                   reconciliacao_lease_id, reconciliacao_lease_expira_em,
+                   envio_lease_id, envio_lease_expira_em
             FROM pagamentos_pix
             WHERE id = @id
             FOR UPDATE;
@@ -139,7 +140,9 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
             ObterEnum<StatusPagamentoPix>(reader, "status"),
             reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")),
             !reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_id")) ||
-            !reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_expira_em")),
+            !reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_expira_em")) ||
+            !reader.IsDBNull(reader.GetOrdinal("envio_lease_id")) ||
+            !reader.IsDBNull(reader.GetOrdinal("envio_lease_expira_em")),
             _materializador.Materializar(reader));
     }
 
