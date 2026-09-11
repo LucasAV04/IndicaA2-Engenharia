@@ -23,8 +23,9 @@
 ### Validação
 
 - Build: sucesso, 0 erros, 0 warnings.
-- Testes específicos de `PagamentoPixEnvioService`: 13 aprovados, 0 falhos, 0 ignorados.
-- Suíte rápida sem MySQL/Efí: 467 aprovados, 0 falhos, 0 ignorados. As 110 integrações MySQL permaneceram excluídas por filtro e não foram declaradas aprovadas.
+- Seleção sem MySQL de Envio, reconciliação, contrato do provider e adapter Efí: 70 aprovados, 0 falhos, 0 ignorados (46 em `Application.Tests` e 24 em `Infrastructure.Tests`).
+- Suíte rápida sem MySQL/Efí: 467 aprovados, 0 falhos, 0 ignorados.
+- A cobertura MySQL foi ampliada para 118 casos em 13 classes, incluindo interleaving de recuperação do Envio, bloqueio da aplicação por lease de Envio, preservação de lease na reconciliação, rollback da finalização e auditoria adulterada. Essas novas integrações permanecem pendentes de execução controlada; não são declaradas aprovadas nesta etapa.
 - Sem `INDICA2_TEST_MYSQL_CONNECTION`, as integrações MySQL desta etapa não foram executadas e não são declaradas aprovadas. Não houve Efí real, OAuth real ou Pix real.
 
 ### Escopo
