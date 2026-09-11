@@ -1,5 +1,82 @@
 # Implementações
 
+## Lease Persistente de Envio Pix — PR #32
+
+**Data:** 2026-09-10
+
+O fluxo de Envio Pix passou a possuir proprietário persistente. Antes desta etapa, a preparação registrava a operação de Envio e liberava a transação antes da chamada ao provider, mas não havia como distinguir o executor ainda ativo de um executor encerrado ou retardatário. Isso permitia que uma reconciliação futura consultasse prematuramente ou que um executor antigo tentasse finalizar uma auditoria já recuperada.
+
+### Política aprovada
+
+**Lease de Envio: 5 minutos, medidos pelo horário do MySQL.** A migration `012_add_envio_lease_pagamentos_pix.sql` adiciona somente `envio_lease_id` e `envio_lease_expira_em` em `pagamentos_pix`. Não há índice novo porque esta etapa não introduz seleção automática de candidatos. O script contém UP executável, DOWN comentado e a orientação de interromper executores antigos antes de aplicar ou reverter; não há backfill nem execução no startup.
+
+Na preparação, a mesma transação bloqueia primeiro `pagamentos_pix`, consulta `UTC_TIMESTAMP(6)` após o lock, valida leases e auditoria, gera token opaco, atualiza `Processando`, incrementa a tentativa e cria o único Envio aberto. O provider só é chamado após o commit. A finalização bloqueia a mesma ordem e a auditoria, reavalia o horário MySQL, exige token e prazo válidos, grava resultado/metadados e limpa o lease na mesma transação. Token inválido, expirado ou de executor antigo não altera auditoria, PagamentoPix ou Cashback.
+
+O lease do MySQL protege a coordenação persistida, mas isoladamente não impede que um executor antigo, pausado antes da chamada HTTP, retome depois de expirar. A recuperação externa é segura porque a Efí documenta que o mesmo `idEnvio` representa uma única transação, inclusive quando reenviado após erro de comunicação. No IndicA2, `operacoes_pagamento_pix.referencia_idempotente` é a chave persistida e o adapter a envia diretamente como `idEnvio`; a retomada valida e reutiliza exatamente esse valor, o mesmo `OperacaoPagamentoPixId` e a mesma tentativa.
+
+Expiração não autoriza nova tentativa. Enquanto o lease de Envio estiver válido, a reconciliação retorna `EnvioEmAndamento`; com lease expirado e Envio aberto, retorna `EnvioPendenteRecuperacao`, sem limpar lease, criar Consulta, consultar provider ou alterar a auditoria. Uma invocação posterior do serviço de Envio assume um novo token no MySQL e recupera a mesma operação lógica. A aplicação financeira retorna `RequerReconciliacao` tanto para lease de Envio válido quanto expirado, Envio aberto, lease de reconciliação ou Consulta aberta.
+
+Um Envio legado aberto é aquele sem `envio_lease_id`, sem `envio_lease_expira_em` e sem `finished_at`. Após a interrupção dos executores anteriores à migration 012, ele não é reenviado pelo fluxo de Envio: somente a reconciliação pode resolvê-lo. Com evidência conclusiva do ciclo atual, a reconciliação finaliza a mesma auditoria preservando resultado, `identificador_provider` e `codigo`, sem HTTP. Sem evidência, ela cria ou retoma uma única Consulta e chama exclusivamente `ConsultarAsync`.
+
+Depois de uma resposta, exceção ou cancelamento do provider, a finalização auditável usa `CancellationToken.None`: o token original só controla a preparação e a chamada externa. A atualização condicional valida operação, pagamento, tipo, tentativa, referência, abertura e timestamps persistidos antes de gravar resultado e metadados; inconsistências falham fechadas e fazem rollback. Se essa persistência falhar, a falha permanece explícita e recuperável após a expiração. Nenhum caminho desta etapa liquida Cashback, cria nova tentativa, inicia retry automático ou mantém transação aberta durante HTTP.
+
+### Auditorias incompatíveis
+
+Um Envio aberto normal possui somente `resultado = NULL`, `identificador_provider = NULL`, `codigo = NULL` e `finished_at = NULL`. Qualquer valor prévio nesses campos torna a auditoria incompatível: a retomada falha fechada, não apaga nem sobrescreve metadados e não libera o lease. O SQL de finalização de Envio exige que esses campos persistidos sejam nulos; por isso não usa `COALESCE` para simular preservação inalcançável.
+
+`PagamentoPix.Processando` com Envio e Consulta simultaneamente abertos no ciclo atual também é corrupção persistida. Envio e reconciliação lançam erro explícito antes de adquirir, substituir ou liberar leases; a aplicação financeira continua bloqueada sem alterar valores ou auditorias. A recuperação de Envio a partir de Consulta conclusiva do fluxo anterior permanece distinta: ocorre somente na transação de reconciliação válida e copia os metadados conclusivos para o Envio.
+
+### Evidência de idempotência externa
+
+A evidência utilizada é a documentação oficial da Efí: <https://dev.efipay.com.br/docs/api-pix/envio-pagamento-pix/>. Ela define `PUT /v3/gn/pix/:idEnvio` como idempotente, orienta reutilizar o mesmo `idEnvio` após falha de comunicação e afirma que cada identificador representa uma única transação. O adapter atual usa `PUT /v3/gn/pix/{referencia_idempotente}`; testes HTTP simulados confirmam que a referência persistida ocupa diretamente o segmento `idEnvio` da rota.
+
+### Cobertura e validação
+
+- Os testes de `PagamentoPixEnvioService` verificam referência persistida, ausência de chave Pix no resultado, ausência de atualização financeira pelo serviço, finalização com `CancellationToken.None`, exceção/cancelamento auditados como `Indeterminado`, perda do lease sem reenvio e falha fechada para referência adulterada.
+- As integrações de Envio verificam criação do token, expiração, recuperação da mesma auditoria sem incrementar tentativa nem criar segunda operação, idempotência lógica por `idEnvio`, rejeição do executor antigo, preservação do material criptográfico e limpeza do lease após finalização. O executor bloqueado é sempre liberado em `finally`, tanto o bloqueio interno quanto o aguardo da tarefa possuem timeout defensivo e toda tarefa iniciada é observada. A cobertura usa snapshots SQL brutos para auditorias propositalmente inválidas e comprova que a expiração induzida por trigger é revertida integralmente. A fixture MySQL aplica a migration 012 no banco temporário.
+- Os testes de reconciliação cobrem `EnvioEmAndamento` e `EnvioPendenteRecuperacao`: nos dois casos o provider não é consultado nem uma Consulta é criada e o lease de Envio permanece intacto. Leases parciais ou simultâneos são validados separadamente pelos stores de Envio e Reconciliação e são preservados para regularização auditada; não são limpos nem substituídos. As integrações também cobrem a corrupção Envio + Consulta abertos simultaneamente, que agora falha explicitamente sem mutação.
+- A aplicação financeira possui integrações específicas para lease de Envio válido e expirado: ambas retornam `RequerReconciliacao` e preservam PagamentoPix, Cashback, auditoria, token e expiração.
+- Build: sucesso, **0 erros e 0 warnings**.
+- Seleção sem MySQL de Envio, reconciliação, contrato do provider e adapter Efí: **70 aprovados**, 0 falhos, 0 ignorados (46 em `Application.Tests` e 24 em `Infrastructure.Tests`).
+- Suíte rápida sem MySQL e sem Efí externo: **467 aprovados**, 0 falhos, 0 ignorados.
+- A contagem estática atual é de **120 integrações MySQL em 13 classes**. A validação MySQL destas novas coberturas permanece pendente nesta etapa; elas não são declaradas aprovadas sem a execução controlada no banco temporário. Nenhuma migration foi executada nesta validação estática.
+- `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível neste processo; portanto, as integrações MySQL desta etapa não foram executadas nem declaradas aprovadas. Não houve Efí real, OAuth real ou envio Pix real.
+
+| Teste anterior | Motivo | Teste substituto |
+|---|---|---|
+| `ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarAuditoriaSemAlterarPagamento` | A finalização genérica não é mais segura sem token. | `ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarComMesmoLease` |
+| `ProcessarEnvioAsync_QuandoProviderCancelar_DeveManterAuditoriaAbertaESemRetry` | Cancelamento agora tenta auditar `Indeterminado` pelo proprietário do lease. | `ProcessarEnvioAsync_QuandoProviderForCancelado_DeveRegistrarIndeterminadoESemPagamento` |
+| `ProcessarEnvioAsync_QuandoProviderLancarExcecaoInesperada_DeveManterAuditoriaAberta` | Exceção agora tem finalização auditável condicionada ao token. | `ProcessarEnvioAsync_QuandoProviderFalhar_DeveRegistrarIndeterminadoComTokenNoneEPropagar` |
+| `ProcessarEnvioAsync_QuandoFinalizacaoFalhar_NaoDeveReenviarPix` | A falha agora representa perda explícita de autorização do lease. | `ProcessarEnvioAsync_QuandoFinalizacaoPerderLease_NaoDeveReenviar` |
+| `ProcessarEnvioAsync_QuandoMesmaOperacaoForRecuperada_DeveReutilizarReferenciaIdempotente` | Mock repetia artificialmente a mesma preparação e o mesmo lease após finalização. | `ProcessarEnvioAsync_QuandoLeaseExpirar_DeveReutilizarIdEnvioERejeitarExecutorAntigo` (MySQL com provider falso idempotente) |
+
+| Garantia | Método de teste | Tipo |
+|---|---|---|
+| Executor antigo perde autorização após recuperação | `ProcessarEnvioAsync_QuandoLeaseExpirar_DeveReutilizarIdEnvioERejeitarExecutorAntigo` | MySQL |
+| Aplicação bloqueia lease de Envio válido | `AplicarAsync_QuandoLeaseDeEnvioForValido_DeveExigirReconciliacaoSemMutacao` | MySQL |
+| Aplicação bloqueia lease de Envio expirado | `AplicarAsync_QuandoLeaseDeEnvioExpirar_DeveExigirReconciliacaoSemMutacao` | MySQL |
+| Reconciliação preserva lease válido | `ReconciliarAsync_QuandoLeaseDeEnvioForValido_DeveRetornarEnvioEmAndamentoSemConsulta` | MySQL |
+| Reconciliação preserva lease expirado | `ReconciliarAsync_QuandoLeaseDeEnvioExpirar_DeveIndicarRecuperacaoSemConsulta` | MySQL |
+| Envio e Consulta abertos são inconsistência explícita | `TentarPrepararEnvioAsync_QuandoEnvioEConsultaEstiveremAbertos_DeveFalharSemMutacao` e `ReconciliarAsync_QuandoEnvioEConsultaAbertosComLeaseDeEnvio_DeveFalharSemMutacao` | MySQL |
+| Token incorreto ou lease vencido não finaliza | `FinalizarEnvioAsync_QuandoTokenForIncorretoOuLeaseExpirar_DevePreservarAuditoriaAberta` | MySQL |
+| Falha durante finalização reverte | `FinalizarEnvioAsync_QuandoAuditoriaOuLiberacaoDoLeaseFalhar_DeveReverterIntegralmente` e `FinalizarEnvioAsync_QuandoLeaseExpirarDuranteFinalizacao_DeveReverterIntegralmente` | MySQL |
+| Auditoria adulterada falha fechada | `FinalizarEnvioAsync_QuandoAuditoriaAbertaForAdulterada_DeveFalharFechadoEPreservarDados` | MySQL |
+| Leases incompatíveis bloqueiam a reconciliação | `ReconciliarAsync_QuandoLeasesForemParciaisOuSimultaneos_DeveFalharFechadoSemCriarConsulta` | MySQL |
+
+Worker, seleção automática, retry automático, webhook, endpoint de disparo, Efí/OAuth/Pix real, produção e limpeza administrativa de registros legados continuam pendentes.
+
+### Correção após execução MySQL interrompida
+
+Uma execução MySQL intermediária foi interrompida com 16 erros antes de completar a validação. O diagnóstico mostrou que `PrepararConsultaAsync` rejeitava o Envio legado aberto antes de avaliar a Consulta aberta, o lease de reconciliação ou a evidência conclusiva do ciclo; por isso testes válidos de recuperação e concorrência não chegavam ao provider.
+
+A correção preserva a falha fechada do fluxo de Envio para esse registro legado, mas permite que a reconciliação o trate exclusivamente por Consulta. Consulta ativa retorna `ConsultaEmAndamento`; Consulta abandonada com lease expirado recebe novo token e reutiliza a mesma auditoria; evidência conclusiva recupera o mesmo Envio sem chamar provider e sem alterar tentativa ou referência. A aplicação financeira permanece bloqueada enquanto o Envio, Consulta ou respectivos leases estiverem pendentes.
+
+Foram reforçados os testes de recuperação do Envio a partir de evidência, de Consulta ativa e expirada, de bloqueio financeiro e de conflito conclusivo. O teste concorrente de duas reconciliações agora libera o provider no `finally`, observa falha antecipada da primeira tarefa e usa timeout defensivo de dez segundos. `TentarPrepararEnvioAsync_QuandoEnvioLegadoAbertoNaoTiverLease_DeveFalharSemReenviar` confirma que o fluxo de Envio não cria nova tentativa nem nova auditoria para o registro legado.
+
+O resultado interrompido não é aprovação. Nesta correção, o build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação registraram 35 aprovados; o preflight MySQL registrou 6 aprovados; e a suíte rápida registrou 467 aprovados, 0 falhos e 0 ignorados. A execução controlada das **120 integrações MySQL**, incluindo a migration 012, continua pendente para validar esta correção. Não houve Efí real, OAuth real ou envio Pix real nesta etapa.
+
+O PR #31 foi concluído por **Squash and merge** no commit `6c259642c0c95764ff1d73aa8640b6b946861ddf`.
+
 ## Validação Definitiva — PR #31
 
 **Data:** 2026-09-09

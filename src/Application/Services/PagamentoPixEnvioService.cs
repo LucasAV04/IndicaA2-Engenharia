@@ -6,6 +6,7 @@ using Domain.Entities;
 using Domain.Enums;
 using Domain.Exceptions;
 using Domain.Interfaces;
+using System.Runtime.ExceptionServices;
 
 namespace Application.Services;
 
@@ -17,18 +18,15 @@ public sealed class PagamentoPixEnvioService : IPagamentoPixEnvioService
 {
     private readonly IPagamentoPixRepository _pagamentoPixRepository;
     private readonly IPagamentoPixEnvioStore _pagamentoPixEnvioStore;
-    private readonly IOperacaoPagamentoPixRepository _operacaoPagamentoPixRepository;
     private readonly IPixProvider _pixProvider;
 
     public PagamentoPixEnvioService(
         IPagamentoPixRepository pagamentoPixRepository,
         IPagamentoPixEnvioStore pagamentoPixEnvioStore,
-        IOperacaoPagamentoPixRepository operacaoPagamentoPixRepository,
         IPixProvider pixProvider)
     {
         _pagamentoPixRepository = pagamentoPixRepository;
         _pagamentoPixEnvioStore = pagamentoPixEnvioStore;
-        _operacaoPagamentoPixRepository = operacaoPagamentoPixRepository;
         _pixProvider = pixProvider;
     }
 
@@ -52,31 +50,42 @@ public sealed class PagamentoPixEnvioService : IPagamentoPixEnvioService
 
         var operacaoId = preparacao.OperacaoPagamentoPixId!.Value;
         var tentativa = preparacao.NumeroTentativaEnvio!.Value;
+        var leaseId = preparacao.LeaseId!.Value;
+        var referenciaIdempotente = preparacao.ReferenciaIdempotente
+            ?? throw new InvalidOperationException("A preparação persistida não informou a referência idempotente do envio.");
         var pagamentoPix = await ObterPagamentoPixOuLancarExceptionAsync(pagamentoPixId, cancellationToken);
-        var operacao = await _operacaoPagamentoPixRepository.ObterPorIdAsync(operacaoId, cancellationToken)
-            ?? throw new InvalidOperationException("A operação de envio preparada não foi encontrada para auditoria.");
+        ValidarPreparacaoPersistida(pagamentoPix, tentativa, referenciaIdempotente);
 
-        ValidarPreparacaoPersistida(pagamentoPix, operacao, tentativa);
-
-        var providerResult = await _pixProvider.EnviarAsync(
-            new PixEnvioRequest(
-                pagamentoPix.Id,
-                pagamentoPix.Valor,
-                pagamentoPix.TipoChavePix,
-                pagamentoPix.ChavePix),
-            cancellationToken);
+        PixProviderResult providerResult;
+        try
+        {
+            providerResult = await _pixProvider.EnviarAsync(
+                new PixEnvioRequest(
+                    pagamentoPix.Id,
+                    pagamentoPix.Valor,
+                    pagamentoPix.TipoChavePix,
+                    pagamentoPix.ChavePix,
+                    referenciaIdempotente),
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            await RegistrarIndeterminadoOuLancarAsync(pagamentoPixId, operacaoId, leaseId, exception);
+            ExceptionDispatchInfo.Capture(exception).Throw();
+            throw;
+        }
 
         var resultadoOperacao = MapearResultado(providerResult.Status);
-        operacao.Finalizar(
+        var finalizacao = await _pagamentoPixEnvioStore.FinalizarEnvioAsync(
+            pagamentoPixId,
+            operacaoId,
+            leaseId,
             resultadoOperacao,
             providerResult.IdentificadorProvider,
-            providerResult.Codigo);
-
-        if (!await _operacaoPagamentoPixRepository.FinalizarAsync(operacao, cancellationToken))
-        {
-            throw new InvalidOperationException(
-                "A resposta do provider foi obtida, mas a finalização da auditoria não pôde ser persistida.");
-        }
+            providerResult.Codigo,
+            CancellationToken.None);
+        if (!finalizacao.Finalizada)
+            throw new InvalidOperationException("A resposta do provider foi obtida, mas o lease de envio não autorizou a finalização da auditoria.");
 
         return ResultadoEnvioPagamentoPix.Executado(
             pagamentoPixId,
@@ -97,18 +106,49 @@ public sealed class PagamentoPixEnvioService : IPagamentoPixEnvioService
 
     private static void ValidarPreparacaoPersistida(
         PagamentoPix pagamentoPix,
-        OperacaoPagamentoPix operacao,
-        int tentativa)
+        int tentativa,
+        string referenciaIdempotente)
     {
         if (pagamentoPix.Status != StatusPagamentoPix.Processando ||
             pagamentoPix.QuantidadeTentativas != tentativa ||
-            operacao.PagamentoPixId != pagamentoPix.Id ||
-            operacao.TipoOperacao != TipoOperacaoPagamentoPix.Envio ||
-            operacao.NumeroTentativaEnvio != tentativa ||
-            operacao.FinishedAt.HasValue)
+            !string.Equals(
+                referenciaIdempotente,
+                PixReferenciaIdempotente.Criar(pagamentoPix.Id),
+                StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 "A preparação persistida do envio Pix está inconsistente e requer reconciliação.");
+        }
+    }
+
+    private async Task RegistrarIndeterminadoOuLancarAsync(
+        Guid pagamentoPixId,
+        Guid operacaoEnvioId,
+        Guid leaseId,
+        Exception excecaoOriginal)
+    {
+        try
+        {
+            var finalizacao = await _pagamentoPixEnvioStore.FinalizarEnvioAsync(
+                pagamentoPixId,
+                operacaoEnvioId,
+                leaseId,
+                ResultadoOperacaoPagamentoPix.Indeterminado,
+                null,
+                null,
+                CancellationToken.None);
+            if (!finalizacao.Finalizada)
+            {
+                throw new InvalidOperationException(
+                    "A falha do provider não pôde ser auditada porque o lease de envio não pertence mais ao executor.",
+                    excecaoOriginal);
+            }
+        }
+        catch (Exception exception) when (!ReferenceEquals(exception, excecaoOriginal))
+        {
+            throw new InvalidOperationException(
+                "A falha do provider ocorreu e a persistência da auditoria de envio também falhou.",
+                new AggregateException(excecaoOriginal, exception));
         }
     }
 

@@ -222,6 +222,18 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
     }
 
     [MySqlIntegrationFact]
+    public async Task AplicarAsync_QuandoLeaseDeEnvioForValido_DeveExigirReconciliacaoSemMutacao()
+    {
+        await ValidarBloqueioPorLeaseDeEnvioAsync(expirado: false);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task AplicarAsync_QuandoLeaseDeEnvioExpirar_DeveExigirReconciliacaoSemMutacao()
+    {
+        await ValidarBloqueioPorLeaseDeEnvioAsync(expirado: true);
+    }
+
+    [MySqlIntegrationFact]
     public async Task AplicarAsync_QuandoEnvioAbertoComConsultaConclusiva_DeveExigirReconciliacao()
     {
         await fixture.LimparDadosAsync();
@@ -275,6 +287,45 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
             CriarPagamentoRepository(),
             CriarCashbackRepository(),
             new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory, new AesGcmDadosPixProtector(CriarChave())));
+
+    private async Task ValidarBloqueioPorLeaseDeEnvioAsync(bool expirado)
+    {
+        await fixture.LimparDadosAsync();
+        var contexto = await CriarContextoPersistidoAsync(ResultadoOperacaoPagamentoPix.Confirmado);
+        var leaseId = Guid.NewGuid();
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using (var command = new MySqlCommand("""
+            UPDATE operacoes_pagamento_pix
+            SET resultado = NULL, identificador_provider = NULL, codigo = NULL, finished_at = NULL
+            WHERE pagamento_pix_id = @id;
+            UPDATE pagamentos_pix
+            SET envio_lease_id = @leaseId,
+                envio_lease_expira_em = TIMESTAMPADD(SECOND, @segundos, UTC_TIMESTAMP(6))
+            WHERE id = @id;
+            """, connection))
+        {
+            command.Parameters.AddWithValue("@id", contexto.PagamentoPix.Id.ToString());
+            command.Parameters.AddWithValue("@leaseId", leaseId.ToString());
+            command.Parameters.AddWithValue("@segundos", expirado ? -1 : 300);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var auditoriaAntes = await ObterSnapshotAuditoriaAsync(contexto.PagamentoPix.Id);
+        var cashbackAntes = await ObterSnapshotCashbackAsync(contexto.Cashback.Id);
+        var leaseAntes = await ObterLeaseEnvioAsync(contexto.PagamentoPix.Id);
+
+        var resultado = await CriarService().AplicarAsync(contexto.PagamentoPix.Id, CancellationToken.None);
+
+        Assert.Equal(StatusAplicacaoPagamentoPix.RequerReconciliacao, resultado.Status);
+        Assert.Equal(auditoriaAntes, await ObterSnapshotAuditoriaAsync(contexto.PagamentoPix.Id));
+        Assert.Equal(cashbackAntes, await ObterSnapshotCashbackAsync(contexto.Cashback.Id));
+        Assert.Equal(leaseAntes, await ObterLeaseEnvioAsync(contexto.PagamentoPix.Id));
+        Assert.Equal(StatusPagamentoPix.Processando,
+            (await CriarPagamentoRepository().ObterPorIdAsync(contexto.PagamentoPix.Id, CancellationToken.None))!.Status);
+        Assert.Equal(StatusCashback.Disponivel,
+            (await CriarCashbackRepository().ObterPorIdAsync(contexto.Cashback.Id, CancellationToken.None))!.Status);
+    }
 
     private async Task<ContextoFinanceiro> CriarContextoPersistidoAsync(
         ResultadoOperacaoPagamentoPix resultadoOperacao,
@@ -390,6 +441,21 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
             connection);
         command.Parameters.Add("@id", MySqlDbType.VarChar).Value = pagamentoPixId.ToString();
         return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<(Guid? LeaseId, DateTime? ExpiraEm)> ObterLeaseEnvioAsync(Guid pagamentoPixId)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(
+            "SELECT envio_lease_id, envio_lease_expira_em FROM pagamentos_pix WHERE id = @id;",
+            connection);
+        command.Parameters.Add("@id", MySqlDbType.VarChar).Value = pagamentoPixId.ToString();
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return (
+            reader.IsDBNull(0) ? null : reader.ObterGuid("envio_lease_id"),
+            reader.IsDBNull(1) ? null : DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc));
     }
 
     private async Task<SnapshotCashback> ObterSnapshotCashbackAsync(Guid cashbackId)

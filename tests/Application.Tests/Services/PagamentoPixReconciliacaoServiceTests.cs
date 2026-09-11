@@ -68,6 +68,32 @@ public sealed class PagamentoPixReconciliacaoServiceTests
     }
 
     [Fact]
+    public async Task ReconciliarAsync_QuandoEnvioEstiverEmAndamento_NaoDeveConsultarProvider()
+    {
+        var contexto = CriarContexto();
+        contexto.Store.Setup(value => value.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.EnvioEmAndamento());
+
+        var resultado = await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.Equal(StatusReconciliacaoPagamentoPix.EnvioEmAndamento, resultado.Status);
+        VerificarNenhumaChamadaProvider(contexto);
+    }
+
+    [Fact]
+    public async Task ReconciliarAsync_QuandoEnvioExigirRecuperacaoIdempotente_NaoDeveConsultarProvider()
+    {
+        var contexto = CriarContexto();
+        contexto.Store.Setup(value => value.PrepararConsultaAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoReconciliacaoPagamentoPixResult.EnvioPendenteRecuperacao());
+
+        var resultado = await contexto.Service.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.Equal(StatusReconciliacaoPagamentoPix.EnvioPendenteRecuperacao, resultado.Status);
+        VerificarNenhumaChamadaProvider(contexto);
+    }
+
+    [Fact]
     public async Task ReconciliarAsync_QuandoEvidenciaJaExistir_NaoDeveCriarNovaConsultaNemChamarProvider()
     {
         var contexto = CriarContexto();

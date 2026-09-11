@@ -66,12 +66,14 @@ public sealed class PixProviderContractTests
     public void PixEnvioRequest_NaoDeveExporChavePixNoToString()
     {
         const string chavePix = "indicador-ficticio@exemplo.com";
+        var pagamentoPixId = Guid.NewGuid();
 
         var request = new PixEnvioRequest(
-            Guid.NewGuid(),
+            pagamentoPixId,
             100m,
             TipoChavePix.Email,
-            chavePix);
+            chavePix,
+            PixReferenciaIdempotente.Criar(pagamentoPixId));
 
         Assert.DoesNotContain(chavePix, request.ToString(), StringComparison.Ordinal);
     }
@@ -139,5 +141,10 @@ public sealed class PixProviderContractTests
     }
 
     private static PixEnvioRequest CriarEnvioRequest(Guid pagamentoPixId) =>
-        new(pagamentoPixId, 100m, TipoChavePix.Email, "indicador-ficticio@exemplo.com");
+        new(
+            pagamentoPixId,
+            100m,
+            TipoChavePix.Email,
+            "indicador-ficticio@exemplo.com",
+            PixReferenciaIdempotente.Criar(pagamentoPixId));
 }
