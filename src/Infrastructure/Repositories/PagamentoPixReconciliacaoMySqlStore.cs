@@ -74,12 +74,6 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                 await transaction.CommitAsync(cancellationToken);
                 return PreparacaoReconciliacaoPagamentoPixResult.EnvioPendenteRecuperacao();
             }
-            else if (!cicloAtual.Envio.FinishedAt.HasValue)
-            {
-                throw new InvalidOperationException(
-                    "Envio legado aberto sem lease exige regularização auditada antes da reconciliação.");
-            }
-
             if (consultasAbertas.Length > 1)
             {
                 throw new InvalidOperationException(
@@ -147,6 +141,10 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                     resultadoConclusivo.Value,
                     envioResolvido);
             }
+
+            // Um Envio aberto sem lease é legado. Depois da interrupção dos
+            // executores anteriores à migration 012, ele só pode ser resolvido
+            // por Consulta: nunca é retomado pelo fluxo de Envio.
 
             if (LeaseEstaValido(pagamentoPix))
             {

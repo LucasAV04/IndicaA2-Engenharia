@@ -337,6 +337,39 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
     }
 
     [MySqlIntegrationFact]
+    public async Task TentarPrepararEnvioAsync_QuandoEnvioLegadoAbertoNaoTiverLease_DeveFalharSemReenviar()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var store = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+        var primeira = await store.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using (var command = new MySqlCommand("""
+            UPDATE pagamentos_pix
+            SET envio_lease_id = NULL, envio_lease_expira_em = NULL
+            WHERE id = @id;
+            """, connection))
+        {
+            command.Parameters.AddWithValue("@id", pagamentoPix.Id.ToString());
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var pagamentoAntes = await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id);
+        var operacoesAntes = await ObterOperacoesBrutasAsync(pagamentoPix.Id);
+
+        var excecao = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None));
+
+        Assert.Contains("Envio aberto sem lease persistido", excecao.Message);
+        Assert.Equal(pagamentoAntes, await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id));
+        Assert.Equal(operacoesAntes, await ObterOperacoesBrutasAsync(pagamentoPix.Id));
+        Assert.Equal(primeira.OperacaoPagamentoPixId,
+            Assert.Single(await new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory)
+                .ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None)).Id);
+    }
+
+    [MySqlIntegrationFact]
     public async Task TentarPrepararEnvioAsync_QuandoLeaseParcialOuSimultaneoExistir_DeveFalharFechado()
     {
         foreach (var (envioId, envioExpira, reconciliacaoId, reconciliacaoExpira) in new[]

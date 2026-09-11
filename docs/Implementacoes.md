@@ -14,7 +14,9 @@ Na preparação, a mesma transação bloqueia primeiro `pagamentos_pix`, consult
 
 O lease do MySQL protege a coordenação persistida, mas isoladamente não impede que um executor antigo, pausado antes da chamada HTTP, retome depois de expirar. A recuperação externa é segura porque a Efí documenta que o mesmo `idEnvio` representa uma única transação, inclusive quando reenviado após erro de comunicação. No IndicA2, `operacoes_pagamento_pix.referencia_idempotente` é a chave persistida e o adapter a envia diretamente como `idEnvio`; a retomada valida e reutiliza exatamente esse valor, o mesmo `OperacaoPagamentoPixId` e a mesma tentativa.
 
-Expiração não autoriza nova tentativa. Enquanto o lease de Envio estiver válido, a reconciliação retorna `EnvioEmAndamento`; com lease expirado e Envio aberto, retorna `EnvioPendenteRecuperacao`, sem limpar lease, criar Consulta, consultar provider ou alterar a auditoria. Uma invocação posterior do serviço de Envio assume um novo token no MySQL e recupera a mesma operação lógica. A aplicação financeira retorna `RequerReconciliacao` tanto para lease de Envio válido quanto expirado, Envio aberto, lease de reconciliação ou Consulta aberta. Envio legado aberto sem lease continua sendo inconsistência que exige regularização auditada separada.
+Expiração não autoriza nova tentativa. Enquanto o lease de Envio estiver válido, a reconciliação retorna `EnvioEmAndamento`; com lease expirado e Envio aberto, retorna `EnvioPendenteRecuperacao`, sem limpar lease, criar Consulta, consultar provider ou alterar a auditoria. Uma invocação posterior do serviço de Envio assume um novo token no MySQL e recupera a mesma operação lógica. A aplicação financeira retorna `RequerReconciliacao` tanto para lease de Envio válido quanto expirado, Envio aberto, lease de reconciliação ou Consulta aberta.
+
+Um Envio legado aberto é aquele sem `envio_lease_id`, sem `envio_lease_expira_em` e sem `finished_at`. Após a interrupção dos executores anteriores à migration 012, ele não é reenviado pelo fluxo de Envio: somente a reconciliação pode resolvê-lo. Com evidência conclusiva do ciclo atual, a reconciliação finaliza a mesma auditoria preservando resultado, `identificador_provider` e `codigo`, sem HTTP. Sem evidência, ela cria ou retoma uma única Consulta e chama exclusivamente `ConsultarAsync`.
 
 Depois de uma resposta, exceção ou cancelamento do provider, a finalização auditável usa `CancellationToken.None`: o token original só controla a preparação e a chamada externa. A atualização condicional valida operação, pagamento, tipo, tentativa, referência, abertura e timestamps persistidos antes de gravar resultado e metadados; inconsistências falham fechadas e fazem rollback. Se essa persistência falhar, a falha permanece explícita e recuperável após a expiração. Nenhum caminho desta etapa liquida Cashback, cria nova tentativa, inicia retry automático ou mantém transação aberta durante HTTP.
 
@@ -37,7 +39,7 @@ A evidência utilizada é a documentação oficial da Efí: <https://dev.efipay.
 - Build: sucesso, **0 erros e 0 warnings**.
 - Seleção sem MySQL de Envio, reconciliação, contrato do provider e adapter Efí: **70 aprovados**, 0 falhos, 0 ignorados (46 em `Application.Tests` e 24 em `Infrastructure.Tests`).
 - Suíte rápida sem MySQL e sem Efí externo: **467 aprovados**, 0 falhos, 0 ignorados.
-- A contagem estática atual é de **119 integrações MySQL em 13 classes**. A validação MySQL destas novas coberturas permanece pendente nesta etapa; elas não são declaradas aprovadas sem a execução controlada no banco temporário. Nenhuma migration foi executada nesta validação estática.
+- A contagem estática atual é de **120 integrações MySQL em 13 classes**. A validação MySQL destas novas coberturas permanece pendente nesta etapa; elas não são declaradas aprovadas sem a execução controlada no banco temporário. Nenhuma migration foi executada nesta validação estática.
 - `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível neste processo; portanto, as integrações MySQL desta etapa não foram executadas nem declaradas aprovadas. Não houve Efí real, OAuth real ou envio Pix real.
 
 | Teste anterior | Motivo | Teste substituto |
@@ -62,6 +64,16 @@ A evidência utilizada é a documentação oficial da Efí: <https://dev.efipay.
 | Leases incompatíveis bloqueiam a reconciliação | `ReconciliarAsync_QuandoLeasesForemParciaisOuSimultaneos_DeveFalharFechadoSemCriarConsulta` | MySQL |
 
 Worker, seleção automática, retry automático, webhook, endpoint de disparo, Efí/OAuth/Pix real, produção e limpeza administrativa de registros legados continuam pendentes.
+
+### Correção após execução MySQL interrompida
+
+Uma execução MySQL intermediária foi interrompida com 16 erros antes de completar a validação. O diagnóstico mostrou que `PrepararConsultaAsync` rejeitava o Envio legado aberto antes de avaliar a Consulta aberta, o lease de reconciliação ou a evidência conclusiva do ciclo; por isso testes válidos de recuperação e concorrência não chegavam ao provider.
+
+A correção preserva a falha fechada do fluxo de Envio para esse registro legado, mas permite que a reconciliação o trate exclusivamente por Consulta. Consulta ativa retorna `ConsultaEmAndamento`; Consulta abandonada com lease expirado recebe novo token e reutiliza a mesma auditoria; evidência conclusiva recupera o mesmo Envio sem chamar provider e sem alterar tentativa ou referência. A aplicação financeira permanece bloqueada enquanto o Envio, Consulta ou respectivos leases estiverem pendentes.
+
+Foram reforçados os testes de recuperação do Envio a partir de evidência, de Consulta ativa e expirada, de bloqueio financeiro e de conflito conclusivo. O teste concorrente de duas reconciliações agora libera o provider no `finally`, observa falha antecipada da primeira tarefa e usa timeout defensivo de dez segundos. `TentarPrepararEnvioAsync_QuandoEnvioLegadoAbertoNaoTiverLease_DeveFalharSemReenviar` confirma que o fluxo de Envio não cria nova tentativa nem nova auditoria para o registro legado.
+
+O resultado interrompido não é aprovação. Nesta correção, o build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação registraram 35 aprovados; o preflight MySQL registrou 6 aprovados; e a suíte rápida registrou 467 aprovados, 0 falhos e 0 ignorados. A execução controlada das **120 integrações MySQL**, incluindo a migration 012, continua pendente para validar esta correção. Não houve Efí real, OAuth real ou envio Pix real nesta etapa.
 
 O PR #31 foi concluído por **Squash and merge** no commit `6c259642c0c95764ff1d73aa8640b6b946861ddf`.
 

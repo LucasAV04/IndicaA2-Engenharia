@@ -491,9 +491,16 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
         await repository.AdicionarAsync(OperacaoPagamentoPix.IniciarEnvio(pagamento.Id, 1));
         var provider = new PixProviderBloqueavel(PixProviderResult.Confirmado());
         var primeira = CriarService(provider).ReconciliarAsync(pagamento.Id);
-        await provider.ConsultaIniciada.WaitAsync(TimeSpan.FromSeconds(20));
         try
         {
+            var primeiraConclusao = await Task.WhenAny(
+                provider.ConsultaIniciada,
+                primeira,
+                Task.Delay(TimeSpan.FromSeconds(10)));
+            if (primeiraConclusao == primeira)
+                await primeira;
+            Assert.Same(provider.ConsultaIniciada, primeiraConclusao);
+
             var antes = await repository.ObterPorPagamentoPixIdAsync(pagamento.Id);
             var aberta = Assert.Single(antes, x => x.TipoOperacao == TipoOperacaoPagamentoPix.Consulta);
             Assert.Null(aberta.FinishedAt);
@@ -508,7 +515,7 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
             await VerificarNaoLiquidadoAsync(pagamento);
         }
         finally { provider.LiberarConsulta(); }
-        await primeira;
+        await primeira.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(1, provider.QuantidadeConsultas);
         Assert.Single(await repository.ObterPorPagamentoPixIdAsync(pagamento.Id),
             x => x.TipoOperacao == TipoOperacaoPagamentoPix.Consulta);
