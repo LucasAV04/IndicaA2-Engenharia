@@ -19,13 +19,15 @@
 - Envio aberto com resultado ou metadados já preenchidos é inconsistência auditável: não sobrescreve, não apaga e não libera lease. O update de finalização exige metadados persistidos nulos e não usa `COALESCE` inalcançável.
 - A referência usada pelo adapter é documentada pela Efí no endpoint idempotente `PUT /v3/gn/pix/:idEnvio`; o IndicA2 a envia diretamente como segmento `idEnvio`.
 - O teste unitário de retomada artificial foi substituído por integração MySQL com expiração controlada, token antigo rejeitado e provider falso idempotente; testes adicionais cobrem os estados de lease de Envio na reconciliação.
+- O teste concorrente agora libera o executor bloqueado em `finally`, aplica timeout apenas como proteção e observa todas as tarefas iniciadas. Estados de auditoria inválidos usam snapshots SQL brutos; a expiração provocada durante a finalização precisa reverter também `envio_lease_expira_em`.
+- Os dois stores validam leases parciais ou simultâneos sem limpeza/reparação silenciosa; a reconciliação não cria Consulta nem chama provider nesses estados.
 
 ### Validação
 
 - Build: sucesso, 0 erros, 0 warnings.
 - Seleção sem MySQL de Envio, reconciliação, contrato do provider e adapter Efí: 70 aprovados, 0 falhos, 0 ignorados (46 em `Application.Tests` e 24 em `Infrastructure.Tests`).
 - Suíte rápida sem MySQL/Efí: 467 aprovados, 0 falhos, 0 ignorados.
-- A cobertura MySQL foi ampliada para 118 casos em 13 classes, incluindo interleaving de recuperação do Envio, bloqueio da aplicação por lease de Envio, preservação de lease na reconciliação, rollback da finalização e auditoria adulterada. Essas novas integrações permanecem pendentes de execução controlada; não são declaradas aprovadas nesta etapa.
+- A cobertura MySQL foi ampliada para 119 casos em 13 classes, incluindo interleaving de recuperação do Envio, bloqueio da aplicação por lease de Envio, preservação de lease na reconciliação, rollback da finalização e auditoria adulterada. Essas novas integrações permanecem pendentes de execução controlada; nenhuma migration foi executada e elas não são declaradas aprovadas nesta etapa.
 - Sem `INDICA2_TEST_MYSQL_CONNECTION`, as integrações MySQL desta etapa não foram executadas e não são declaradas aprovadas. Não houve Efí real, OAuth real ou Pix real.
 
 ### Escopo

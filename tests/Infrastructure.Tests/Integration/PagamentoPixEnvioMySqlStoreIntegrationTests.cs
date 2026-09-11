@@ -1,4 +1,5 @@
 using Application.Interfaces.Providers;
+using Application.Models;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -258,19 +259,36 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
         var provider = new PixProviderIdempotenteBloqueavelFake();
         var executorAntigo = CriarOrquestrador(provider).ProcessarEnvioAsync(pagamentoPix.Id, CancellationToken.None);
-
-        await provider.PrimeiroEnvioIniciado.WaitAsync(TimeSpan.FromSeconds(10));
+        Exception? falhaExecutorAntigo = null;
+        ResultadoEnvioPagamentoPix? recuperada = null;
+        OperacaoPagamentoPix? envioAntesDaRecuperacao = null;
+        (Guid? LeaseId, DateTime? ExpiraEm, DateTime Agora) leaseA = default;
         var operacaoRepository = new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory);
-        var envioAntesDaRecuperacao = Assert.Single(await operacaoRepository.ObterPorPagamentoPixIdAsync(
-            pagamentoPix.Id,
-            CancellationToken.None));
-        var leaseA = await ObterLeaseEnvioAsync(pagamentoPix.Id);
-        Assert.NotNull(leaseA.LeaseId);
-        await ExpirarLeaseEnvioAsync(pagamentoPix.Id, leaseA.LeaseId!.Value);
 
-        var recuperada = await CriarOrquestrador(provider).ProcessarEnvioAsync(pagamentoPix.Id, CancellationToken.None);
-        provider.LiberarPrimeiroEnvio();
-        var falhaExecutorAntigo = await Assert.ThrowsAsync<InvalidOperationException>(() => executorAntigo);
+        try
+        {
+            await provider.PrimeiroEnvioIniciado.WaitAsync(TimeSpan.FromSeconds(10));
+            envioAntesDaRecuperacao = Assert.Single(await operacaoRepository.ObterPorPagamentoPixIdAsync(
+                pagamentoPix.Id,
+                CancellationToken.None));
+            leaseA = await ObterLeaseEnvioAsync(pagamentoPix.Id);
+            Assert.NotNull(leaseA.LeaseId);
+            await ExpirarLeaseEnvioAsync(pagamentoPix.Id, leaseA.LeaseId!.Value);
+
+            recuperada = await CriarOrquestrador(provider).ProcessarEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        }
+        finally
+        {
+            provider.LiberarPrimeiroEnvio();
+            try
+            {
+                await executorAntigo.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (Exception exception)
+            {
+                falhaExecutorAntigo = exception;
+            }
+        }
 
         var pagamentoPersistido = (await CriarPagamentoRepository()
             .ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
@@ -279,12 +297,13 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         var envios = await operacaoRepository.ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None);
         var leaseFinal = await ObterLeaseEnvioAsync(pagamentoPix.Id);
 
-        Assert.True(recuperada.EnvioExecutado);
+        Assert.True(recuperada!.EnvioExecutado);
         Assert.Equal(2, provider.QuantidadeEnvios);
         Assert.Equal(1, provider.QuantidadeEfeitosLogicos);
-        Assert.Equal(envioAntesDaRecuperacao.ReferenciaIdempotente, provider.Referencias.Single());
+        Assert.Equal(envioAntesDaRecuperacao!.ReferenciaIdempotente, provider.Referencias.Single());
         Assert.Equal(envioAntesDaRecuperacao.Id, recuperada.OperacaoPagamentoPixId);
-        Assert.Contains("lease de envio não autorizou", falhaExecutorAntigo.Message);
+        var falhaEsperada = Assert.IsType<InvalidOperationException>(falhaExecutorAntigo);
+        Assert.Contains("lease de envio não autorizou", falhaEsperada.Message);
         Assert.Equal(1, pagamentoPersistido.QuantidadeTentativas);
         Assert.Equal(StatusPagamentoPix.Processando, pagamentoPersistido.Status);
         Assert.Equal(StatusCashback.Disponivel, cashbackPersistido.Status);
@@ -348,14 +367,17 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
                 await command.ExecuteNonQueryAsync();
             }
 
+            var pagamentoAntes = await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id);
+            var cashbackAntes = await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId);
+            var operacoesAntes = await ObterOperacoesBrutasAsync(pagamentoPix.Id);
+
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory)
                     .TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None));
 
-            Assert.Empty(await new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory)
-                .ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None));
-            Assert.Equal(StatusPagamentoPix.Pendente, (await CriarPagamentoRepository()
-                .ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!.Status);
+            Assert.Equal(pagamentoAntes, await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id));
+            Assert.Equal(cashbackAntes, await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId));
+            Assert.Equal(operacoesAntes, await ObterOperacoesBrutasAsync(pagamentoPix.Id));
         }
     }
 
@@ -397,12 +419,12 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
     {
         var adulteracoes = new[]
         {
-            "referencia_idempotente = 'referencia-adulterada'",
-            $"resultado = {(int)ResultadoOperacaoPagamentoPix.Confirmado}",
-            "identificador_provider = 'provider-adulterado'",
-            "codigo = 'codigo-adulterado'",
-            $"tipo_operacao = {(int)TipoOperacaoPagamentoPix.Consulta}",
-            "numero_tentativa_envio = 99"
+            new AdulteracaoAuditoria("referencia_idempotente = 'referencia-adulterada'", DeveLancar: true),
+            new AdulteracaoAuditoria($"resultado = {(int)ResultadoOperacaoPagamentoPix.Confirmado}", DeveLancar: true),
+            new AdulteracaoAuditoria("identificador_provider = 'provider-adulterado'", DeveLancar: true),
+            new AdulteracaoAuditoria("codigo = 'codigo-adulterado'", DeveLancar: true),
+            new AdulteracaoAuditoria($"tipo_operacao = {(int)TipoOperacaoPagamentoPix.Consulta}", DeveLancar: false),
+            new AdulteracaoAuditoria("numero_tentativa_envio = 99", DeveLancar: false)
         };
 
         foreach (var adulteracao in adulteracoes)
@@ -415,12 +437,26 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
             {
                 await connection.OpenAsync();
                 await using var command = new MySqlCommand(
-                    $"UPDATE operacoes_pagamento_pix SET {adulteracao} WHERE id = @id;", connection);
+                    $"UPDATE operacoes_pagamento_pix SET {adulteracao.Sql} WHERE id = @id;", connection);
                 command.Parameters.AddWithValue("@id", preparacao.OperacaoPagamentoPixId!.Value.ToString());
                 await command.ExecuteNonQueryAsync();
             }
 
-            try
+            var auditoriaAntes = await ObterAuditoriaBrutaAsync(preparacao.OperacaoPagamentoPixId!.Value);
+            var leaseAntes = await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id);
+            var cashbackAntes = await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId);
+            if (adulteracao.DeveLancar)
+            {
+                await Assert.ThrowsAsync<InvalidOperationException>(() => store.FinalizarEnvioAsync(
+                    pagamentoPix.Id,
+                    preparacao.OperacaoPagamentoPixId!.Value,
+                    preparacao.LeaseId!.Value,
+                    ResultadoOperacaoPagamentoPix.Confirmado,
+                    "provider-id",
+                    "provider-code",
+                    CancellationToken.None));
+            }
+            else
             {
                 var finalizacao = await store.FinalizarEnvioAsync(
                     pagamentoPix.Id,
@@ -432,17 +468,10 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
                     CancellationToken.None);
                 Assert.False(finalizacao.Finalizada);
             }
-            catch (InvalidOperationException)
-            {
-                // A divergência de auditoria é intencionalmente denunciada sem reparação silenciosa.
-            }
 
-            var auditoria = (await new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory)
-                .ObterPorIdAsync(preparacao.OperacaoPagamentoPixId.Value, CancellationToken.None))!;
-            Assert.False(auditoria.FinishedAt.HasValue);
-            Assert.Equal(preparacao.LeaseId, (await ObterLeaseEnvioAsync(pagamentoPix.Id)).LeaseId);
-            Assert.Equal(StatusPagamentoPix.Processando, (await CriarPagamentoRepository()
-                .ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!.Status);
+            Assert.Equal(auditoriaAntes, await ObterAuditoriaBrutaAsync(preparacao.OperacaoPagamentoPixId.Value));
+            Assert.Equal(leaseAntes, await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id));
+            Assert.Equal(cashbackAntes, await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId));
         }
     }
 
@@ -491,6 +520,9 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
         var store = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
         var preparacao = await store.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        var pagamentoAntes = await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id);
+        var auditoriaAntes = await ObterAuditoriaBrutaAsync(preparacao.OperacaoPagamentoPixId!.Value);
+        var cashbackAntes = await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId);
         await ExecutarSqlAsync("""
             CREATE TRIGGER tr_expirar_lease_envio_durante_finalizacao
             BEFORE UPDATE ON operacoes_pagamento_pix FOR EACH ROW
@@ -514,11 +546,9 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
             await ExecutarSqlAsync("DROP TRIGGER IF EXISTS tr_expirar_lease_envio_durante_finalizacao;");
         }
 
-        var auditoria = (await new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory)
-            .ObterPorIdAsync(preparacao.OperacaoPagamentoPixId!.Value, CancellationToken.None))!;
-        Assert.Null(auditoria.FinishedAt);
-        Assert.Null(auditoria.Resultado);
-        Assert.Equal(preparacao.LeaseId, (await ObterLeaseEnvioAsync(pagamentoPix.Id)).LeaseId);
+        Assert.Equal(auditoriaAntes, await ObterAuditoriaBrutaAsync(preparacao.OperacaoPagamentoPixId!.Value));
+        Assert.Equal(pagamentoAntes, await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id));
+        Assert.Equal(cashbackAntes, await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId));
     }
 
     private async Task<(Guid? LeaseId, DateTime? ExpiraEm, DateTime Agora)> ObterLeaseEnvioAsync(Guid pagamentoPixId)
@@ -556,8 +586,89 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         await command.ExecuteNonQueryAsync();
     }
 
+    private async Task<SnapshotPagamentoBruto> ObterSnapshotPagamentoBrutoAsync(Guid pagamentoPixId)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand("""
+            SELECT status, quantidade_tentativas, envio_lease_id, envio_lease_expira_em,
+                   reconciliacao_lease_id, reconciliacao_lease_expira_em, updated_at
+            FROM pagamentos_pix WHERE id = @id;
+            """, connection);
+        command.Parameters.AddWithValue("@id", pagamentoPixId.ToString());
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new SnapshotPagamentoBruto(
+            reader.GetInt32(0),
+            reader.GetInt32(1),
+            reader.IsDBNull(2) ? null : reader.ObterGuid("envio_lease_id"),
+            reader.IsDBNull(3) ? null : DateTime.SpecifyKind(reader.GetDateTime(3), DateTimeKind.Utc),
+            reader.IsDBNull(4) ? null : reader.ObterGuid("reconciliacao_lease_id"),
+            reader.IsDBNull(5) ? null : DateTime.SpecifyKind(reader.GetDateTime(5), DateTimeKind.Utc),
+            DateTime.SpecifyKind(reader.GetDateTime(6), DateTimeKind.Utc));
+    }
+
+    private async Task<SnapshotCashbackBruto> ObterSnapshotCashbackBrutoAsync(Guid cashbackId)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(
+            "SELECT status, updated_at FROM cashbacks WHERE id = @id;", connection);
+        command.Parameters.AddWithValue("@id", cashbackId.ToString());
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new SnapshotCashbackBruto(reader.GetInt32(0), DateTime.SpecifyKind(reader.GetDateTime(1), DateTimeKind.Utc));
+    }
+
+    private async Task<IReadOnlyList<SnapshotAuditoriaBruta>> ObterOperacoesBrutasAsync(Guid pagamentoPixId)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(
+            "SELECT id, pagamento_pix_id, tipo_operacao, numero_tentativa_envio, referencia_idempotente, resultado, identificador_provider, codigo, started_at, updated_at, finished_at FROM operacoes_pagamento_pix WHERE pagamento_pix_id = @id ORDER BY started_at, id;", connection);
+        command.Parameters.AddWithValue("@id", pagamentoPixId.ToString());
+        await using var reader = await command.ExecuteReaderAsync();
+        var snapshots = new List<SnapshotAuditoriaBruta>();
+        while (await reader.ReadAsync())
+            snapshots.Add(CriarSnapshotAuditoriaBruta(reader));
+        return snapshots;
+    }
+
+    private async Task<SnapshotAuditoriaBruta> ObterAuditoriaBrutaAsync(Guid operacaoId)
+    {
+        await using var connection = fixture.ConnectionFactory.Create();
+        await connection.OpenAsync();
+        await using var command = new MySqlCommand(
+            "SELECT id, pagamento_pix_id, tipo_operacao, numero_tentativa_envio, referencia_idempotente, resultado, identificador_provider, codigo, started_at, updated_at, finished_at FROM operacoes_pagamento_pix WHERE id = @id;", connection);
+        command.Parameters.AddWithValue("@id", operacaoId.ToString());
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return CriarSnapshotAuditoriaBruta(reader);
+    }
+
+    private static SnapshotAuditoriaBruta CriarSnapshotAuditoriaBruta(MySqlDataReader reader) => new(
+        reader.ObterGuid("id"),
+        reader.ObterGuid("pagamento_pix_id"),
+        reader.GetInt32(reader.GetOrdinal("tipo_operacao")),
+        reader.IsDBNull(reader.GetOrdinal("numero_tentativa_envio")) ? null : reader.GetInt32(reader.GetOrdinal("numero_tentativa_envio")),
+        reader.GetString(reader.GetOrdinal("referencia_idempotente")),
+        reader.IsDBNull(reader.GetOrdinal("resultado")) ? null : reader.GetInt32(reader.GetOrdinal("resultado")),
+        reader.IsDBNull(reader.GetOrdinal("identificador_provider")) ? null : reader.GetString(reader.GetOrdinal("identificador_provider")),
+        reader.IsDBNull(reader.GetOrdinal("codigo")) ? null : reader.GetString(reader.GetOrdinal("codigo")),
+        DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("started_at")), DateTimeKind.Utc),
+        DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("updated_at")), DateTimeKind.Utc),
+        reader.IsDBNull(reader.GetOrdinal("finished_at")) ? null : DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("finished_at")), DateTimeKind.Utc));
+
     private static string CriarChave() =>
         Convert.ToBase64String(Enumerable.Range(1, 32).Select(valor => (byte)valor).ToArray());
+
+    private sealed record AdulteracaoAuditoria(string Sql, bool DeveLancar);
+    private sealed record SnapshotPagamentoBruto(int Status, int QuantidadeTentativas, Guid? EnvioLeaseId,
+        DateTime? EnvioLeaseExpiraEm, Guid? ReconciliacaoLeaseId, DateTime? ReconciliacaoLeaseExpiraEm, DateTime UpdatedAt);
+    private sealed record SnapshotCashbackBruto(int Status, DateTime UpdatedAt);
+    private sealed record SnapshotAuditoriaBruta(Guid Id, Guid PagamentoPixId, int TipoOperacao,
+        int? NumeroTentativaEnvio, string ReferenciaIdempotente, int? Resultado, string? IdentificadorProvider,
+        string? Codigo, DateTime StartedAt, DateTime UpdatedAt, DateTime? FinishedAt);
 
     private sealed class PixProviderFake : IPixProvider
     {
@@ -598,7 +709,7 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
             if (chamada == 1)
             {
                 _primeiroEnvioIniciado.TrySetResult();
-                await _liberarPrimeiroEnvio.Task.WaitAsync(cancellationToken);
+                await _liberarPrimeiroEnvio.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
             }
 
             return PixProviderResult.Confirmado();
