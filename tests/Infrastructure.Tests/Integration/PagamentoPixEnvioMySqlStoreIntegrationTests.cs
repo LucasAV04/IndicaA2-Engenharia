@@ -52,26 +52,41 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
     }
 
     [MySqlIntegrationFact]
-    public async Task TentarPrepararEnvioAsync_QuandoAuditoriaDuplicadaFalhar_DeveReverterClaim()
+    public async Task TentarPrepararEnvioAsync_QuandoInsercaoDaAuditoriaFalhar_DeveReverterClaim()
     {
         await fixture.LimparDadosAsync();
         var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
-        var pagamentoRepository = CriarPagamentoRepository();
-        var operacaoRepository = new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory);
-        await operacaoRepository.AdicionarAsync(
-            OperacaoPagamentoPix.IniciarEnvio(pagamentoPix.Id, 1),
-            CancellationToken.None);
+        var pagamentoAntes = await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id);
+        var cashbackAntes = await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId);
+        var operacoesAntes = await ObterOperacoesBrutasAsync(pagamentoPix.Id);
+        var materialAntes = await ObterMaterialProtegidoAsync(pagamentoPix.Id);
+        const string nomeTrigger = "tr_falha_inserir_envio";
 
-        await Assert.ThrowsAsync<MySqlException>(() =>
-            new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory)
-                .TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None));
+        await ExecutarSqlAsync("""
+            CREATE TRIGGER tr_falha_inserir_envio
+            BEFORE INSERT ON operacoes_pagamento_pix
+            FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'falha de inserção induzida';
+            """);
+        try
+        {
+            await Assert.ThrowsAsync<MySqlException>(() =>
+                new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory)
+                    .TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None));
+        }
+        finally
+        {
+            await ExecutarSqlAsync($"DROP TRIGGER IF EXISTS {nomeTrigger};");
+        }
 
-        var reidratado = (await pagamentoRepository.ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
-        var operacoes = await operacaoRepository.ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None);
-
-        Assert.Equal(StatusPagamentoPix.Pendente, reidratado.Status);
-        Assert.Equal(0, reidratado.QuantidadeTentativas);
-        Assert.Single(operacoes);
+        var pagamentoDepois = await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id);
+        Assert.Equal((int)StatusPagamentoPix.Pendente, pagamentoDepois.Status);
+        Assert.Equal(0, pagamentoDepois.QuantidadeTentativas);
+        Assert.Null(pagamentoDepois.EnvioLeaseId);
+        Assert.Null(pagamentoDepois.EnvioLeaseExpiraEm);
+        Assert.Equal(pagamentoAntes, pagamentoDepois);
+        Assert.Equal(cashbackAntes, await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId));
+        Assert.Equal(operacoesAntes, await ObterOperacoesBrutasAsync(pagamentoPix.Id));
+        Assert.Equal(materialAntes, await ObterMaterialProtegidoAsync(pagamentoPix.Id));
     }
 
     [MySqlIntegrationFact]
@@ -96,7 +111,6 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
     {
         var cenarios = new[]
         {
-            (StatusPagamentoPix.Processando, 1),
             (StatusPagamentoPix.Concluido, 1),
             (StatusPagamentoPix.FalhaDefinitiva, PagamentoPix.TentativasMaximas),
             (StatusPagamentoPix.Cancelado, 0)
@@ -114,6 +128,32 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
             Assert.False(preparacao.Adquirido);
             Assert.Empty(operacoes);
         }
+    }
+
+    [MySqlIntegrationFact]
+    public async Task TentarPrepararEnvioAsync_QuandoProcessandoNaoPossuirEnvioAtual_DeveFalharFechadoSemMutacao()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync(StatusPagamentoPix.Processando, 1);
+        var pagamentoAntes = await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id);
+        var cashbackAntes = await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId);
+        var operacoesAntes = await ObterOperacoesBrutasAsync(pagamentoPix.Id);
+        var materialAntes = await ObterMaterialProtegidoAsync(pagamentoPix.Id);
+
+        var excecao = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory)
+                .TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None));
+
+        Assert.Contains("exatamente um envio no ciclo atual", excecao.Message);
+        var pagamentoDepois = await ObterSnapshotPagamentoBrutoAsync(pagamentoPix.Id);
+        Assert.Equal((int)StatusPagamentoPix.Processando, pagamentoDepois.Status);
+        Assert.Equal(1, pagamentoDepois.QuantidadeTentativas);
+        Assert.Null(pagamentoDepois.EnvioLeaseId);
+        Assert.Null(pagamentoDepois.EnvioLeaseExpiraEm);
+        Assert.Equal(pagamentoAntes, pagamentoDepois);
+        Assert.Equal(cashbackAntes, await ObterSnapshotCashbackBrutoAsync(pagamentoPix.CashbackId));
+        Assert.Equal(operacoesAntes, await ObterOperacoesBrutasAsync(pagamentoPix.Id));
+        Assert.Equal(materialAntes, await ObterMaterialProtegidoAsync(pagamentoPix.Id));
     }
 
     [MySqlIntegrationFact]

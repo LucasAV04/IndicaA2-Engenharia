@@ -890,11 +890,11 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
         await using var connection = fixture.ConnectionFactory.Create();
         await connection.OpenAsync();
         await using var command = new MySqlCommand("""
-            SELECT GROUP_CONCAT(CONCAT(id, ':', tipo_operacao, ':', COALESCE(numero_tentativa_envio, 'NULL'), ':',
+            SELECT COALESCE(GROUP_CONCAT(CONCAT(id, ':', tipo_operacao, ':', COALESCE(numero_tentativa_envio, 'NULL'), ':',
                 referencia_idempotente, ':', COALESCE(resultado, 'NULL'), ':',
                 COALESCE(identificador_provider, 'NULL'), ':', COALESCE(codigo, 'NULL'), ':',
                 COALESCE(DATE_FORMAT(finished_at, '%Y-%m-%dT%H:%i:%s.%f'), 'NULL'))
-                ORDER BY started_at, id SEPARATOR '|')
+                ORDER BY started_at, id SEPARATOR '|'), '')
             FROM operacoes_pagamento_pix WHERE pagamento_pix_id = @id;
             """, connection);
         command.Parameters.AddWithValue("@id", pagamentoId.ToString());

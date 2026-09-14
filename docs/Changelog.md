@@ -27,7 +27,7 @@
 - Build: sucesso, 0 erros, 0 warnings.
 - Seleção sem MySQL de Envio, reconciliação, contrato do provider e adapter Efí: 70 aprovados, 0 falhos, 0 ignorados (46 em `Application.Tests` e 24 em `Infrastructure.Tests`).
 - Suíte rápida sem MySQL/Efí: 467 aprovados, 0 falhos, 0 ignorados.
-- A cobertura MySQL foi ampliada para 120 casos em 13 classes, incluindo interleaving de recuperação do Envio, bloqueio da aplicação por lease de Envio, preservação de lease na reconciliação, rollback da finalização e auditoria adulterada. Essas novas integrações permanecem pendentes de execução controlada; nenhuma migration foi executada e elas não são declaradas aprovadas nesta etapa.
+- A cobertura MySQL foi ampliada para 121 casos em 13 classes, incluindo interleaving de recuperação do Envio, bloqueio da aplicação por lease de Envio, preservação de lease na reconciliação, rollback da finalização e auditoria adulterada. Essas novas integrações permanecem pendentes de execução controlada; nenhuma migration foi executada e elas não são declaradas aprovadas nesta etapa.
 - Sem `INDICA2_TEST_MYSQL_CONNECTION`, as integrações MySQL desta etapa não foram executadas e não são declaradas aprovadas. Não houve Efí real, OAuth real ou Pix real.
 
 ### Escopo
@@ -42,7 +42,16 @@
 - A reconciliação agora resolve o Envio legado somente por Consulta: evidência conclusiva finaliza a mesma auditoria sem HTTP e preserva resultado, `identificador_provider` e `codigo`; sem evidência, uma Consulta ativa é respeitada e uma expirada é retomada com novo token, sem criar segunda Consulta.
 - O fluxo de Envio continua falhando fechado para Envio legado sem lease e não cria nova tentativa nem nova auditoria.
 - As duas esperas concorrentes dos testes de reconciliação foram ajustadas para detectar término antecipado, limitar a espera a dez segundos, sempre liberar o provider e observar toda tarefa iniciada mesmo diante de falha de asserção. Foi adicionada cobertura MySQL do bloqueio de reenvio do Envio legado.
-- Os 16 erros são um resultado intermediário, não uma aprovação. Nesta correção, build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação tiveram 35 aprovados; o preflight MySQL teve 6 aprovados; e a suíte rápida teve 467 aprovados, 0 falhos e 0 ignorados. A validação controlada das 120 integrações MySQL e da migration 012 permanece pendente; não houve Efí, OAuth ou Pix real.
+- Os 16 erros são um resultado intermediário, não uma aprovação. Nesta correção, build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação tiveram 35 aprovados; o preflight MySQL teve 6 aprovados; e a suíte rápida teve 467 aprovados, 0 falhos e 0 ignorados. A validação controlada das 121 integrações MySQL e da migration 012 permanece pendente; não houve Efí, OAuth ou Pix real.
+
+### Corrigido após seleção MySQL direcionada
+
+- A seleção intermediária executou 41 testes MySQL: 38 aprovados, 3 falhos e 0 ignorados. O resultado não aprova a suíte completa.
+- A antiga preparação de Envio duplicado não alcançava mais a inserção porque o store detecta a auditoria aberta antes do claim. O teste foi substituído por trigger `BEFORE INSERT` que falha depois do claim e comprova rollback integral, sem alterar a produção.
+- Estados terminais válidos continuam no cenário não elegível. `PagamentoPix.Processando` sem Envio atual passou para cenário próprio de corrupção persistida, que falha fechada sem criar auditoria, incrementar tentativa ou adquirir lease.
+- O snapshot de operações da reconciliação passou a representar `GROUP_CONCAT` vazio sem cast de `DBNull`; leases parciais ou simultâneos continuam preservados sem Consulta, provider ou reparação silenciosa.
+- O inventário estático passou de 120 para **121 integrações MySQL em 13 classes**. A execução completa, a migration 012 e a validação definitiva contra MySQL permanecem pendentes; não houve Efí, OAuth ou Pix real.
+- Validação local desta correção: build sem erros e com quatro avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`; 35 testes unitários direcionados, 6 de preflight e 467 da suíte rápida aprovados, sem falhas ou ignorados. `INDICA2_TEST_MYSQL_CONNECTION` estava ausente, portanto nenhuma das 121 integrações nem a migration 012 foi executada.
 
 ## 2026-09-09 — Validação Definitiva do PR #31
 
