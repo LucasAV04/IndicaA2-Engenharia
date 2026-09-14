@@ -15,7 +15,7 @@
 - Reconciliação retorna `EnvioEmAndamento` para lease válido e `EnvioPendenteRecuperacao` para lease expirado com Envio aberto; nesses casos não limpa lease, não cria Consulta e não chama provider.
 - Aplicação financeira bloqueia qualquer marcador de lease de Envio, inclusive expirado pendente de recuperação, retornando `RequerReconciliacao` sem mutar auditoria ou valores.
 - Após resposta, exceção ou cancelamento do provider, a finalização usa `CancellationToken.None`; perda de autorização ou falha de persistência permanece explícita e não autoriza reenvio.
-- Envio e Consulta simultaneamente abertos no mesmo ciclo agora falham fechados e explicitamente; nenhum lease, auditoria, PagamentoPix ou Cashback é alterado durante a detecção.
+- No fluxo normal com lease de Envio, Envio e Consulta simultaneamente abertos no mesmo ciclo falham fechados e explicitamente; nenhum lease, auditoria, PagamentoPix ou Cashback é alterado durante a detecção. Envio legado sem lease é a exceção de compatibilidade tratada pela reconciliação.
 - Envio aberto com resultado ou metadados já preenchidos é inconsistência auditável: não sobrescreve, não apaga e não libera lease. O update de finalização exige metadados persistidos nulos e não usa `COALESCE` inalcançável.
 - A referência usada pelo adapter é documentada pela Efí no endpoint idempotente `PUT /v3/gn/pix/:idEnvio`; o IndicA2 a envia diretamente como segmento `idEnvio`.
 - O teste unitário de retomada artificial foi substituído por integração MySQL com expiração controlada, token antigo rejeitado e provider falso idempotente; testes adicionais cobrem os estados de lease de Envio na reconciliação.
@@ -32,14 +32,14 @@
 
 ### Escopo
 
-- Expiração não inicia novo Envio nem retry automático. Envio legado aberto sem lease não é reenviado: depois da interrupção dos executores anteriores à migration 012, somente a reconciliação pode tratá-lo por Consulta ou por evidência conclusiva persistida.
+- Expiração não inicia novo Envio nem retry automático. Envio legado aberto sem lease não é reenviado: depois da interrupção dos executores anteriores à migration 012, somente a reconciliação pode tratá-lo por Consulta ou por evidência conclusiva persistida. Durante essa Consulta única, Envio legado e Consulta podem permanecer abertos intencionalmente; outra reconciliação respeita o lease da Consulta e a aplicação financeira permanece bloqueada.
 - Worker, webhook, endpoint de disparo, produção e limpeza administrativa permanecem pendentes.
 - PR #31 concluído por Squash and merge no commit `6c259642c0c95764ff1d73aa8640b6b946861ddf`.
 
 ### Corrigido após execução MySQL interrompida
 
 - A execução intermediária interrompida com 16 erros revelou que a reconciliação rejeitava um Envio legado aberto antes de verificar Consulta ativa, lease expirado ou evidência conclusiva. O registro era bloqueado antes de chegar ao provider ou à recuperação transacional.
-- A reconciliação agora resolve o Envio legado somente por Consulta: evidência conclusiva finaliza a mesma auditoria sem HTTP e preserva resultado, `identificador_provider` e `codigo`; sem evidência, uma Consulta ativa é respeitada e uma expirada é retomada com novo token, sem criar segunda Consulta.
+- A reconciliação agora resolve o Envio legado somente por Consulta: evidência conclusiva finaliza a mesma auditoria sem HTTP e preserva resultado, `identificador_provider` e `codigo`; sem evidência, uma Consulta ativa é respeitada e uma expirada é retomada com novo token, sem criar segunda Consulta. A simultaneidade intencional com essa Consulta aplica-se somente ao Envio legado sem lease, não ao fluxo normal com lease de Envio.
 - O fluxo de Envio continua falhando fechado para Envio legado sem lease e não cria nova tentativa nem nova auditoria.
 - As duas esperas concorrentes dos testes de reconciliação foram ajustadas para detectar término antecipado, limitar a espera a dez segundos, sempre liberar o provider e observar toda tarefa iniciada mesmo diante de falha de asserção. Foi adicionada cobertura MySQL do bloqueio de reenvio do Envio legado.
 - Os 16 erros são um resultado intermediário, não uma aprovação. Nesta correção, build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação tiveram 35 aprovados; o preflight MySQL teve 6 aprovados; e a suíte rápida teve 467 aprovados, 0 falhos e 0 ignorados. A validação controlada então pendente das 121 integrações MySQL e da migration 012 foi concluída posteriormente com aprovação total, conforme abaixo; não houve Efí, OAuth ou Pix real.
