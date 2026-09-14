@@ -12,7 +12,8 @@ public sealed class PixEnvioRequest
         Guid pagamentoPixId,
         decimal valor,
         TipoChavePix tipoChavePix,
-        string chavePix)
+        string chavePix,
+        string referenciaIdempotente)
     {
         if (valor <= 0)
             throw new ArgumentOutOfRangeException(nameof(valor), "O valor do Pix deve ser maior que zero.");
@@ -20,9 +21,15 @@ public sealed class PixEnvioRequest
             throw new ArgumentOutOfRangeException(nameof(tipoChavePix), "O tipo de chave Pix é inválido.");
         if (string.IsNullOrWhiteSpace(chavePix))
             throw new ArgumentException("A chave Pix é obrigatória.", nameof(chavePix));
+        if (!string.Equals(referenciaIdempotente, PixReferenciaIdempotente.Criar(pagamentoPixId), StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "A referência idempotente persistida é inválida para o Pagamento Pix.",
+                nameof(referenciaIdempotente));
+        }
 
         PagamentoPixId = pagamentoPixId;
-        ReferenciaIdempotente = PixReferenciaIdempotente.Criar(pagamentoPixId);
+        ReferenciaIdempotente = referenciaIdempotente;
         Valor = valor;
         TipoChavePix = tipoChavePix;
         ChavePix = chavePix;

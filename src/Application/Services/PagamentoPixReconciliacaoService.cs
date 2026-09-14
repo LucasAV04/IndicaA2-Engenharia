@@ -49,6 +49,12 @@ public sealed class PagamentoPixReconciliacaoService : IPagamentoPixReconciliaca
         if (preparacao.Status == StatusPreparacaoReconciliacaoPagamentoPix.ConsultaEmAndamento)
             return ResultadoReconciliacaoPagamentoPix.ConsultaEmAndamento(pagamentoPixId);
 
+        if (preparacao.Status == StatusPreparacaoReconciliacaoPagamentoPix.EnvioEmAndamento)
+            return ResultadoReconciliacaoPagamentoPix.EnvioEmAndamento(pagamentoPixId);
+
+        if (preparacao.Status == StatusPreparacaoReconciliacaoPagamentoPix.EnvioPendenteRecuperacao)
+            return ResultadoReconciliacaoPagamentoPix.EnvioPendenteRecuperacao(pagamentoPixId);
+
         if (preparacao.Status == StatusPreparacaoReconciliacaoPagamentoPix.ResultadoJaConclusivo)
         {
             return ResultadoReconciliacaoPagamentoPix.JaConclusivo(

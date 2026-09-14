@@ -20,6 +20,12 @@ public sealed record PreparacaoReconciliacaoPagamentoPixResult(
     public static PreparacaoReconciliacaoPagamentoPixResult ConsultaEmAndamento() =>
         new(StatusPreparacaoReconciliacaoPagamentoPix.ConsultaEmAndamento, null, null, null, false);
 
+    public static PreparacaoReconciliacaoPagamentoPixResult EnvioEmAndamento() =>
+        new(StatusPreparacaoReconciliacaoPagamentoPix.EnvioEmAndamento, null, null, null, false);
+
+    public static PreparacaoReconciliacaoPagamentoPixResult EnvioPendenteRecuperacao() =>
+        new(StatusPreparacaoReconciliacaoPagamentoPix.EnvioPendenteRecuperacao, null, null, null, false);
+
     public static PreparacaoReconciliacaoPagamentoPixResult JaConclusivo(
         ResultadoOperacaoPagamentoPix resultadoOperacao,
         bool operacaoEnvioAbertaResolvida) =>

@@ -34,6 +34,12 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         {
             var pagamentoPix = await ObterPagamentoPixParaCoordenacaoAsync(
                 connection, transaction, pagamentoPixId, cancellationToken);
+            ValidarLeases(pagamentoPix);
+            if (pagamentoPix.Status != StatusPagamentoPix.Processando &&
+                (pagamentoPix.EnvioLeaseId.HasValue || pagamentoPix.LeaseId.HasValue))
+            {
+                throw new InvalidOperationException("Pagamento Pix terminal não pode manter lease pendente.");
+            }
             if (pagamentoPix.Status != StatusPagamentoPix.Processando)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -45,10 +51,29 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
             var cicloAtual = IdentificarCicloAtual(operacoes, pagamentoPix.QuantidadeTentativas);
             pagamentoPix = pagamentoPix with { Agora = await ObterAgoraAsync(connection, transaction, cancellationToken) };
             var resultadoConclusivo = ObterResultadoConclusivo(cicloAtual);
-
             var consultasAbertas = cicloAtual.Consultas
                 .Where(operacao => !operacao.FinishedAt.HasValue)
                 .ToArray();
+
+            if (pagamentoPix.EnvioLeaseId.HasValue)
+            {
+                if (cicloAtual.Envio.FinishedAt.HasValue)
+                    throw new InvalidOperationException("Lease de envio válido requer uma auditoria de envio aberta correspondente.");
+                if (consultasAbertas.Length > 0)
+                {
+                    throw new InvalidOperationException(
+                        "Pagamento Pix possui Envio e Consulta abertos simultaneamente no ciclo atual.");
+                }
+
+                if (LeaseEnvioEstaValido(pagamentoPix))
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                    return PreparacaoReconciliacaoPagamentoPixResult.EnvioEmAndamento();
+                }
+
+                await transaction.CommitAsync(cancellationToken);
+                return PreparacaoReconciliacaoPagamentoPixResult.EnvioPendenteRecuperacao();
+            }
             if (consultasAbertas.Length > 1)
             {
                 throw new InvalidOperationException(
@@ -117,6 +142,10 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                     envioResolvido);
             }
 
+            // Um Envio aberto sem lease é legado. Depois da interrupção dos
+            // executores anteriores à migration 012, ele só pode ser resolvido
+            // por Consulta: nunca é retomado pelo fluxo de Envio.
+
             if (LeaseEstaValido(pagamentoPix))
             {
                 throw new InvalidOperationException(
@@ -159,9 +188,11 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         {
             var pagamentoPix = await ObterPagamentoPixParaCoordenacaoAsync(
                 connection, transaction, pagamentoPixId, cancellationToken);
+            ValidarLeases(pagamentoPix);
             if (pagamentoPix.Status != StatusPagamentoPix.Processando ||
                 pagamentoPix.LeaseId != leaseId ||
-                !LeaseEstaValido(pagamentoPix))
+                !LeaseEstaValido(pagamentoPix) ||
+                pagamentoPix.EnvioLeaseId.HasValue)
             {
                 await transaction.CommitAsync(cancellationToken);
                 return new(false, false);
@@ -235,7 +266,9 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT status, quantidade_tentativas, reconciliacao_lease_id, reconciliacao_lease_expira_em,
+            SELECT status, quantidade_tentativas,
+                   envio_lease_id, envio_lease_expira_em,
+                   reconciliacao_lease_id, reconciliacao_lease_expira_em,
                    UTC_TIMESTAMP(6) AS agora
             FROM pagamentos_pix
             WHERE id = @id
@@ -248,13 +281,11 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         if (!await reader.ReadAsync(cancellationToken))
             throw new InvalidOperationException("O Pagamento Pix não foi encontrado para reconciliação.");
 
-        if (reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_id")) !=
-            reader.IsDBNull(reader.GetOrdinal("reconciliacao_lease_expira_em")))
-            throw new InvalidOperationException("O lease persistido está incompleto e requer regularização explícita.");
-
         return new PagamentoPixCoordenado(
             ObterEnum<StatusPagamentoPix>(reader, "status"),
             reader.GetInt32(reader.GetOrdinal("quantidade_tentativas")),
+            reader.ObterGuidOpcional("envio_lease_id"),
+            ObterDataOpcionalUtc(reader, "envio_lease_expira_em"),
             reader.ObterGuidOpcional("reconciliacao_lease_id"),
             ObterDataOpcionalUtc(reader, "reconciliacao_lease_expira_em"),
             EmUtc(reader.GetDateTime(reader.GetOrdinal("agora"))));
@@ -480,6 +511,25 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
         pagamentoPix.LeaseExpiraEm.HasValue &&
         pagamentoPix.LeaseExpiraEm.Value > pagamentoPix.Agora;
 
+    private static bool LeaseEnvioEstaValido(PagamentoPixCoordenado pagamentoPix) =>
+        pagamentoPix.EnvioLeaseId.HasValue &&
+        pagamentoPix.EnvioLeaseExpiraEm.HasValue &&
+        pagamentoPix.EnvioLeaseExpiraEm.Value > pagamentoPix.Agora;
+
+    private static void ValidarLeases(PagamentoPixCoordenado pagamentoPix)
+    {
+        if (pagamentoPix.EnvioLeaseId.HasValue != pagamentoPix.EnvioLeaseExpiraEm.HasValue ||
+            pagamentoPix.LeaseId.HasValue != pagamentoPix.LeaseExpiraEm.HasValue)
+        {
+            throw new InvalidOperationException("Lease persistido parcialmente preenchido requer regularização explícita.");
+        }
+
+        if (pagamentoPix.EnvioLeaseId.HasValue && pagamentoPix.LeaseId.HasValue)
+        {
+            throw new InvalidOperationException("Leases de envio e reconciliação simultâneos são inconsistentes.");
+        }
+    }
+
     private static TEnum ObterEnum<TEnum>(MySqlDataReader reader, string coluna)
         where TEnum : struct, Enum
     {
@@ -508,6 +558,8 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
     private sealed record PagamentoPixCoordenado(
         StatusPagamentoPix Status,
         int QuantidadeTentativas,
+        Guid? EnvioLeaseId,
+        DateTime? EnvioLeaseExpiraEm,
         Guid? LeaseId,
         DateTime? LeaseExpiraEm,
         DateTime Agora);

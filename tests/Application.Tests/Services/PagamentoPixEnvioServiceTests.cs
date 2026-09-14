@@ -1,5 +1,6 @@
 using Application.Interfaces.Providers;
 using Application.Interfaces.Stores;
+using Application.Models;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
@@ -15,45 +16,41 @@ public sealed class PagamentoPixEnvioServiceTests
     [Fact]
     public async Task ProcessarEnvioAsync_QuandoPagamentoNaoExistir_DeveLancarExcecaoESemPreparar()
     {
-        var pagamentoRepository = new Mock<IPagamentoPixRepository>();
+        var pagamentos = new Mock<IPagamentoPixRepository>();
         var store = new Mock<IPagamentoPixEnvioStore>();
-        pagamentoRepository
-            .Setup(repository => repository.ObterPorIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((PagamentoPix?)null);
+        pagamentos.Setup(x => x.ObterPorIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((PagamentoPix?)null);
 
         await Assert.ThrowsAsync<PagamentoPixNaoEncontradoException>(() =>
-            CriarService(pagamentoRepository, store, new Mock<IOperacaoPagamentoPixRepository>(), new Mock<IPixProvider>())
-                .ProcessarEnvioAsync(Guid.NewGuid()));
+            CriarService(pagamentos, store, new Mock<IPixProvider>()).ProcessarEnvioAsync(Guid.NewGuid()));
 
-        store.Verify(
-            value => value.TentarPrepararEnvioAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        store.Verify(x => x.TentarPrepararEnvioAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task ProcessarEnvioAsync_QuandoPreparacaoNaoForAdquirida_NaoDeveChamarProvider()
     {
-        var pagamento = CriarPagamento();
-        var pagamentoRepository = new Mock<IPagamentoPixRepository>();
-        var store = new Mock<IPagamentoPixEnvioStore>();
-        var provider = new Mock<IPixProvider>();
-        ConfigurarPagamentoExistente(pagamentoRepository, pagamento);
-        store
-            .Setup(value => value.TentarPrepararEnvioAsync(pagamento.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Application.Models.PreparacaoEnvioPagamentoPixResult.NaoAdquirido());
+        var contexto = CriarContexto(adquirido: false);
 
-        var resultado = await CriarService(
-                pagamentoRepository,
-                store,
-                new Mock<IOperacaoPagamentoPixRepository>(),
-                provider)
-            .ProcessarEnvioAsync(pagamento.Id);
+        var resultado = await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
 
         Assert.False(resultado.EnvioExecutado);
-        Assert.Equal(pagamento.Id, resultado.PagamentoPixId);
-        Assert.Null(resultado.OperacaoPagamentoPixId);
-        provider.Verify(value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-        VerificarSemMutacaoPagamento(pagamentoRepository);
+        contexto.Provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessarEnvioAsync_QuandoCanceladoAntesDaPreparacao_NaoDeveChamarProvider()
+    {
+        var pagamentos = new Mock<IPagamentoPixRepository>();
+        var store = new Mock<IPagamentoPixEnvioStore>();
+        var provider = new Mock<IPixProvider>();
+        using var source = new CancellationTokenSource();
+        source.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            CriarService(pagamentos, store, provider).ProcessarEnvioAsync(Guid.NewGuid(), source.Token));
+
+        store.Verify(x => x.TentarPrepararEnvioAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Theory]
@@ -61,214 +58,178 @@ public sealed class PagamentoPixEnvioServiceTests
     [InlineData(StatusPixProvider.FalhaConfirmada, ResultadoOperacaoPagamentoPix.FalhaConfirmada)]
     [InlineData(StatusPixProvider.Pendente, ResultadoOperacaoPagamentoPix.Pendente)]
     [InlineData(StatusPixProvider.Indeterminado, ResultadoOperacaoPagamentoPix.Indeterminado)]
-    public async Task ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarAuditoriaSemAlterarPagamento(
-        StatusPixProvider statusProvider,
-        ResultadoOperacaoPagamentoPix resultadoEsperado)
+    public async Task ProcessarEnvioAsync_QuandoProviderResponder_DeveFinalizarComMesmoLease(
+        StatusPixProvider statusProvider, ResultadoOperacaoPagamentoPix resultadoEsperado)
     {
-        var contexto = CriarContextoPreparado();
-        PixEnvioRequest? requestCapturado = null;
-        contexto.Provider
-            .Setup(value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.CancellationToken))
-            .Callback<PixEnvioRequest, CancellationToken>((request, _) => requestCapturado = request)
-            .ReturnsAsync(CriarResultadoProvider(statusProvider));
-        contexto.OperacaoRepository
-            .Setup(value => value.FinalizarAsync(contexto.Operacao, contexto.CancellationToken))
-            .ReturnsAsync(true);
+        var contexto = CriarContexto();
+        contexto.Provider.Setup(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token))
+            .ReturnsAsync(CriarResultado(statusProvider));
+        contexto.Store.Setup(x => x.FinalizarEnvioAsync(
+                contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId, resultadoEsperado,
+                "provider-id", "provider-code", CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(true));
 
-        var resultado = await contexto.Service.ProcessarEnvioAsync(
-            contexto.Pagamento.Id,
-            contexto.CancellationToken);
+        var resultado = await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
 
         Assert.True(resultado.EnvioExecutado);
-        Assert.Equal(contexto.Pagamento.Id, resultado.PagamentoPixId);
-        Assert.Equal(contexto.Operacao.Id, resultado.OperacaoPagamentoPixId);
-        Assert.Equal(1, resultado.NumeroTentativaEnvio);
         Assert.Equal(resultadoEsperado, resultado.ResultadoOperacao);
-        Assert.NotNull(requestCapturado);
-        Assert.Equal(contexto.Pagamento.Id, requestCapturado!.PagamentoPixId);
-        Assert.Equal(contexto.Pagamento.Valor, requestCapturado.Valor);
-        Assert.Equal(contexto.Pagamento.TipoChavePix, requestCapturado.TipoChavePix);
-        Assert.Equal(contexto.Pagamento.ChavePix, requestCapturado.ChavePix);
-        Assert.Equal(contexto.Pagamento.Id.ToString("N"), requestCapturado.ReferenciaIdempotente);
-        Assert.Equal(resultadoEsperado, contexto.Operacao.Resultado);
-        Assert.Equal("provider-id", contexto.Operacao.IdentificadorProvider);
-        Assert.Equal("provider-code", contexto.Operacao.Codigo);
-        Assert.Equal(StatusPagamentoPix.Processando, contexto.Pagamento.Status);
-        Assert.Equal(1, contexto.Pagamento.QuantidadeTentativas);
-        Assert.Null(typeof(Application.Models.ResultadoEnvioPagamentoPix).GetProperty("ChavePix"));
-        Assert.DoesNotContain(contexto.Pagamento.ChavePix, resultado.ToString());
-        contexto.Provider.Verify(
-            value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.CancellationToken),
-            Times.Once);
-        VerificarSemMutacaoPagamento(contexto.PagamentoRepository);
+        Assert.Null(typeof(ResultadoEnvioPagamentoPix).GetProperty("ChavePix"));
+        contexto.Provider.Verify(x => x.EnviarAsync(
+            It.Is<PixEnvioRequest>(r => r.ReferenciaIdempotente == contexto.Pagamento.Id.ToString("N") &&
+                                       r.ChavePix == contexto.Pagamento.ChavePix), contexto.Token), Times.Once);
+        contexto.Store.Verify(x => x.FinalizarEnvioAsync(
+            contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId, resultadoEsperado,
+            "provider-id", "provider-code", CancellationToken.None), Times.Once);
+        contexto.Pagamentos.Verify(x => x.AtualizarAsync(It.IsAny<PagamentoPix>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
-    public async Task ProcessarEnvioAsync_QuandoCanceladoAntesDaPreparacao_NaoDeveChamarProvider()
+    public async Task ProcessarEnvioAsync_QuandoProviderFalhar_DeveRegistrarIndeterminadoComTokenNoneEPropagar()
     {
-        using var cancellationTokenSource = new CancellationTokenSource();
-        cancellationTokenSource.Cancel();
-        var pagamentoRepository = new Mock<IPagamentoPixRepository>();
-        var store = new Mock<IPagamentoPixEnvioStore>();
-        var provider = new Mock<IPixProvider>();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            CriarService(pagamentoRepository, store, new Mock<IOperacaoPagamentoPixRepository>(), provider)
-                .ProcessarEnvioAsync(Guid.NewGuid(), cancellationTokenSource.Token));
-
-        pagamentoRepository.Verify(
-            value => value.ObterPorIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        store.Verify(
-            value => value.TentarPrepararEnvioAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        provider.Verify(value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task ProcessarEnvioAsync_QuandoProviderCancelar_DeveManterAuditoriaAbertaESemRetry()
-    {
-        var contexto = CriarContextoPreparado();
-        contexto.Provider
-            .Setup(value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.CancellationToken))
-            .ThrowsAsync(new OperationCanceledException());
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.CancellationToken));
-
-        Assert.False(contexto.Operacao.FinishedAt.HasValue);
-        Assert.Null(contexto.Operacao.Resultado);
-        contexto.Provider.Verify(
-            value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.CancellationToken),
-            Times.Once);
-        contexto.OperacaoRepository.Verify(
-            value => value.FinalizarAsync(It.IsAny<OperacaoPagamentoPix>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        VerificarSemMutacaoPagamento(contexto.PagamentoRepository);
-    }
-
-    [Fact]
-    public async Task ProcessarEnvioAsync_QuandoProviderLancarExcecaoInesperada_DeveManterAuditoriaAberta()
-    {
-        var contexto = CriarContextoPreparado();
-        contexto.Provider
-            .Setup(value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.CancellationToken))
-            .ThrowsAsync(new InvalidOperationException("falha simulada do adapter"));
+        var contexto = CriarContexto();
+        contexto.Provider.Setup(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token))
+            .ThrowsAsync(new InvalidOperationException("falha simulada"));
+        contexto.Store.Setup(x => x.FinalizarEnvioAsync(
+                contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId,
+                ResultadoOperacaoPagamentoPix.Indeterminado, null, null, CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(true));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.CancellationToken));
+            contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token));
 
-        Assert.False(contexto.Operacao.FinishedAt.HasValue);
-        Assert.Null(contexto.Operacao.Resultado);
-        contexto.Provider.Verify(
-            value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.CancellationToken),
-            Times.Once);
-        contexto.OperacaoRepository.Verify(
-            value => value.FinalizarAsync(It.IsAny<OperacaoPagamentoPix>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        VerificarSemMutacaoPagamento(contexto.PagamentoRepository);
+        contexto.Store.Verify(x => x.FinalizarEnvioAsync(
+            contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId,
+            ResultadoOperacaoPagamentoPix.Indeterminado, null, null, CancellationToken.None), Times.Once);
     }
 
     [Fact]
-    public async Task ProcessarEnvioAsync_QuandoFinalizacaoFalhar_NaoDeveReenviarPix()
+    public async Task ProcessarEnvioAsync_QuandoProviderForCancelado_DeveRegistrarIndeterminadoESemPagamento()
     {
-        var contexto = CriarContextoPreparado();
-        contexto.Provider
-            .Setup(value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.CancellationToken))
+        var contexto = CriarContexto();
+        contexto.Provider.Setup(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token))
+            .ThrowsAsync(new OperationCanceledException(contexto.Token));
+        contexto.Store.Setup(x => x.FinalizarEnvioAsync(
+                contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId,
+                ResultadoOperacaoPagamentoPix.Indeterminado, null, null, CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(true));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token));
+
+        contexto.Store.Verify(x => x.FinalizarEnvioAsync(
+            contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId,
+            ResultadoOperacaoPagamentoPix.Indeterminado, null, null, CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessarEnvioAsync_QuandoFinalizacaoPerderLease_NaoDeveReenviar()
+    {
+        var contexto = CriarContexto();
+        contexto.Provider.Setup(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token))
             .ReturnsAsync(PixProviderResult.Confirmado());
-        contexto.OperacaoRepository
-            .Setup(value => value.FinalizarAsync(contexto.Operacao, contexto.CancellationToken))
-            .ReturnsAsync(false);
+        contexto.Store.Setup(x => x.FinalizarEnvioAsync(
+                contexto.Pagamento.Id, contexto.OperacaoId, contexto.LeaseId,
+                ResultadoOperacaoPagamentoPix.Confirmado, null, null, CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(false));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.CancellationToken));
+            contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token));
 
-        contexto.Provider.Verify(
-            value => value.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.CancellationToken),
-            Times.Once);
-        Assert.True(contexto.Operacao.FinishedAt.HasValue);
-        VerificarSemMutacaoPagamento(contexto.PagamentoRepository);
+        contexto.Provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token), Times.Once);
     }
 
-    private static PixProviderResult CriarResultadoProvider(StatusPixProvider status) =>
-        status switch
-        {
-            StatusPixProvider.Confirmado => PixProviderResult.Confirmado("provider-id", "provider-code"),
-            StatusPixProvider.FalhaConfirmada => PixProviderResult.FalhaConfirmada("provider-id", "provider-code"),
-            StatusPixProvider.Pendente => PixProviderResult.Pendente("provider-id", "provider-code"),
-            StatusPixProvider.Indeterminado => PixProviderResult.Indeterminado("provider-id", "provider-code"),
-            _ => throw new ArgumentOutOfRangeException(nameof(status))
-        };
-
-    private static ContextoPreparado CriarContextoPreparado()
+    [Fact]
+    public async Task ProcessarEnvioAsync_QuandoReferenciaPreparadaNaoCorresponderAoPagamento_DeveFalharAntesDoProvider()
     {
-        var pagamento = CriarPagamento();
-        pagamento.IniciarTentativa();
-        var operacao = OperacaoPagamentoPix.IniciarEnvio(pagamento.Id, 1);
-        var cancellationToken = new CancellationTokenSource().Token;
-        var pagamentoRepository = new Mock<IPagamentoPixRepository>();
-        var store = new Mock<IPagamentoPixEnvioStore>();
-        var operacaoRepository = new Mock<IOperacaoPagamentoPixRepository>();
-        var provider = new Mock<IPixProvider>();
+        var contexto = CriarContexto();
+        contexto.Store.Setup(x => x.TentarPrepararEnvioAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(PreparacaoEnvioPagamentoPixResult.AdquiridoCom(
+                contexto.OperacaoId,
+                1,
+                contexto.LeaseId,
+                Guid.NewGuid().ToString("N")));
 
-        pagamentoRepository
-            .Setup(value => value.ObterPorIdAsync(pagamento.Id, cancellationToken))
-            .ReturnsAsync(pagamento);
-        store
-            .Setup(value => value.TentarPrepararEnvioAsync(pagamento.Id, cancellationToken))
-            .ReturnsAsync(Application.Models.PreparacaoEnvioPagamentoPixResult.AdquiridoCom(operacao.Id, 1));
-        operacaoRepository
-            .Setup(value => value.ObterPorIdAsync(operacao.Id, cancellationToken))
-            .ReturnsAsync(operacao);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token));
 
-        return new ContextoPreparado(
-            CriarService(pagamentoRepository, store, operacaoRepository, provider),
-            pagamento,
-            operacao,
-            pagamentoRepository,
-            operacaoRepository,
-            provider,
-            cancellationToken);
+        contexto.Provider.Verify(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private static void ConfigurarPagamentoExistente(
-        Mock<IPagamentoPixRepository> pagamentoRepository,
-        PagamentoPix pagamento) =>
-        pagamentoRepository
-            .Setup(value => value.ObterPorIdAsync(pagamento.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(pagamento);
+    [Fact]
+    public async Task ProcessarEnvioAsync_QuandoCanceladoAposResposta_DeveFinalizarAuditoriaComTokenNone()
+    {
+        var contexto = CriarContexto();
+        contexto.Provider.Setup(x => x.EnviarAsync(It.IsAny<PixEnvioRequest>(), contexto.Token))
+            .Callback(() => contexto.CancellationSource.Cancel())
+            .ReturnsAsync(PixProviderResult.Confirmado());
+        contexto.Store.Setup(x => x.FinalizarEnvioAsync(
+                contexto.Pagamento.Id,
+                contexto.OperacaoId,
+                contexto.LeaseId,
+                ResultadoOperacaoPagamentoPix.Confirmado,
+                null,
+                null,
+                CancellationToken.None))
+            .ReturnsAsync(new FinalizacaoEnvioPagamentoPixResult(true));
+
+        var resultado = await contexto.Service.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.True(resultado.EnvioExecutado);
+        contexto.Store.Verify(x => x.FinalizarEnvioAsync(
+            contexto.Pagamento.Id,
+            contexto.OperacaoId,
+            contexto.LeaseId,
+            ResultadoOperacaoPagamentoPix.Confirmado,
+            null,
+            null,
+            CancellationToken.None), Times.Once);
+    }
+
+    private static Contexto CriarContexto(bool adquirido = true)
+    {
+        var pagamento = PagamentoPix.Criar(Guid.NewGuid(), Guid.NewGuid(), 12.34m, TipoChavePix.Email, "destinatario@exemplo.com");
+        var pagamentos = new Mock<IPagamentoPixRepository>();
+        var store = new Mock<IPagamentoPixEnvioStore>();
+        var provider = new Mock<IPixProvider>();
+        var cancellationSource = new CancellationTokenSource();
+        var token = cancellationSource.Token;
+        var operacaoId = Guid.NewGuid();
+        var leaseId = Guid.NewGuid();
+        pagamentos.Setup(x => x.ObterPorIdAsync(pagamento.Id, token)).ReturnsAsync(pagamento);
+        store.Setup(x => x.TentarPrepararEnvioAsync(pagamento.Id, token)).ReturnsAsync(
+            adquirido
+                ? PreparacaoEnvioPagamentoPixResult.AdquiridoCom(
+                    operacaoId, 1, leaseId, pagamento.Id.ToString("N"))
+                : PreparacaoEnvioPagamentoPixResult.NaoAdquirido());
+        if (adquirido)
+            pagamento.IniciarTentativa();
+        return new Contexto(
+            CriarService(pagamentos, store, provider),
+            pagamento,
+            pagamentos,
+            store,
+            provider,
+            cancellationSource,
+            token,
+            operacaoId,
+            leaseId);
+    }
 
     private static PagamentoPixEnvioService CriarService(
-        Mock<IPagamentoPixRepository> pagamentoRepository,
-        Mock<IPagamentoPixEnvioStore> store,
-        Mock<IOperacaoPagamentoPixRepository> operacaoRepository,
-        Mock<IPixProvider> provider) =>
-        new(pagamentoRepository.Object, store.Object, operacaoRepository.Object, provider.Object);
+        Mock<IPagamentoPixRepository> pagamentos, Mock<IPagamentoPixEnvioStore> store, Mock<IPixProvider> provider) =>
+        new(pagamentos.Object, store.Object, provider.Object);
 
-    private static PagamentoPix CriarPagamento() =>
-        PagamentoPix.Criar(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            123.45m,
-            TipoChavePix.Email,
-            "beneficiario@exemplo.com");
-
-    private static void VerificarSemMutacaoPagamento(Mock<IPagamentoPixRepository> pagamentoRepository)
+    private static PixProviderResult CriarResultado(StatusPixProvider status) => status switch
     {
-        pagamentoRepository.Verify(
-            value => value.AtualizarAsync(It.IsAny<PagamentoPix>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-        pagamentoRepository.Verify(
-            value => value.TentarIniciarProcessamentoAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
+        StatusPixProvider.Confirmado => PixProviderResult.Confirmado("provider-id", "provider-code"),
+        StatusPixProvider.FalhaConfirmada => PixProviderResult.FalhaConfirmada("provider-id", "provider-code"),
+        StatusPixProvider.Pendente => PixProviderResult.Pendente("provider-id", "provider-code"),
+        _ => PixProviderResult.Indeterminado("provider-id", "provider-code")
+    };
 
-    private sealed record ContextoPreparado(
-        PagamentoPixEnvioService Service,
-        PagamentoPix Pagamento,
-        OperacaoPagamentoPix Operacao,
-        Mock<IPagamentoPixRepository> PagamentoRepository,
-        Mock<IOperacaoPagamentoPixRepository> OperacaoRepository,
-        Mock<IPixProvider> Provider,
-        CancellationToken CancellationToken);
+    private sealed record Contexto(
+        PagamentoPixEnvioService Service, PagamentoPix Pagamento, Mock<IPagamentoPixRepository> Pagamentos,
+        Mock<IPagamentoPixEnvioStore> Store,
+        Mock<IPixProvider> Provider, CancellationTokenSource CancellationSource, CancellationToken Token,
+        Guid OperacaoId, Guid LeaseId);
 }

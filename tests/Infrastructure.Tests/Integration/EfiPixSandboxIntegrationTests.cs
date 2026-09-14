@@ -94,7 +94,8 @@ public sealed class EfiPixSandboxIntegrationTests
             pagamentoPixId,
             0.01m,
             TipoChavePix.Email,
-            chavePixFavorecido);
+            chavePixFavorecido,
+            pagamentoPixId.ToString("N"));
 
         Assert.Equal(pagamentoPixId.ToString("N"), request.ReferenciaIdempotente);
         var redator = new RedatorDiagnosticoSandbox(options, request.ChavePix);

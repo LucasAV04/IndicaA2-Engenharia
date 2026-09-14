@@ -49,6 +49,12 @@ public sealed class ResultadoReconciliacaoPagamentoPix
     public static ResultadoReconciliacaoPagamentoPix ConsultaEmAndamento(Guid pagamentoPixId) =>
         new(pagamentoPixId, StatusReconciliacaoPagamentoPix.ConsultaEmAndamento, null, null, false);
 
+    public static ResultadoReconciliacaoPagamentoPix EnvioEmAndamento(Guid pagamentoPixId) =>
+        new(pagamentoPixId, StatusReconciliacaoPagamentoPix.EnvioEmAndamento, null, null, false);
+
+    public static ResultadoReconciliacaoPagamentoPix EnvioPendenteRecuperacao(Guid pagamentoPixId) =>
+        new(pagamentoPixId, StatusReconciliacaoPagamentoPix.EnvioPendenteRecuperacao, null, null, false);
+
     public static ResultadoReconciliacaoPagamentoPix Consultado(
         Guid pagamentoPixId,
         Guid operacaoConsultaId,
