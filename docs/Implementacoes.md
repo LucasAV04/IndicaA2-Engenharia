@@ -1,5 +1,25 @@
 # Implementações
 
+## Orquestração Unitária de Processamento de PagamentoPix — PR #33
+
+**Data:** 2026-09-14
+
+`IPagamentoPixProcessamentoService` recebe exclusivamente `PagamentoPixId` e avança a ordem em uma única etapa lógica. Ele coordena `IPagamentoPixEnvioService`, `IPagamentoPixReconciliacaoService` e `IPagamentoPixAplicacaoResultadoService`, sem acessar chave Pix, provider, stores, SQL, leases ou transação diretamente.
+
+| Estado persistido | Decisão da execução | Limite externo |
+|---|---|---|
+| `Pendente` | Executa um único Envio; diante de evidência conclusiva aplica uma vez. | Somente Envio |
+| `Processando` | Primeiro tenta aplicar evidência persistida; sem evidência, reconcilia uma vez e aplica novamente somente se conclusiva. | Somente Consulta |
+| `Falhou` | Retorna aguardo de política formal de retry. | Nenhum |
+| `Concluido` / `FalhaDefinitiva` | Retorna terminal e idempotente. | Nenhum |
+| `Cancelado` | Retorna não aplicável. | Nenhum |
+
+Resultados explícitos distinguem aplicação, terminalidade, Envio/Consulta em andamento, Envio pendente de recuperação, aguardo de resultado e aguardo de política de retry. O resultado público não inclui chave Pix, payload, credencial, certificado ou token de lease. A execução nunca faz loop, polling, retry automático, segunda chamada externa ou transação própria; exceções e cancelamentos dos serviços especializados são propagados.
+
+O serviço é `Scoped` no composition root, porém não há endpoint HTTP: ele é uma porta interna para o worker futuro. A proteção concorrente, os leases de cinco minutos pelo relógio MySQL, a idempotência da aplicação financeira e a chamada HTTP fora de transação permanecem nos serviços e stores já existentes.
+
+Foram adicionados testes unitários de decisão por estado, cancelamento, exceções, limite de uma chamada externa e ausência de dados sensíveis no resultado; há também resolução de DI e integrações de composição para confirmação, falha confirmada, lease ativo e concorrência de dois orquestradores. O build concluiu com **0 erros e 0 warnings**; os testes direcionados registraram **69 aprovados**, o preflight registrou **6 aprovados** e a suíte rápida registrou **487 aprovados**, todos sem falhas ou ignorados. O inventário estático agora é de **125 integrações MySQL em 13 classes**; a execução MySQL deste PR permanece pendente porque `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível. Nenhuma chamada Efí, OAuth ou Pix real foi feita nesta etapa.
+
 ## Lease Persistente de Envio Pix — PR #32
 
 **Data:** 2026-09-10

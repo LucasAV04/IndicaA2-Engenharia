@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-14 — Orquestração Unitária de Processamento de PagamentoPix — PR #33
+
+### Adicionado
+
+- `IPagamentoPixProcessamentoService`, `PagamentoPixProcessamentoService` e resultado provider-agnostic para avançar uma ordem somente por `PagamentoPixId`.
+- Decisão explícita por estado: Envio único para `Pendente`, aplicação antes de uma única reconciliação para `Processando`, espera de política para `Falhou` e retorno idempotente para estados terminais.
+- Registro scoped no composition root, sem endpoint HTTP, worker, fila, scheduler, polling, retry ou transação própria.
+- Testes unitários de decisão, cancelamento, exceções e ausência de dados sensíveis; resolução de DI e integrações MySQL de composição para confirmação, falha confirmada, lease ativo e concorrência.
+
+### Limites e validação
+
+- Cada execução provoca no máximo uma chamada externa: Envio ou Consulta, nunca ambas.
+- O orquestrador não chama `IPixProvider`, não lê chave Pix e não altera diretamente Cashback, auditoria, leases ou snapshots.
+- Build: sucesso, 0 erros e 0 warnings; testes direcionados: 69 aprovados; preflight: 6 aprovados; suíte rápida: 487 aprovados — todos sem falhas ou ignorados.
+- Inventário estático atualizado para **125 integrações MySQL em 13 classes**. A execução MySQL deste PR permanece pendente porque `INDICA2_TEST_MYSQL_CONNECTION` não está disponível neste processo.
+- Nenhuma chamada Efí, OAuth ou Pix real foi executada.
+
 ## 2026-09-10 — Lease Persistente de Envio Pix — PR #32
 
 ### Adicionado
