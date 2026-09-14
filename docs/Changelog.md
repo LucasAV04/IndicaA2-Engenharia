@@ -27,8 +27,8 @@
 - Build: sucesso, 0 erros, 0 warnings.
 - Seleção sem MySQL de Envio, reconciliação, contrato do provider e adapter Efí: 70 aprovados, 0 falhos, 0 ignorados (46 em `Application.Tests` e 24 em `Infrastructure.Tests`).
 - Suíte rápida sem MySQL/Efí: 467 aprovados, 0 falhos, 0 ignorados.
-- A cobertura MySQL foi ampliada para 121 casos em 13 classes, incluindo interleaving de recuperação do Envio, bloqueio da aplicação por lease de Envio, preservação de lease na reconciliação, rollback da finalização e auditoria adulterada. Essas novas integrações permanecem pendentes de execução controlada; nenhuma migration foi executada e elas não são declaradas aprovadas nesta etapa.
-- Sem `INDICA2_TEST_MYSQL_CONNECTION`, as integrações MySQL desta etapa não foram executadas e não são declaradas aprovadas. Não houve Efí real, OAuth real ou Pix real.
+- A cobertura MySQL foi ampliada para 121 casos em 13 classes, incluindo interleaving de recuperação do Envio, bloqueio da aplicação por lease de Envio, preservação de lease na reconciliação, rollback da finalização e auditoria adulterada. Na validação estática anterior, elas permaneciam pendentes; esse registro é superado pela validação definitiva abaixo.
+- No processo estático anterior, `INDICA2_TEST_MYSQL_CONNECTION` estava ausente e as integrações não foram executadas nele. Não houve Efí real, OAuth real ou Pix real.
 
 ### Escopo
 
@@ -42,7 +42,7 @@
 - A reconciliação agora resolve o Envio legado somente por Consulta: evidência conclusiva finaliza a mesma auditoria sem HTTP e preserva resultado, `identificador_provider` e `codigo`; sem evidência, uma Consulta ativa é respeitada e uma expirada é retomada com novo token, sem criar segunda Consulta.
 - O fluxo de Envio continua falhando fechado para Envio legado sem lease e não cria nova tentativa nem nova auditoria.
 - As duas esperas concorrentes dos testes de reconciliação foram ajustadas para detectar término antecipado, limitar a espera a dez segundos, sempre liberar o provider e observar toda tarefa iniciada mesmo diante de falha de asserção. Foi adicionada cobertura MySQL do bloqueio de reenvio do Envio legado.
-- Os 16 erros são um resultado intermediário, não uma aprovação. Nesta correção, build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação tiveram 35 aprovados; o preflight MySQL teve 6 aprovados; e a suíte rápida teve 467 aprovados, 0 falhos e 0 ignorados. A validação controlada das 121 integrações MySQL e da migration 012 permanece pendente; não houve Efí, OAuth ou Pix real.
+- Os 16 erros são um resultado intermediário, não uma aprovação. Nesta correção, build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação tiveram 35 aprovados; o preflight MySQL teve 6 aprovados; e a suíte rápida teve 467 aprovados, 0 falhos e 0 ignorados. A validação controlada então pendente das 121 integrações MySQL e da migration 012 foi concluída posteriormente com aprovação total, conforme abaixo; não houve Efí, OAuth ou Pix real.
 
 ### Corrigido após seleção MySQL direcionada
 
@@ -50,7 +50,7 @@
 - A antiga preparação de Envio duplicado não alcançava mais a inserção porque o store detecta a auditoria aberta antes do claim. O teste foi substituído por trigger `BEFORE INSERT` que falha depois do claim e comprova rollback integral, sem alterar a produção.
 - Estados terminais válidos continuam no cenário não elegível. `PagamentoPix.Processando` sem Envio atual passou para cenário próprio de corrupção persistida, que falha fechada sem criar auditoria, incrementar tentativa ou adquirir lease.
 - O snapshot de operações da reconciliação passou a representar `GROUP_CONCAT` vazio sem cast de `DBNull`; leases parciais ou simultâneos continuam preservados sem Consulta, provider ou reparação silenciosa.
-- O inventário estático passou de 120 para **121 integrações MySQL em 13 classes**. A execução completa, a migration 012 e a validação definitiva contra MySQL permanecem pendentes; não houve Efí, OAuth ou Pix real.
+- O inventário estático passou de 120 para **121 integrações MySQL em 13 classes**. A execução completa e a migration 012 então pendentes foram validadas posteriormente, conforme a entrada definitiva abaixo; não houve Efí, OAuth ou Pix real.
 - Validação local desta correção: build sem erros e com quatro avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`; 35 testes unitários direcionados, 6 de preflight e 467 da suíte rápida aprovados, sem falhas ou ignorados. `INDICA2_TEST_MYSQL_CONNECTION` estava ausente, portanto nenhuma das 121 integrações nem a migration 012 foi executada.
 
 ### Corrigido após execução MySQL de 121 casos
@@ -58,7 +58,14 @@
 - A execução intermediária registrou 119 aprovados, 2 falhos e 0 ignorados. As falhas ficaram restritas a `AplicarAsync_QuandoLeaseDeEnvioForValido_DeveExigirReconciliacaoSemMutacao` e `AplicarAsync_QuandoLeaseDeEnvioExpirar_DeveExigirReconciliacaoSemMutacao`.
 - Os dois testes falhavam antes de chamar `AplicarAsync`: `resultado = NULL` em uma auditoria aberta tornava o `CONCAT` do snapshot nulo, `GROUP_CONCAT` devolvia `DBNull` e o cast para `string` lançava `InvalidCastException`. Não há evidência desses erros de defeito na produção.
 - `ObterSnapshotAuditoriaAsync` agora representa `resultado` nulo e protege o histórico vazio de `GROUP_CONCAT`, preservando a ordenação e a comparação integral da auditoria antes/depois.
-- A aprovação definitiva das 121 integrações e da migration 012 continua pendente de nova execução MySQL. Não houve Efí, OAuth ou Pix real.
+- Este resultado intermediário foi superado pela execução definitiva de 121 aprovados registrada abaixo. Não houve Efí, OAuth ou Pix real.
+
+### Validação MySQL definitiva do PR #32
+
+- Execução realizada pelo usuário com MySQL de testes configurado: **121 executados, 121 aprovados, 0 falhos e 0 ignorados**; testes em 19,7 segundos e comando concluído com sucesso em 20,6 segundos.
+- Esse resultado supera o registro intermediário de 119 aprovados e 2 falhos. A migration 012 e o schema da fixture foram validados, assim como lease persistente de Envio, recuperação idempotente, bloqueio de aplicação/reconciliação, concorrência, rollback e rejeição de executor antigo.
+- A representação determinística de `resultado = NULL` e a eliminação do cast inseguro de `DBNull` no snapshot de auditoria foram confirmadas pelos dois testes anteriormente afetados.
+- Não houve Efí real, OAuth real, Pix real ou dados financeiros de produção. Não há declaração sobre remoção de bancos temporários, pois essa confirmação não foi fornecida.
 
 ## 2026-09-09 — Validação Definitiva do PR #31
 

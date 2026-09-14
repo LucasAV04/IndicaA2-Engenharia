@@ -39,8 +39,8 @@ A evidência utilizada é a documentação oficial da Efí: <https://dev.efipay.
 - Build: sucesso, **0 erros e 0 warnings**.
 - Seleção sem MySQL de Envio, reconciliação, contrato do provider e adapter Efí: **70 aprovados**, 0 falhos, 0 ignorados (46 em `Application.Tests` e 24 em `Infrastructure.Tests`).
 - Suíte rápida sem MySQL e sem Efí externo: **467 aprovados**, 0 falhos, 0 ignorados.
-- A contagem estática atual é de **121 integrações MySQL em 13 classes**. A validação MySQL destas novas coberturas permanece pendente nesta etapa; elas não são declaradas aprovadas sem a execução controlada no banco temporário. Nenhuma migration foi executada nesta validação estática.
-- `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível neste processo; portanto, as integrações MySQL desta etapa não foram executadas nem declaradas aprovadas. Não houve Efí real, OAuth real ou envio Pix real.
+- A contagem estática é de **121 integrações MySQL em 13 classes**. Na validação estática anterior, essas coberturas permaneciam pendentes e nenhuma migration foi executada; esse registro é superado pela validação definitiva abaixo.
+- Naquele processo anterior, `INDICA2_TEST_MYSQL_CONNECTION` não estava disponível; por isso as integrações não foram executadas nele. Não houve Efí real, OAuth real ou envio Pix real.
 
 | Teste anterior | Motivo | Teste substituto |
 |---|---|---|
@@ -73,7 +73,7 @@ A correção preserva a falha fechada do fluxo de Envio para esse registro legad
 
 Foram reforçados os testes de recuperação do Envio a partir de evidência, de Consulta ativa e expirada, de bloqueio financeiro e de conflito conclusivo. As duas esperas concorrentes agora detectam sinal do provider ou término antecipado da reconciliação, possuem timeout defensivo de dez segundos, liberam o provider no `finally` e observam toda tarefa iniciada mesmo se uma asserção falhar. `TentarPrepararEnvioAsync_QuandoEnvioLegadoAbertoNaoTiverLease_DeveFalharSemReenviar` confirma que o fluxo de Envio não cria nova tentativa nem nova auditoria para o registro legado.
 
-O resultado interrompido não é aprovação. Nesta correção, o build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação registraram 35 aprovados; o preflight MySQL registrou 6 aprovados; e a suíte rápida registrou 467 aprovados, 0 falhos e 0 ignorados. A execução controlada das **121 integrações MySQL**, incluindo a migration 012, continua pendente para validar esta correção. Não houve Efí real, OAuth real ou envio Pix real nesta etapa.
+O resultado interrompido não é aprovação. Nesta correção, o build concluiu com 0 erros e 0 warnings; os testes unitários direcionados de Envio e Reconciliação registraram 35 aprovados; o preflight MySQL registrou 6 aprovados; e a suíte rápida registrou 467 aprovados, 0 falhos e 0 ignorados. A execução controlada então pendente das **121 integrações MySQL**, incluindo a migration 012, foi concluída posteriormente com aprovação total, conforme a validação definitiva abaixo. Não houve Efí real, OAuth real ou envio Pix real nesta etapa.
 
 ### Ajuste dos cenários revelados pela seleção MySQL direcionada
 
@@ -81,7 +81,7 @@ Uma execução MySQL direcionada registrou **41 testes: 38 aprovados, 3 falhos e
 
 Dois testes continham expectativas que deixaram de representar as invariáveis atuais, sem defeito de produção: a duplicidade prévia de Envio agora é detectada antes do claim e `Processando` sem Envio no ciclo atual é corrupção persistida, não estado terminal não elegível. O primeiro foi substituído por falha induzida por trigger durante a inserção da auditoria, depois da aquisição do claim, comprovando rollback integral; o segundo foi separado entre estados terminais válidos e a corrupção `Processando` sem Envio, que falha fechada e sem mutação.
 
-A terceira falha era somente de teste: `GROUP_CONCAT` devolve `NULL` para histórico vazio e o snapshot fazia cast direto de `DBNull` para `string`. O snapshot agora representa o histórico vazio deterministicamente, preservando a comparação integral dos leases parciais ou simultâneos. O comportamento de produção, a migration 012, as regras financeiras e os leases foram preservados. O inventário estático passou para **121 integrações MySQL em 13 classes**; a execução completa continua pendente.
+A terceira falha era somente de teste: `GROUP_CONCAT` devolve `NULL` para histórico vazio e o snapshot fazia cast direto de `DBNull` para `string`. O snapshot agora representa o histórico vazio deterministicamente, preservando a comparação integral dos leases parciais ou simultâneos. O comportamento de produção, a migration 012, as regras financeiras e os leases foram preservados. O inventário estático passou para **121 integrações MySQL em 13 classes**; a execução completa então pendente foi posteriormente aprovada, conforme a validação definitiva abaixo.
 
 Na validação local desta correção, o build concluiu sem erros e exibiu os quatro avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`; os testes unitários direcionados registraram **35 aprovados**, o preflight registrou **6 aprovados** e a suíte rápida registrou **467 aprovados**, todos sem falhas ou ignorados. Como `INDICA2_TEST_MYSQL_CONNECTION` estava ausente, as 121 integrações e a migration 012 não foram executadas. Não houve Efí, OAuth ou Pix real.
 
@@ -91,7 +91,24 @@ Uma execução intermediária das **121 integrações MySQL** registrou **119 ap
 
 Ambas ocorreram antes de `AplicarAsync`, durante a captura do snapshot da auditoria: o Envio aberto possui `resultado = NULL`, e o `CONCAT` SQL não representava esse nulo. Como `CONCAT` retorna `NULL` quando qualquer argumento é nulo, `GROUP_CONCAT` devolveu `NULL`, materializado como `DBNull`, e o cast para `string` lançou `InvalidCastException`. Isso não comprovou defeito na regra de produção.
 
-O snapshot passou a representar `resultado` nulo explicitamente e a proteger o resultado vazio externo de `GROUP_CONCAT`, preservando ordenação, histórico integral e comparação antes/depois. A aprovação definitiva continua dependente de uma nova execução MySQL; as 121 integrações não são declaradas aprovadas nesta correção.
+O snapshot passou a representar `resultado` nulo explicitamente e a proteger o resultado vazio externo de `GROUP_CONCAT`, preservando ordenação, histórico integral e comparação antes/depois. Este resultado intermediário foi superado pela validação definitiva registrada a seguir.
+
+### Validação MySQL definitiva do PR #32
+
+A execução definitiva fornecida pelo usuário, com MySQL de testes configurado, concluiu com sucesso em **20,6 segundos**:
+
+```text
+Resumo do teste:
+total: 121
+falhou: 0
+bem-sucedido: 121
+ignorado: 0
+duração: 19,7s
+```
+
+Esse resultado **supera** a execução intermediária de 121 testes com 119 aprovados e 2 falhos. A suíte validou o schema utilizado pela fixture, incluindo a migration 012, e os fluxos MySQL do PR #32: lease persistente de Envio, recuperação idempotente, bloqueio de aplicação e reconciliação, concorrência, rollback e rejeição de executor antigo. Os dois testes antes afetados pelo snapshot passaram: `resultado = NULL` possui representação determinística e não há cast inseguro de `DBNull`.
+
+Não houve Efí real, OAuth real, envio Pix real, uso de dados financeiros de produção ou declaração sobre remoção de bancos temporários.
 
 O PR #31 foi concluído por **Squash and merge** no commit `6c259642c0c95764ff1d73aa8640b6b946861ddf`.
 
