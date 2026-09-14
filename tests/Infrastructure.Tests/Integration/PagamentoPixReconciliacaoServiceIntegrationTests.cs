@@ -398,13 +398,18 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
             new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory, new AesGcmDadosPixProtector(CriarChave())));
 
         var tarefaReconciliacao = reconciliacao.ReconciliarAsync(pagamentoPix.Id, CancellationToken.None);
-        await provider.ConsultaIniciada;
+        try
+        {
+            await AguardarProviderOuObservarFalhaAsync(provider.ConsultaIniciada, tarefaReconciliacao);
 
-        var duranteConsulta = await aplicacao.AplicarAsync(pagamentoPix.Id, CancellationToken.None);
-        Assert.Equal(StatusAplicacaoPagamentoPix.RequerReconciliacao, duranteConsulta.Status);
-
-        provider.LiberarConsulta();
-        _ = await tarefaReconciliacao;
+            var duranteConsulta = await aplicacao.AplicarAsync(pagamentoPix.Id, CancellationToken.None);
+            Assert.Equal(StatusAplicacaoPagamentoPix.RequerReconciliacao, duranteConsulta.Status);
+        }
+        finally
+        {
+            provider.LiberarConsulta();
+            await tarefaReconciliacao.WaitAsync(TimeSpan.FromSeconds(10));
+        }
 
         var aposReconciliacao = await aplicacao.AplicarAsync(pagamentoPix.Id, CancellationToken.None);
         var pagamentoPersistido = (await CriarPagamentoRepository()
@@ -493,13 +498,7 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
         var primeira = CriarService(provider).ReconciliarAsync(pagamento.Id);
         try
         {
-            var primeiraConclusao = await Task.WhenAny(
-                provider.ConsultaIniciada,
-                primeira,
-                Task.Delay(TimeSpan.FromSeconds(10)));
-            if (primeiraConclusao == primeira)
-                await primeira;
-            Assert.Same(provider.ConsultaIniciada, primeiraConclusao);
+            await AguardarProviderOuObservarFalhaAsync(provider.ConsultaIniciada, primeira);
 
             var antes = await repository.ObterPorPagamentoPixIdAsync(pagamento.Id);
             var aberta = Assert.Single(antes, x => x.TipoOperacao == TipoOperacaoPagamentoPix.Consulta);
@@ -514,8 +513,11 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
             Assert.Null((await repository.ObterPorIdAsync(aberta.Id))!.FinishedAt);
             await VerificarNaoLiquidadoAsync(pagamento);
         }
-        finally { provider.LiberarConsulta(); }
-        await primeira.WaitAsync(TimeSpan.FromSeconds(10));
+        finally
+        {
+            provider.LiberarConsulta();
+            await primeira.WaitAsync(TimeSpan.FromSeconds(10));
+        }
         Assert.Equal(1, provider.QuantidadeConsultas);
         Assert.Single(await repository.ObterPorPagamentoPixIdAsync(pagamento.Id),
             x => x.TipoOperacao == TipoOperacaoPagamentoPix.Consulta);
@@ -1040,6 +1042,26 @@ public sealed class PagamentoPixReconciliacaoServiceIntegrationTests(MySqlIntegr
 
     private static string CriarChave() =>
         Convert.ToBase64String(Enumerable.Range(1, 32).Select(valor => (byte)valor).ToArray());
+
+    private static async Task AguardarProviderOuObservarFalhaAsync(Task sinalProvider, Task operacao)
+    {
+        var conclusao = await Task.WhenAny(
+            sinalProvider,
+            operacao,
+            Task.Delay(TimeSpan.FromSeconds(10)));
+
+        if (conclusao == sinalProvider)
+            return;
+
+        if (conclusao == operacao)
+        {
+            await operacao;
+            throw new InvalidOperationException(
+                "A reconciliação foi concluída antes de alcançar o provider bloqueável.");
+        }
+
+        throw new TimeoutException("O provider bloqueável não sinalizou a consulta em até dez segundos.");
+    }
 
     private sealed record SnapshotPagamentoBruto(int Status, int QuantidadeTentativas, Guid? EnvioLeaseId,
         DateTime? EnvioLeaseExpiraEm, Guid? ReconciliacaoLeaseId, DateTime? ReconciliacaoLeaseExpiraEm, DateTime UpdatedAt);
