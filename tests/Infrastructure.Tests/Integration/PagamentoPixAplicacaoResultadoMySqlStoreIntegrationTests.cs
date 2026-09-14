@@ -437,10 +437,16 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
         await using var connection = fixture.ConnectionFactory.Create();
         await connection.OpenAsync();
         await using var command = new MySqlCommand(
-            "SELECT GROUP_CONCAT(CONCAT(id, ':', resultado, ':', COALESCE(DATE_FORMAT(finished_at, '%Y-%m-%dT%H:%i:%s.%f'), 'NULL')) ORDER BY started_at, id SEPARATOR '|') FROM operacoes_pagamento_pix WHERE pagamento_pix_id = @id;",
+            "SELECT COALESCE(GROUP_CONCAT(CONCAT(id, ':', COALESCE(resultado, 'NULL'), ':', COALESCE(DATE_FORMAT(finished_at, '%Y-%m-%dT%H:%i:%s.%f'), 'NULL')) ORDER BY started_at, id SEPARATOR '|'), '') FROM operacoes_pagamento_pix WHERE pagamento_pix_id = @id;",
             connection);
         command.Parameters.Add("@id", MySqlDbType.VarChar).Value = pagamentoPixId.ToString();
-        return (string)(await command.ExecuteScalarAsync())!;
+        var valor = await command.ExecuteScalarAsync();
+        return valor switch
+        {
+            null or DBNull => string.Empty,
+            string snapshot => snapshot,
+            _ => throw new InvalidOperationException("Snapshot de auditoria retornou tipo inesperado.")
+        };
     }
 
     private async Task<(Guid? LeaseId, DateTime? ExpiraEm)> ObterLeaseEnvioAsync(Guid pagamentoPixId)

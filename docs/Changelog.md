@@ -53,6 +53,13 @@
 - O inventário estático passou de 120 para **121 integrações MySQL em 13 classes**. A execução completa, a migration 012 e a validação definitiva contra MySQL permanecem pendentes; não houve Efí, OAuth ou Pix real.
 - Validação local desta correção: build sem erros e com quatro avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`; 35 testes unitários direcionados, 6 de preflight e 467 da suíte rápida aprovados, sem falhas ou ignorados. `INDICA2_TEST_MYSQL_CONNECTION` estava ausente, portanto nenhuma das 121 integrações nem a migration 012 foi executada.
 
+### Corrigido após execução MySQL de 121 casos
+
+- A execução intermediária registrou 119 aprovados, 2 falhos e 0 ignorados. As falhas ficaram restritas a `AplicarAsync_QuandoLeaseDeEnvioForValido_DeveExigirReconciliacaoSemMutacao` e `AplicarAsync_QuandoLeaseDeEnvioExpirar_DeveExigirReconciliacaoSemMutacao`.
+- Os dois testes falhavam antes de chamar `AplicarAsync`: `resultado = NULL` em uma auditoria aberta tornava o `CONCAT` do snapshot nulo, `GROUP_CONCAT` devolvia `DBNull` e o cast para `string` lançava `InvalidCastException`. Não há evidência desses erros de defeito na produção.
+- `ObterSnapshotAuditoriaAsync` agora representa `resultado` nulo e protege o histórico vazio de `GROUP_CONCAT`, preservando a ordenação e a comparação integral da auditoria antes/depois.
+- A aprovação definitiva das 121 integrações e da migration 012 continua pendente de nova execução MySQL. Não houve Efí, OAuth ou Pix real.
+
 ## 2026-09-09 — Validação Definitiva do PR #31
 
 ### Validação

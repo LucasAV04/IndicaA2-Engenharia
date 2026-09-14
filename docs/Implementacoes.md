@@ -85,6 +85,14 @@ A terceira falha era somente de teste: `GROUP_CONCAT` devolve `NULL` para histó
 
 Na validação local desta correção, o build concluiu sem erros e exibiu os quatro avisos de nulabilidade preexistentes em `Usuario`/`UsuarioService`; os testes unitários direcionados registraram **35 aprovados**, o preflight registrou **6 aprovados** e a suíte rápida registrou **467 aprovados**, todos sem falhas ou ignorados. Como `INDICA2_TEST_MYSQL_CONNECTION` estava ausente, as 121 integrações e a migration 012 não foram executadas. Não houve Efí, OAuth ou Pix real.
 
+### Ajuste do snapshot da aplicação após execução MySQL completa
+
+Uma execução intermediária das **121 integrações MySQL** registrou **119 aprovados, 2 falhos e 0 ignorados**. As únicas falhas foram `AplicarAsync_QuandoLeaseDeEnvioForValido_DeveExigirReconciliacaoSemMutacao` e `AplicarAsync_QuandoLeaseDeEnvioExpirar_DeveExigirReconciliacaoSemMutacao`.
+
+Ambas ocorreram antes de `AplicarAsync`, durante a captura do snapshot da auditoria: o Envio aberto possui `resultado = NULL`, e o `CONCAT` SQL não representava esse nulo. Como `CONCAT` retorna `NULL` quando qualquer argumento é nulo, `GROUP_CONCAT` devolveu `NULL`, materializado como `DBNull`, e o cast para `string` lançou `InvalidCastException`. Isso não comprovou defeito na regra de produção.
+
+O snapshot passou a representar `resultado` nulo explicitamente e a proteger o resultado vazio externo de `GROUP_CONCAT`, preservando ordenação, histórico integral e comparação antes/depois. A aprovação definitiva continua dependente de uma nova execução MySQL; as 121 integrações não são declaradas aprovadas nesta correção.
+
 O PR #31 foi concluído por **Squash and merge** no commit `6c259642c0c95764ff1d73aa8640b6b946861ddf`.
 
 ## Validação Definitiva — PR #31
