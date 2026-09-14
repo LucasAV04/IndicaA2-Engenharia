@@ -70,9 +70,7 @@ public sealed class PagamentoPixProcessamentoService : IPagamentoPixProcessament
         var envio = await _envioService.ProcessarEnvioAsync(pagamentoPixId, cancellationToken);
         if (!envio.EnvioExecutado)
         {
-            return ResultadoProcessamentoPagamentoPix.Criar(
-                pagamentoPixId,
-                StatusProcessamentoPagamentoPix.EnvioEmAndamento);
+            return await ReavaliarNaoAquisicaoAsync(pagamentoPixId, cancellationToken);
         }
 
         if (!EhConclusivo(envio.ResultadoOperacao))
@@ -91,7 +89,7 @@ public sealed class PagamentoPixProcessamentoService : IPagamentoPixProcessament
     {
         var aplicacao = await _aplicacaoResultadoService.AplicarAsync(pagamentoPixId, cancellationToken);
         if (aplicacao.Status is StatusAplicacaoPagamentoPix.Aplicado or StatusAplicacaoPagamentoPix.JaAplicado)
-            return MapearAplicacao(pagamentoPixId, aplicacao.Status);
+            return MapearAplicacao(pagamentoPixId, aplicacao);
 
         var reconciliacao = await _reconciliacaoService.ReconciliarAsync(pagamentoPixId, cancellationToken);
         return reconciliacao.Status switch
@@ -127,12 +125,36 @@ public sealed class PagamentoPixProcessamentoService : IPagamentoPixProcessament
         return aplicacao.Status switch
         {
             StatusAplicacaoPagamentoPix.Aplicado or StatusAplicacaoPagamentoPix.JaAplicado =>
-                MapearAplicacao(pagamentoPixId, aplicacao.Status),
+                MapearAplicacao(pagamentoPixId, aplicacao),
             StatusAplicacaoPagamentoPix.SemResultadoConclusivo or StatusAplicacaoPagamentoPix.RequerReconciliacao =>
                 ResultadoProcessamentoPagamentoPix.Criar(
                     pagamentoPixId,
                     StatusProcessamentoPagamentoPix.ReconciliacaoExecutadaAguardandoResultado),
             _ => throw new InvalidOperationException("O resultado da aplicação financeira é inválido para processamento.")
+        };
+    }
+
+    private async Task<ResultadoProcessamentoPagamentoPix> ReavaliarNaoAquisicaoAsync(
+        Guid pagamentoPixId,
+        CancellationToken cancellationToken)
+    {
+        var pagamentoPix = await ObterPagamentoPixOuLancarExceptionAsync(pagamentoPixId, cancellationToken);
+        return pagamentoPix.Status switch
+        {
+            StatusPagamentoPix.Processando => await ProcessarProcessandoAsync(pagamentoPixId, cancellationToken),
+            StatusPagamentoPix.Falhou => ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId,
+                StatusProcessamentoPagamentoPix.AguardandoPoliticaRetry),
+            StatusPagamentoPix.Concluido or StatusPagamentoPix.FalhaDefinitiva => ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId,
+                StatusProcessamentoPagamentoPix.Terminal),
+            StatusPagamentoPix.Cancelado => ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId,
+                StatusProcessamentoPagamentoPix.NaoAplicavel),
+            StatusPagamentoPix.Pendente => ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId,
+                StatusProcessamentoPagamentoPix.EstadoAlteradoConcorrentemente),
+            _ => throw new InvalidOperationException("O status do Pagamento Pix é inválido após não adquirir o envio.")
         };
     }
 
@@ -144,12 +166,13 @@ public sealed class PagamentoPixProcessamentoService : IPagamentoPixProcessament
 
     private static ResultadoProcessamentoPagamentoPix MapearAplicacao(
         Guid pagamentoPixId,
-        StatusAplicacaoPagamentoPix status) =>
+        ResultadoAplicacaoPagamentoPix aplicacao) =>
         ResultadoProcessamentoPagamentoPix.Criar(
             pagamentoPixId,
-            status == StatusAplicacaoPagamentoPix.Aplicado
+            aplicacao.Status == StatusAplicacaoPagamentoPix.Aplicado
                 ? StatusProcessamentoPagamentoPix.Aplicado
-                : StatusProcessamentoPagamentoPix.JaAplicado);
+                : StatusProcessamentoPagamentoPix.JaAplicado,
+            aplicacao.ResultadoOperacao);
 
     private static bool EhConclusivo(ResultadoOperacaoPagamentoPix? resultado) =>
         resultado is ResultadoOperacaoPagamentoPix.Confirmado or ResultadoOperacaoPagamentoPix.FalhaConfirmada;

@@ -14,5 +14,6 @@ public enum StatusProcessamentoPagamentoPix
     ConsultaEmAndamento = 6,
     AguardandoPoliticaRetry = 7,
     Terminal = 8,
-    NaoAplicavel = 9
+    NaoAplicavel = 9,
+    EstadoAlteradoConcorrentemente = 10
 }

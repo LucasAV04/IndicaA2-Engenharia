@@ -1,3 +1,5 @@
+using Domain.Enums;
+
 namespace Application.Models;
 
 /// <summary>
@@ -6,10 +8,12 @@ namespace Application.Models;
 /// </summary>
 public sealed record ResultadoProcessamentoPagamentoPix(
     Guid PagamentoPixId,
-    StatusProcessamentoPagamentoPix Status)
+    StatusProcessamentoPagamentoPix Status,
+    ResultadoOperacaoPagamentoPix? ResultadoOperacao)
 {
     public static ResultadoProcessamentoPagamentoPix Criar(
         Guid pagamentoPixId,
-        StatusProcessamentoPagamentoPix status) =>
-        new(pagamentoPixId, status);
+        StatusProcessamentoPagamentoPix status,
+        ResultadoOperacaoPagamentoPix? resultadoOperacao = null) =>
+        new(pagamentoPixId, status, resultadoOperacao);
 }

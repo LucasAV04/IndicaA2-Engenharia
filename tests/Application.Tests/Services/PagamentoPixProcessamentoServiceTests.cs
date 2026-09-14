@@ -57,6 +57,7 @@ public sealed class PagamentoPixProcessamentoServiceTests
         var resultado = await contexto.Service.ProcessarAsync(contexto.Pagamento.Id, contexto.Token);
 
         Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+        Assert.Equal(ResultadoOperacaoPagamentoPix.Confirmado, resultado.ResultadoOperacao);
         contexto.Envio.Verify(x => x.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
         contexto.Aplicacao.Verify(x => x.AplicarAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
         contexto.Reconciliacao.Verify(x => x.ReconciliarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -80,6 +81,63 @@ public sealed class PagamentoPixProcessamentoServiceTests
     }
 
     [Fact]
+    public async Task ProcessarAsync_QuandoOutroExecutorConcluirAntesDaAquisicao_DeveRetornarTerminalSemAfirmarEnvioAtivo()
+    {
+        var contexto = CriarContexto(StatusPagamentoPix.Pendente);
+        var concluido = CriarPagamento(StatusPagamentoPix.Concluido, contexto.Pagamento.Id);
+        contexto.Pagamentos.SetupSequence(x => x.ObterPorIdAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(contexto.Pagamento)
+            .ReturnsAsync(concluido);
+        contexto.Envio.Setup(x => x.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoEnvioPagamentoPix.NaoAdquirido(contexto.Pagamento.Id));
+
+        var resultado = await contexto.Service.ProcessarAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.Equal(StatusProcessamentoPagamentoPix.Terminal, resultado.Status);
+        VerificarNenhumServicoAposNaoAquisicaoFoiChamado(contexto);
+    }
+
+    [Fact]
+    public async Task ProcessarAsync_QuandoOutroExecutorFalharAntesDaAquisicao_DeveAguardarPoliticaSemNovoEnvio()
+    {
+        var contexto = CriarContexto(StatusPagamentoPix.Pendente);
+        var falhou = CriarPagamento(StatusPagamentoPix.Falhou, contexto.Pagamento.Id);
+        contexto.Pagamentos.SetupSequence(x => x.ObterPorIdAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(contexto.Pagamento)
+            .ReturnsAsync(falhou);
+        contexto.Envio.Setup(x => x.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoEnvioPagamentoPix.NaoAdquirido(contexto.Pagamento.Id));
+
+        var resultado = await contexto.Service.ProcessarAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.Equal(StatusProcessamentoPagamentoPix.AguardandoPoliticaRetry, resultado.Status);
+        contexto.Envio.Verify(x => x.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
+        VerificarNenhumServicoAposNaoAquisicaoFoiChamado(contexto);
+    }
+
+    [Fact]
+    public async Task ProcessarAsync_QuandoNaoAdquirirEOrdemPassarParaProcessando_DeveUsarReconciliaSegura()
+    {
+        var contexto = CriarContexto(StatusPagamentoPix.Pendente);
+        var processando = CriarPagamento(StatusPagamentoPix.Processando, contexto.Pagamento.Id);
+        contexto.Pagamentos.SetupSequence(x => x.ObterPorIdAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(contexto.Pagamento)
+            .ReturnsAsync(processando);
+        contexto.Envio.Setup(x => x.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoEnvioPagamentoPix.NaoAdquirido(contexto.Pagamento.Id));
+        contexto.Aplicacao.Setup(x => x.AplicarAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoAplicacaoPagamentoPix.SemResultadoConclusivo(contexto.Pagamento.Id));
+        contexto.Reconciliacao.Setup(x => x.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoReconciliacaoPagamentoPix.ConsultaEmAndamento(contexto.Pagamento.Id));
+
+        var resultado = await contexto.Service.ProcessarAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.Equal(StatusProcessamentoPagamentoPix.ConsultaEmAndamento, resultado.Status);
+        contexto.Envio.Verify(x => x.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
+        contexto.Reconciliacao.Verify(x => x.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
+    }
+
+    [Fact]
     public async Task ProcessarAsync_QuandoProcessandoPossuirEvidenciaConclusiva_DeveAplicarSemProvider()
     {
         var contexto = CriarContexto(StatusPagamentoPix.Processando);
@@ -91,6 +149,23 @@ public sealed class PagamentoPixProcessamentoServiceTests
         var resultado = await contexto.Service.ProcessarAsync(contexto.Pagamento.Id, contexto.Token);
 
         Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+        contexto.Envio.Verify(x => x.ProcessarEnvioAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        contexto.Reconciliacao.Verify(x => x.ReconciliarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessarAsync_QuandoAplicarFalhaConfirmada_DeveExporResultadoFinanceiroSemDadosDoProvider()
+    {
+        var contexto = CriarContexto(StatusPagamentoPix.Processando);
+        contexto.Aplicacao.Setup(x => x.AplicarAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoAplicacaoPagamentoPix.Aplicado(
+                contexto.Pagamento.Id,
+                ResultadoOperacaoPagamentoPix.FalhaConfirmada));
+
+        var resultado = await contexto.Service.ProcessarAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+        Assert.Equal(ResultadoOperacaoPagamentoPix.FalhaConfirmada, resultado.ResultadoOperacao);
         contexto.Envio.Verify(x => x.ProcessarEnvioAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         contexto.Reconciliacao.Verify(x => x.ReconciliarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -255,6 +330,13 @@ public sealed class PagamentoPixProcessamentoServiceTests
         Assert.DoesNotContain(typeof(IPagamentoPixAplicacaoResultadoStore), dependencias);
     }
 
+    [Fact]
+    public void ClaimLegado_NaoDevePermanecerExpostoNosContratos()
+    {
+        Assert.Null(typeof(IPagamentoPixService).GetMethod("TentarIniciarProcessamentoAsync"));
+        Assert.Null(typeof(IPagamentoPixRepository).GetMethod("TentarIniciarProcessamentoAsync"));
+    }
+
     private static void ConfigurarSemEvidencia(Contexto contexto) =>
         contexto.Aplicacao.Setup(x => x.AplicarAsync(contexto.Pagamento.Id, contexto.Token))
             .ReturnsAsync(ResultadoAplicacaoPagamentoPix.SemResultadoConclusivo(contexto.Pagamento.Id));
@@ -296,7 +378,7 @@ public sealed class PagamentoPixProcessamentoServiceTests
             CancellationToken.None);
     }
 
-    private static PagamentoPix CriarPagamento(StatusPagamentoPix status)
+    private static PagamentoPix CriarPagamento(StatusPagamentoPix status, Guid? id = null)
     {
         var tentativas = status switch
         {
@@ -306,7 +388,7 @@ public sealed class PagamentoPixProcessamentoServiceTests
         };
         var agora = DateTime.UtcNow;
         return PagamentoPix.Reidratar(
-            Guid.NewGuid(),
+            id ?? Guid.NewGuid(),
             Guid.NewGuid(),
             Guid.NewGuid(),
             100m,
@@ -323,6 +405,12 @@ public sealed class PagamentoPixProcessamentoServiceTests
         contexto.Envio.Verify(x => x.ProcessarEnvioAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         contexto.Reconciliacao.Verify(x => x.ReconciliarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         contexto.Aplicacao.Verify(x => x.AplicarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private static void VerificarNenhumServicoAposNaoAquisicaoFoiChamado(Contexto contexto)
+    {
+        contexto.Aplicacao.Verify(x => x.AplicarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        contexto.Reconciliacao.Verify(x => x.ReconciliarAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     private sealed record Contexto(
