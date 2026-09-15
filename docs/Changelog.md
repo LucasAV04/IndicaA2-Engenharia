@@ -21,7 +21,7 @@
 - Cada execução provoca no máximo uma chamada externa: Envio ou Consulta, nunca ambas.
 - O orquestrador não chama `IPixProvider`, não lê chave Pix e não altera diretamente Cashback, auditoria, leases ou snapshots.
 - Build: sucesso, 0 erros e 1 warning preexistente de nulabilidade em `UsuarioService`; testes direcionados: 38 aprovados; preflight: 6 aprovados; suíte rápida: 490 aprovados — todos sem falhas ou ignorados.
-- Inventário estático atualizado para **121 integrações MySQL em 13 classes**. A execução MySQL deste PR permanece pendente porque `INDICA2_TEST_MYSQL_CONNECTION` não está disponível neste processo.
+- Inventário estático de **121 integrações MySQL em 13 classes**. A pendência local anterior, causada pela ausência de `INDICA2_TEST_MYSQL_CONNECTION`, foi superada pela execução manual definitiva do usuário: **121 aprovadas**, 0 falhas e 0 ignoradas; duração dos testes de **28,5 segundos** e execução completa concluída com sucesso em **31,6 segundos**. A composição do orquestrador com Envio, Reconciliação, aplicação financeira, leases, concorrência e idempotência foi validada.
 - Nenhuma chamada Efí, OAuth ou Pix real foi executada.
 
 ## 2026-09-10 — Lease Persistente de Envio Pix — PR #32
