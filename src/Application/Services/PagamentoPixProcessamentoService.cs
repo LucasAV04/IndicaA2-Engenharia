@@ -100,9 +100,8 @@ public sealed class PagamentoPixProcessamentoService : IPagamentoPixProcessament
             StatusReconciliacaoPagamentoPix.EnvioEmAndamento => ResultadoProcessamentoPagamentoPix.Criar(
                 pagamentoPixId,
                 StatusProcessamentoPagamentoPix.EnvioEmAndamento),
-            StatusReconciliacaoPagamentoPix.EnvioPendenteRecuperacao => ResultadoProcessamentoPagamentoPix.Criar(
-                pagamentoPixId,
-                StatusProcessamentoPagamentoPix.EnvioPendenteRecuperacao),
+            StatusReconciliacaoPagamentoPix.EnvioPendenteRecuperacao =>
+                await RecuperarEnvioPendenteAsync(pagamentoPixId, cancellationToken),
             StatusReconciliacaoPagamentoPix.NaoAplicavel => ResultadoProcessamentoPagamentoPix.Criar(
                 pagamentoPixId,
                 StatusProcessamentoPagamentoPix.NaoAplicavel),
@@ -134,6 +133,30 @@ public sealed class PagamentoPixProcessamentoService : IPagamentoPixProcessament
         };
     }
 
+    private async Task<ResultadoProcessamentoPagamentoPix> RecuperarEnvioPendenteAsync(
+        Guid pagamentoPixId,
+        CancellationToken cancellationToken)
+    {
+        // A reconciliação que retorna este estado não chamou provider. Esta é a
+        // única oportunidade desta execução para recuperar o mesmo Envio.
+        var envio = await _envioService.ProcessarEnvioAsync(pagamentoPixId, cancellationToken);
+        if (!envio.EnvioExecutado)
+        {
+            var pagamento = await ObterPagamentoPixOuLancarExceptionAsync(pagamentoPixId, cancellationToken);
+            return pagamento.Status == StatusPagamentoPix.Processando
+                ? ResultadoProcessamentoPagamentoPix.Criar(
+                    pagamentoPixId,
+                    StatusProcessamentoPagamentoPix.EstadoAlteradoConcorrentemente)
+                : MapearEstadoSemNovoProcessamento(pagamentoPixId, pagamento.Status);
+        }
+
+        return EhConclusivo(envio.ResultadoOperacao)
+            ? await AplicarUmaVezAsync(pagamentoPixId, cancellationToken)
+            : ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId,
+                StatusProcessamentoPagamentoPix.EnvioExecutadoAguardandoResultado);
+    }
+
     private async Task<ResultadoProcessamentoPagamentoPix> ReavaliarNaoAquisicaoAsync(
         Guid pagamentoPixId,
         CancellationToken cancellationToken)
@@ -157,6 +180,22 @@ public sealed class PagamentoPixProcessamentoService : IPagamentoPixProcessament
             _ => throw new InvalidOperationException("O status do Pagamento Pix é inválido após não adquirir o envio.")
         };
     }
+
+    private static ResultadoProcessamentoPagamentoPix MapearEstadoSemNovoProcessamento(
+        Guid pagamentoPixId,
+        StatusPagamentoPix status) =>
+        status switch
+        {
+            StatusPagamentoPix.Falhou => ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId, StatusProcessamentoPagamentoPix.AguardandoPoliticaRetry),
+            StatusPagamentoPix.Concluido or StatusPagamentoPix.FalhaDefinitiva => ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId, StatusProcessamentoPagamentoPix.Terminal),
+            StatusPagamentoPix.Cancelado => ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId, StatusProcessamentoPagamentoPix.NaoAplicavel),
+            StatusPagamentoPix.Pendente => ResultadoProcessamentoPagamentoPix.Criar(
+                pagamentoPixId, StatusProcessamentoPagamentoPix.EstadoAlteradoConcorrentemente),
+            _ => throw new InvalidOperationException("O status do Pagamento Pix é inválido após a recuperação do envio.")
+        };
 
     private async Task<PagamentoPix> ObterPagamentoPixOuLancarExceptionAsync(
         Guid pagamentoPixId,

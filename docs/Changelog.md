@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-15 — Worker Controlado de Processamento de PagamentoPix — PR #34
+
+### Adicionado
+
+- Seletor MySQL somente leitura de IDs candidatos, com ordenação determinística, limite configurável e avaliação de lease pelo horário do MySQL.
+- Migration `013_add_processamento_idx_pagamentos_pix.sql`, limitada ao índice `(status, updated_at, id)`, incluída no bootstrap da fixture MySQL.
+- `BackgroundService` desabilitado por padrão, com escopo por ciclo, primeiro tick obrigatório, lote sequencial e deduplicado e logs sem dados sensíveis.
+
+### Corrigido
+
+- `EnvioPendenteRecuperacao` é tratado pelo orquestrador: a mesma auditoria de Envio com lease expirado é recuperada uma única vez, preservando tentativa e referência idempotente, sem delegar essa decisão ao worker.
+- Falha do seletor de candidatos agora fica contida no ciclo do worker e somente permite nova tentativa no próximo tick; cancelamento do host encerra normalmente.
+- Logs do worker não recebem exceções completas: registram apenas evento, tipo da exceção e identificador do Pagamento Pix. A entrada pública de ciclo também não executa quando o worker está desabilitado.
+- A cobertura inicial MySQL do seletor e da migration 013 foi adicionada; o inventário estático passa a **124 integrações em 14 classes** e permanece pendente de execução configurada.
+
+### Validação e limites
+
+- Build: 0 erros e 0 warnings; testes direcionados: 28 aprovados; suíte rápida: 493 aprovados, 0 falhos e 0 ignorados.
+- `INDICA2_TEST_MYSQL_CONNECTION` estava ausente: integrações MySQL de seletor, worker e migration 013 permanecem pendentes de execução real.
+- Não houve Efí, OAuth, Pix real, worker habilitado em ambiente nem dados financeiros de produção.
+
 ## 2026-09-14 — Orquestração Unitária de Processamento de PagamentoPix — PR #33
 
 ### Adicionado
