@@ -193,11 +193,324 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         Assert.Null(lease.ExpiraEm);
     }
 
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoEnvioForConfirmado_DeveAplicarPagamentoECashbackAtomicamente()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var provider = new PixProviderFake();
+
+        var resultado = await CriarProcessador(provider)
+            .ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var pagamentoPersistido = (await CriarPagamentoRepository()
+            .ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+        var cashbackPersistido = (await new CashbackMySqlRepository(fixture.ConnectionFactory)
+            .ObterPorIdAsync(pagamentoPix.CashbackId, CancellationToken.None))!;
+        Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+        Assert.Equal(1, provider.QuantidadeEnvios);
+        Assert.Equal(StatusPagamentoPix.Concluido, pagamentoPersistido.Status);
+        Assert.Equal(StatusCashback.Pago, cashbackPersistido.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoEnvioTiverFalhaConfirmada_DeveTerminarFalhouSemNovoEnvio()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var provider = new PixProviderFake(PixProviderResult.FalhaConfirmada("provider-id", "provider-code"));
+
+        var resultado = await CriarProcessador(provider)
+            .ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var pagamentoPersistido = (await CriarPagamentoRepository()
+            .ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+        var cashbackPersistido = (await new CashbackMySqlRepository(fixture.ConnectionFactory)
+            .ObterPorIdAsync(pagamentoPix.CashbackId, CancellationToken.None))!;
+        Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+        Assert.Equal(1, provider.QuantidadeEnvios);
+        Assert.Equal(StatusPagamentoPix.Falhou, pagamentoPersistido.Status);
+        Assert.Equal(StatusCashback.Disponivel, cashbackPersistido.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoEnvioTiverLeaseAtivo_DeveAguardarSemDuplicarChamadaExterna()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var preparacao = await new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory)
+            .TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        var leaseAntes = await ObterLeaseEnvioAsync(pagamentoPix.Id);
+        var provider = new PixProviderFake();
+
+        var resultado = await CriarProcessador(provider)
+            .ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var leaseDepois = await ObterLeaseEnvioAsync(pagamentoPix.Id);
+        var operacoes = await new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory)
+            .ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None);
+        Assert.Equal(StatusProcessamentoPagamentoPix.EnvioEmAndamento, resultado.Status);
+        Assert.Equal(0, provider.QuantidadeEnvios);
+        Assert.Equal(leaseAntes.LeaseId, leaseDepois.LeaseId);
+        Assert.Equal(leaseAntes.ExpiraEm, leaseDepois.ExpiraEm);
+        Assert.Equal(preparacao.OperacaoPagamentoPixId, Assert.Single(operacoes).Id);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoDoisOrquestradoresConcorrerem_DeveExecutarUmUnicoEnvio()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var provider = new PixProviderIdempotenteBloqueavelFake();
+        var primeiro = CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+        ResultadoProcessamentoPagamentoPix? segundoResultado = null;
+
+        try
+        {
+            await provider.PrimeiroEnvioIniciado.WaitAsync(TimeSpan.FromSeconds(10));
+            segundoResultado = await CriarProcessador(provider)
+                .ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+        }
+        finally
+        {
+            provider.LiberarPrimeiroEnvio();
+        }
+
+        var primeiroResultado = await primeiro.WaitAsync(TimeSpan.FromSeconds(10));
+        var pagamentoPersistido = (await CriarPagamentoRepository()
+            .ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+        var operacoes = await new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory)
+            .ObterPorPagamentoPixIdAsync(pagamentoPix.Id, CancellationToken.None);
+        Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, primeiroResultado.Status);
+        Assert.Equal(StatusProcessamentoPagamentoPix.EnvioEmAndamento, segundoResultado!.Status);
+        Assert.Equal(1, provider.QuantidadeEnvios);
+        Assert.Equal(1, provider.QuantidadeEfeitosLogicos);
+        Assert.Single(operacoes);
+        Assert.Equal(StatusPagamentoPix.Concluido, pagamentoPersistido.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoEvidenciaConfirmadaJaExistir_DeveAplicarSemChamarProvider()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var envioStore = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+        var preparacao = await envioStore.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        await envioStore.FinalizarEnvioAsync(
+            pagamentoPix.Id,
+            preparacao.OperacaoPagamentoPixId!.Value,
+            preparacao.LeaseId!.Value,
+            ResultadoOperacaoPagamentoPix.Confirmado,
+            "provider-id",
+            "provider-code",
+            CancellationToken.None);
+        var provider = new PixProviderComConsultaFake();
+
+        var resultado = await CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var pagamentoPersistido = (await CriarPagamentoRepository().ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+        var cashback = (await new CashbackMySqlRepository(fixture.ConnectionFactory)
+            .ObterPorIdAsync(pagamentoPix.CashbackId, CancellationToken.None))!;
+        Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+        Assert.Equal(0, provider.QuantidadeEnvios);
+        Assert.Equal(0, provider.QuantidadeConsultas);
+        Assert.Equal(StatusPagamentoPix.Concluido, pagamentoPersistido.Status);
+        Assert.Equal(StatusCashback.Pago, cashback.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoEnvioFechadoNaoForConclusivo_DeveConsultarUmaVezSemNovoEnvio()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var envioStore = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+        var preparacao = await envioStore.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        await envioStore.FinalizarEnvioAsync(
+            pagamentoPix.Id,
+            preparacao.OperacaoPagamentoPixId!.Value,
+            preparacao.LeaseId!.Value,
+            ResultadoOperacaoPagamentoPix.Pendente,
+            null,
+            null,
+            CancellationToken.None);
+        var provider = new PixProviderComConsultaFake(consulta: PixProviderResult.Pendente());
+
+        var resultado = await CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var pagamentoPersistido = (await CriarPagamentoRepository().ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+        Assert.Equal(StatusProcessamentoPagamentoPix.ReconciliacaoExecutadaAguardandoResultado, resultado.Status);
+        Assert.Equal(0, provider.QuantidadeEnvios);
+        Assert.Equal(1, provider.QuantidadeConsultas);
+        Assert.Equal(StatusPagamentoPix.Processando, pagamentoPersistido.Status);
+        Assert.Equal(1, pagamentoPersistido.QuantidadeTentativas);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoConsultaForConclusiva_DeveAplicarResultadoSemNovaTentativa()
+    {
+        foreach (var resultadoConsulta in new[] { ResultadoOperacaoPagamentoPix.Confirmado, ResultadoOperacaoPagamentoPix.FalhaConfirmada })
+        {
+            await fixture.LimparDadosAsync();
+            var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+            var envioStore = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+            var preparacao = await envioStore.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+            await envioStore.FinalizarEnvioAsync(
+                pagamentoPix.Id,
+                preparacao.OperacaoPagamentoPixId!.Value,
+                preparacao.LeaseId!.Value,
+                ResultadoOperacaoPagamentoPix.Indeterminado,
+                null,
+                null,
+                CancellationToken.None);
+            var respostaConsulta = resultadoConsulta == ResultadoOperacaoPagamentoPix.Confirmado
+                ? PixProviderResult.Confirmado("provider-id", "provider-code")
+                : PixProviderResult.FalhaConfirmada("provider-id", "provider-code");
+            var provider = new PixProviderComConsultaFake(consulta: respostaConsulta);
+
+            var resultado = await CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+            var pagamentoPersistido = (await CriarPagamentoRepository().ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+            var cashback = (await new CashbackMySqlRepository(fixture.ConnectionFactory)
+                .ObterPorIdAsync(pagamentoPix.CashbackId, CancellationToken.None))!;
+            Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+            Assert.Equal(0, provider.QuantidadeEnvios);
+            Assert.Equal(1, provider.QuantidadeConsultas);
+            Assert.Equal(
+                resultadoConsulta == ResultadoOperacaoPagamentoPix.Confirmado ? StatusPagamentoPix.Concluido : StatusPagamentoPix.Falhou,
+                pagamentoPersistido.Status);
+            Assert.Equal(
+                resultadoConsulta == ResultadoOperacaoPagamentoPix.Confirmado ? StatusCashback.Pago : StatusCashback.Disponivel,
+                cashback.Status);
+            Assert.Equal(1, pagamentoPersistido.QuantidadeTentativas);
+        }
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoQuintaTentativaReceberFalhaConfirmada_DeveFinalizarSemNovoRetry()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync(StatusPagamentoPix.Falhou, 4);
+        var envioStore = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+        var preparacao = await envioStore.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        await envioStore.FinalizarEnvioAsync(
+            pagamentoPix.Id,
+            preparacao.OperacaoPagamentoPixId!.Value,
+            preparacao.LeaseId!.Value,
+            ResultadoOperacaoPagamentoPix.Indeterminado,
+            null,
+            null,
+            CancellationToken.None);
+        var provider = new PixProviderComConsultaFake(
+            consulta: PixProviderResult.FalhaConfirmada("provider-id", "provider-code"));
+
+        var resultado = await CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+        var pagamentoPersistido = (await CriarPagamentoRepository().ObterPorIdAsync(pagamentoPix.Id, CancellationToken.None))!;
+        var cashback = (await new CashbackMySqlRepository(fixture.ConnectionFactory)
+            .ObterPorIdAsync(pagamentoPix.CashbackId, CancellationToken.None))!;
+        Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+        Assert.Equal(StatusPagamentoPix.FalhaDefinitiva, pagamentoPersistido.Status);
+        Assert.Equal(PagamentoPix.TentativasMaximas, pagamentoPersistido.QuantidadeTentativas);
+        Assert.Equal(StatusCashback.Disponivel, cashback.Status);
+        Assert.Equal(0, provider.QuantidadeEnvios);
+        Assert.Equal(1, provider.QuantidadeConsultas);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoConsultaTiverLeaseAtivo_DeveAguardarSemChamarProvider()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var envioStore = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+        var preparacaoEnvio = await envioStore.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+        await envioStore.FinalizarEnvioAsync(
+            pagamentoPix.Id,
+            preparacaoEnvio.OperacaoPagamentoPixId!.Value,
+            preparacaoEnvio.LeaseId!.Value,
+            ResultadoOperacaoPagamentoPix.Indeterminado,
+            null,
+            null,
+            CancellationToken.None);
+        var preparacaoConsulta = await new PagamentoPixReconciliacaoMySqlStore(fixture.ConnectionFactory)
+            .PrepararConsultaAsync(pagamentoPix.Id, CancellationToken.None);
+        var provider = new PixProviderComConsultaFake();
+
+        var resultado = await CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+        Assert.Equal(StatusProcessamentoPagamentoPix.ConsultaEmAndamento, resultado.Status);
+        Assert.Equal(0, provider.QuantidadeEnvios);
+        Assert.Equal(0, provider.QuantidadeConsultas);
+        Assert.Equal(StatusPreparacaoReconciliacaoPagamentoPix.ConsultaPreparada, preparacaoConsulta.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoEnvioTiverLease_DeveAguardarSemConsultaOuNovoEnvio()
+    {
+        foreach (var (expirarLease, statusEsperado) in new[]
+                 {
+                     (false, StatusProcessamentoPagamentoPix.EnvioEmAndamento),
+                     (true, StatusProcessamentoPagamentoPix.EnvioPendenteRecuperacao)
+                 })
+        {
+            await fixture.LimparDadosAsync();
+            var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+            var envioStore = new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory);
+            var preparacao = await envioStore.TentarPrepararEnvioAsync(pagamentoPix.Id, CancellationToken.None);
+            if (expirarLease)
+                await ExpirarLeaseEnvioAsync(pagamentoPix.Id, preparacao.LeaseId!.Value);
+            var provider = new PixProviderComConsultaFake();
+
+            var resultado = await CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+
+            Assert.Equal(statusEsperado, resultado.Status);
+            Assert.Equal(0, provider.QuantidadeEnvios);
+            Assert.Equal(0, provider.QuantidadeConsultas);
+        }
+    }
+
+    [MySqlIntegrationFact]
+    public async Task ProcessarAsync_QuandoOutroExecutorConcluirAntesDaSegundaExecucao_DeveRetornarTerminalSemSegundoEnvio()
+    {
+        await fixture.LimparDadosAsync();
+        var pagamentoPix = await CriarPagamentoPixPersistidoAsync();
+        var provider = new PixProviderFake();
+        var primeiro = await CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+        var segundo = await CriarProcessador(provider).ProcessarAsync(pagamentoPix.Id, CancellationToken.None);
+        var cashback = (await new CashbackMySqlRepository(fixture.ConnectionFactory)
+            .ObterPorIdAsync(pagamentoPix.CashbackId, CancellationToken.None))!;
+
+        Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, primeiro.Status);
+        Assert.Equal(StatusProcessamentoPagamentoPix.Terminal, segundo.Status);
+        Assert.Equal(1, provider.QuantidadeEnvios);
+        Assert.Equal(StatusCashback.Pago, cashback.Status);
+    }
+
     private PagamentoPixEnvioService CriarOrquestrador(IPixProvider provider) =>
         new(
             CriarPagamentoRepository(),
             new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory),
             provider);
+
+    private PagamentoPixProcessamentoService CriarProcessador(IPixProvider provider)
+    {
+        var protector = new AesGcmDadosPixProtector(CriarChave());
+        var pagamentoRepository = new PagamentoPixMySqlRepository(fixture.ConnectionFactory, protector);
+        return new PagamentoPixProcessamentoService(
+            pagamentoRepository,
+            new PagamentoPixEnvioService(
+                pagamentoRepository,
+                new PagamentoPixEnvioMySqlStore(fixture.ConnectionFactory),
+                provider),
+            new PagamentoPixReconciliacaoService(
+                pagamentoRepository,
+                new OperacaoPagamentoPixMySqlRepository(fixture.ConnectionFactory),
+                new PagamentoPixReconciliacaoMySqlStore(fixture.ConnectionFactory),
+                provider),
+            new PagamentoPixAplicacaoResultadoService(
+                pagamentoRepository,
+                new CashbackMySqlRepository(fixture.ConnectionFactory),
+                new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory, protector)));
+    }
 
     private async Task<PagamentoPix> CriarPagamentoPixPersistidoAsync(
         StatusPagamentoPix status = StatusPagamentoPix.Pendente,
@@ -745,7 +1058,13 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
 
     private sealed class PixProviderFake : IPixProvider
     {
+        private readonly PixProviderResult _resultado;
         private int _quantidadeEnvios;
+
+        public PixProviderFake(PixProviderResult? resultado = null)
+        {
+            _resultado = resultado ?? PixProviderResult.Confirmado("provider-id", "provider-code");
+        }
 
         public int QuantidadeEnvios => _quantidadeEnvios;
 
@@ -754,7 +1073,7 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
             CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _quantidadeEnvios);
-            return Task.FromResult(PixProviderResult.Confirmado("provider-id", "provider-code"));
+            return Task.FromResult(_resultado);
         }
 
         public Task<PixProviderResult> ConsultarAsync(
@@ -792,5 +1111,34 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
             throw new NotSupportedException();
 
         public void LiberarPrimeiroEnvio() => _liberarPrimeiroEnvio.TrySetResult();
+    }
+
+    private sealed class PixProviderComConsultaFake : IPixProvider
+    {
+        private readonly PixProviderResult _envio;
+        private readonly PixProviderResult _consulta;
+        private int _quantidadeEnvios;
+        private int _quantidadeConsultas;
+
+        public PixProviderComConsultaFake(PixProviderResult? envio = null, PixProviderResult? consulta = null)
+        {
+            _envio = envio ?? PixProviderResult.Confirmado("provider-id", "provider-code");
+            _consulta = consulta ?? PixProviderResult.Pendente();
+        }
+
+        public int QuantidadeEnvios => _quantidadeEnvios;
+        public int QuantidadeConsultas => _quantidadeConsultas;
+
+        public Task<PixProviderResult> EnviarAsync(PixEnvioRequest request, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _quantidadeEnvios);
+            return Task.FromResult(_envio);
+        }
+
+        public Task<PixProviderResult> ConsultarAsync(PixConsultaRequest request, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _quantidadeConsultas);
+            return Task.FromResult(_consulta);
+        }
     }
 }

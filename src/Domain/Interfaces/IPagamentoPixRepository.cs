@@ -24,7 +24,4 @@ public interface IPagamentoPixRepository
         PagamentoPix pagamentoPix,
         CancellationToken cancellationToken = default);
 
-    Task<bool> TentarIniciarProcessamentoAsync(
-        Guid pagamentoPixId,
-        CancellationToken cancellationToken = default);
 }

@@ -1,9 +1,11 @@
 using Application.Interfaces.Services;
+using Application.Interfaces.Providers;
 using Application.Services;
 using Domain.Interfaces;
 using Infrastructure.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Xunit;
 
 namespace API.Tests.DependencyInjection;
@@ -21,13 +23,19 @@ public sealed class ApiDependencyInjectionTests
                 , ["Jwt:Audience"] = "IndicA2.Tests"
                 , ["Jwt:Key"] = "chave-ficticia-de-testes-com-mais-de-trinta-e-dois-bytes"
                 , ["Jwt:ExpirationMinutes"] = "60"
+                , ["DadosPixEncryption:Key"] = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
             })
             .Build();
         var services = new ServiceCollection();
         services.AddInfrastructure(configuration);
+        services.AddScoped<IPixProvider>(_ => Mock.Of<IPixProvider>());
         services.AddScoped<IIndicacaoService, IndicacaoService>();
         services.AddScoped<IVistoriaService, VistoriaService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IPagamentoPixEnvioService, PagamentoPixEnvioService>();
+        services.AddScoped<IPagamentoPixReconciliacaoService, PagamentoPixReconciliacaoService>();
+        services.AddScoped<IPagamentoPixAplicacaoResultadoService, PagamentoPixAplicacaoResultadoService>();
+        services.AddScoped<IPagamentoPixProcessamentoService, PagamentoPixProcessamentoService>();
 
         using var serviceProvider = services.BuildServiceProvider();
         using var scope = serviceProvider.CreateScope();
@@ -35,10 +43,12 @@ public sealed class ApiDependencyInjectionTests
         var vistoriaService = scope.ServiceProvider.GetRequiredService<IVistoriaService>();
         var vistoriaRepository = scope.ServiceProvider.GetRequiredService<IVistoriaRepository>();
         var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
+        var processamentoService = scope.ServiceProvider.GetRequiredService<IPagamentoPixProcessamentoService>();
 
         Assert.IsType<IndicacaoService>(indicacaoService);
         Assert.IsType<VistoriaService>(vistoriaService);
         Assert.NotNull(vistoriaRepository);
         Assert.IsType<AuthService>(authService);
+        Assert.IsType<PagamentoPixProcessamentoService>(processamentoService);
     }
 }

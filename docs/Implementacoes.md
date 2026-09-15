@@ -1,5 +1,34 @@
 # Implementações
 
+## Orquestração Unitária de Processamento de PagamentoPix — PR #33
+
+**Data:** 2026-09-14
+
+`IPagamentoPixProcessamentoService` recebe exclusivamente `PagamentoPixId` e avança a ordem em uma única etapa lógica. Ele coordena `IPagamentoPixEnvioService`, `IPagamentoPixReconciliacaoService` e `IPagamentoPixAplicacaoResultadoService`, sem acessar chave Pix, provider, stores, SQL, leases ou transação diretamente. O antigo claim isolado `TentarIniciarProcessamentoAsync` foi removido de `IPagamentoPixService`, `PagamentoPixService`, `IPagamentoPixRepository` e `PagamentoPixMySqlRepository`: o único caminho autorizado para iniciar Envio é `IPagamentoPixEnvioStore`, que persiste status, tentativa, auditoria e lease na mesma transação.
+
+| Estado persistido | Decisão da execução | Limite externo |
+|---|---|---|
+| `Pendente` | Executa um único Envio; diante de evidência conclusiva aplica uma vez. | Somente Envio |
+| `Processando` | Primeiro tenta aplicar evidência persistida; sem evidência, reconcilia uma vez e aplica novamente somente se conclusiva. | Somente Consulta |
+| `Falhou` | Retorna aguardo de política formal de retry. | Nenhum |
+| `Concluido` / `FalhaDefinitiva` | Retorna terminal e idempotente. | Nenhum |
+| `Cancelado` | Retorna não aplicável. | Nenhum |
+
+Resultados explícitos distinguem aplicação, terminalidade, Envio/Consulta em andamento, Envio pendente de recuperação, aguardo de resultado e aguardo de política de retry. Quando a aplicação efetiva resultado financeiro, o contrato inclui somente o enum provider-agnostic `ResultadoOperacao` (`Confirmado` ou `FalhaConfirmada`), permitindo distinguir conclusão, falha comum e falha definitiva pelo estado persistido sem expor chave Pix, payload, credencial, certificado ou token de lease. Quando o Envio não é adquirido, o orquestrador relê uma única vez o estado persistido: terminal, falha e cancelamento retornam seus resultados corretos; `Processando` entra no fluxo seguro de aplicação/reconciliação; `Pendente` permanece como `EstadoAlteradoConcorrentemente`, sem afirmar incorretamente que há Envio ativo. A execução nunca faz loop, polling, retry automático, segunda chamada externa ou transação própria; exceções e cancelamentos dos serviços especializados são propagados.
+
+O serviço é `Scoped` no composition root, porém não há endpoint HTTP: ele é uma porta interna para o worker futuro. A proteção concorrente, os leases de cinco minutos pelo relógio MySQL, a idempotência da aplicação financeira e a chamada HTTP fora de transação permanecem nos serviços e stores já existentes.
+
+Foram adicionados testes unitários de decisão por estado, cancelamento, exceções, limite de uma chamada externa, reavaliação concorrente e ausência de dados sensíveis no resultado; há também resolução de DI e integrações de composição para confirmação, falha confirmada nas tentativas iniciais e na quinta, lease ativo, consulta já persistida e concorrência de dois orquestradores. Os cenários antigos do claim isolado foram substituídos pelas integrações de `PagamentoPixEnvioMySqlStore`, que provam preparação transacional, rollback da auditoria, limite de tentativas e concorrência com auditoria/lease. O build concluiu com **0 erros e 1 warning preexistente de nulabilidade em `UsuarioService`**; os testes direcionados registraram **38 aprovados**, o preflight registrou **6 aprovados** e a suíte rápida registrou **490 aprovados**, todos sem falhas ou ignorados.
+
+### Validação MySQL definitiva
+
+O usuário executou manualmente as **121 integrações MySQL em 13 classes**: **121 aprovadas**, **0 falhas**, **0 ignoradas**, com duração dos testes de **28,5 segundos** e execução completa concluída com sucesso em **31,6 segundos**. Esse resultado supera a pendência anterior, limitada pela ausência de `INDICA2_TEST_MYSQL_CONNECTION` no processo de validação local. A composição real do orquestrador com Envio, Reconciliação, aplicação financeira, leases, concorrência e idempotência foi validada. Nenhuma chamada Efí, OAuth ou Pix real foi executada.
+
+| Teste removido | Por que ficou inválido | Teste seguro substituto |
+|---|---|---|
+| `TentarIniciarProcessamentoAsync_*` em `PagamentoPixMySqlRepositoryIntegrationTests` | Alterava status/tentativa sem criar auditoria e lease, produzindo estado incompatível com o fluxo seguro. | `TentarPrepararEnvioAsync_QuandoPendente_DeveAlterarOrdemECriarAuditoriaNaMesmaTransacao`, `TentarPrepararEnvioAsync_QuandoInsercaoDaAuditoriaFalhar_DeveReverterClaim` e `ProcessarEnvioAsync_QuandoCincoExecutoresConcorrerem_DeveChamarProviderUmaUnicaVez` |
+| `TentarIniciarProcessamentoAsync_*` em `PagamentoPixServiceTests` | O contrato Application que encaminhava o claim inseguro foi removido. | `PagamentoPixProcessamentoServiceTests.ProcessarAsync_QuandoPendenteEEnvioConfirmado_DeveAplicarSemReconcilia` e `ProcessarAsync_QuandoNaoAdquirirEOrdemPassarParaProcessando_DeveUsarReconciliaSegura` |
+
 ## Lease Persistente de Envio Pix — PR #32
 
 **Data:** 2026-09-10
@@ -450,13 +479,15 @@ dotnet test IndicaA2.slnx --no-build --no-restore --filter "FullyQualifiedName!~
 
 - A orquestração que usa o adapter, webhook próprio, rotina automática de reconciliação, coordenação de `PagamentoPix.Concluido` com `Cashback.Pago` e auditoria de tentativas continuam pendentes.
 
-## Claim Atômico de Processamento de PagamentoPix
+## Registro histórico superado — Claim Atômico de Processamento de PagamentoPix
 
 **Data:** 2026-08-26
 
+Esta seção descreve o mecanismo anterior, removido no PR #33. Ele não deve ser usado: o início seguro de Envio agora é exclusivamente `IPagamentoPixEnvioStore`, com auditoria e lease persistidos na mesma transação.
+
 ### Implementado
 
-- `IPagamentoPixRepository.TentarIniciarProcessamentoAsync` e a orquestração correspondente na Application, sem endpoint HTTP novo.
+- **Registro histórico superado:** o antigo `IPagamentoPixRepository.TentarIniciarProcessamentoAsync` e sua orquestração correspondente na Application foram removidos porque não criavam auditoria nem lease. O início de Envio é exclusivamente transacional por `IPagamentoPixEnvioStore`.
 - Claim atômico por `UPDATE` condicional e parametrizado no MySQL: somente uma linha elegível recebe `status = Processando`, incremento de `quantidade_tentativas` e novo `updated_at` na mesma operação.
 - `true` significa que uma linha foi afetada e o executor adquiriu a ordem; `false` significa que a ordem existente perdeu ou não pôde obter o claim, condição esperada de concorrência e não exceção.
 - Os estados elegíveis são centralizados no Domain e permanecem `Pendente` e `Falhou`; `Processando`, `Concluido`, `FalhaDefinitiva` e `Cancelado` não podem ser readquiridos.

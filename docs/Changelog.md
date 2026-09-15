@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-14 — Orquestração Unitária de Processamento de PagamentoPix — PR #33
+
+### Adicionado
+
+- `IPagamentoPixProcessamentoService`, `PagamentoPixProcessamentoService` e resultado provider-agnostic para avançar uma ordem somente por `PagamentoPixId`.
+- Decisão explícita por estado: Envio único para `Pendente`, aplicação antes de uma única reconciliação para `Processando`, espera de política para `Falhou` e retorno idempotente para estados terminais.
+- Registro scoped no composition root, sem endpoint HTTP, worker, fila, scheduler, polling, retry ou transação própria.
+- Testes unitários de decisão, cancelamento, exceções, reavaliação concorrente e ausência de dados sensíveis; resolução de DI e integrações MySQL de composição para confirmação, falha confirmada, consulta, leases e concorrência.
+
+### Corrigido após revisão independente
+
+- Removido o claim legado `TentarIniciarProcessamentoAsync` de contratos e implementações: ele podia deixar `PagamentoPix.Processando` sem auditoria de Envio ou lease. `IPagamentoPixEnvioStore` é agora o único início autorizado de Envio.
+- `NaoAdquirido` deixou de ser mapeado genericamente para `EnvioEmAndamento`: o orquestrador relê uma vez o estado e retorna terminal, aguardo de política, não aplicável, processamento seguro ou estado concorrente neutro conforme a persistência atual.
+- O resultado de aplicação passou a transportar apenas `ResultadoOperacao` provider-agnostic, para diferenciar confirmação de `FalhaConfirmada` sem expor dados do provider.
+- A composição MySQL passou a cobrir evidência conclusiva anterior, Consulta não conclusiva/conclusiva, lease de Consulta, leases de Envio e conclusão rápida sem segundo Envio.
+
+### Limites e validação
+
+- Cada execução provoca no máximo uma chamada externa: Envio ou Consulta, nunca ambas.
+- O orquestrador não chama `IPixProvider`, não lê chave Pix e não altera diretamente Cashback, auditoria, leases ou snapshots.
+- Build: sucesso, 0 erros e 1 warning preexistente de nulabilidade em `UsuarioService`; testes direcionados: 38 aprovados; preflight: 6 aprovados; suíte rápida: 490 aprovados — todos sem falhas ou ignorados.
+- Inventário estático de **121 integrações MySQL em 13 classes**. A pendência local anterior, causada pela ausência de `INDICA2_TEST_MYSQL_CONNECTION`, foi superada pela execução manual definitiva do usuário: **121 aprovadas**, 0 falhas e 0 ignoradas; duração dos testes de **28,5 segundos** e execução completa concluída com sucesso em **31,6 segundos**. A composição do orquestrador com Envio, Reconciliação, aplicação financeira, leases, concorrência e idempotência foi validada.
+- Nenhuma chamada Efí, OAuth ou Pix real foi executada.
+
 ## 2026-09-10 — Lease Persistente de Envio Pix — PR #32
 
 ### Adicionado
