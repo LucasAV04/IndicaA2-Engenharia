@@ -26,11 +26,27 @@ public sealed class PagamentoPixProcessamentoWorker(
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(_options.IntervaloSegundos));
         while (await timer.WaitForNextTickAsync(stoppingToken))
-            await ExecutarCicloAsync(stoppingToken);
+        {
+            try
+            {
+                await ExecutarCicloAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception exception)
+            {
+                RegistrarFalhaSegura("SelecaoDeCandidatos", exception);
+            }
+        }
     }
 
     public async Task ExecutarCicloAsync(CancellationToken cancellationToken)
     {
+        if (!_options.Habilitado)
+            return;
+
         using var scope = scopeFactory.CreateScope();
         var seletor = scope.ServiceProvider.GetRequiredService<IPagamentoPixCandidatoProcessamentoStore>();
         var processador = scope.ServiceProvider.GetRequiredService<IPagamentoPixProcessamentoService>();
@@ -49,8 +65,17 @@ public sealed class PagamentoPixProcessamentoWorker(
             }
             catch (Exception exception)
             {
-                logger.LogError(exception, "Falha ao processar Pagamento Pix {PagamentoPixId}", pagamentoPixId);
+                RegistrarFalhaSegura("ProcessamentoPagamentoPix", exception, pagamentoPixId);
             }
         }
+    }
+
+    private void RegistrarFalhaSegura(string evento, Exception exception, Guid? pagamentoPixId = null)
+    {
+        logger.LogError(
+            "Falha segura no worker Pix: {Evento}; {TipoExcecao}; {PagamentoPixId}",
+            evento,
+            exception.GetType().Name,
+            pagamentoPixId);
     }
 }
