@@ -50,7 +50,20 @@ public sealed class PagamentoPixProcessamentoWorker(
         using var scope = scopeFactory.CreateScope();
         var seletor = scope.ServiceProvider.GetRequiredService<IPagamentoPixCandidatoProcessamentoStore>();
         var processador = scope.ServiceProvider.GetRequiredService<IPagamentoPixProcessamentoService>();
-        var ids = await seletor.ObterCandidatosAsync(_options.TamanhoLote, cancellationToken);
+        IReadOnlyCollection<Guid> ids;
+        try
+        {
+            ids = await seletor.ObterCandidatosAsync(_options.TamanhoLote, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            RegistrarFalhaSegura("SelecaoDeCandidatos", exception);
+            return;
+        }
 
         foreach (var pagamentoPixId in ids.Distinct())
         {

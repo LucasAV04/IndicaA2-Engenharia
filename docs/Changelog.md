@@ -13,6 +13,7 @@
 - `EnvioPendenteRecuperacao` é tratado pelo orquestrador: a mesma auditoria de Envio com lease expirado é recuperada uma única vez, preservando tentativa e referência idempotente, sem delegar essa decisão ao worker.
 - Falha do seletor de candidatos agora fica contida no ciclo do worker e somente permite nova tentativa no próximo tick; cancelamento do host encerra normalmente.
 - Logs do worker não recebem exceções completas: registram apenas evento, tipo da exceção e identificador do Pagamento Pix. A entrada pública de ciclo também não executa quando o worker está desabilitado.
+- A cobertura inicial MySQL do seletor e da migration 013 foi adicionada; o inventário estático passa a **124 integrações em 14 classes** e permanece pendente de execução configurada.
 
 ### Validação e limites
 
