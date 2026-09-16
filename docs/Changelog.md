@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-16 — Cobertura integral do worker — PR #34
+
+- Seam interna de ticks conserva `PeriodicTimer` em produção; testes hospedados verificam primeiro tick, falha do seletor até o tick seguinte, ausência de sobreposição, cancelamento e logs com `exception = null`. Cancelamento na espera é encerrado normalmente; verificação do token antes de cada ID evita iniciar outro item após cancelamento.
+- Seletor testado com registros financeiros fictícios, estados, leases válidos/expirados/parciais, relógio MySQL, ordenação, limites e snapshots brutos integrais sem mutação.
+- `Pendente` com lease é incompatível, não estado normal: seleção não repara; processamento recusa aquisição com lease completo e denuncia lease parcial/simultâneo, sem provider.
+- Migration 013: índice não único, ordem das colunas e schema/constraints/dados preservados. Retomada integrada usa serviços/stores reais, token novo e mesma tentativa/operação/referência; token antigo rejeitado, resultados confirmado/falha/não conclusivo e rollback financeiro com trigger fictícia.
+- Dois ciclos concorrentes selecionam o mesmo candidato por barreira explícita, mas somente um chama provider falso e aplica Cashback; sem efeito financeiro real. Nenhum teste anterior removido.
+- Inventário ampliado de 124/14 para **141 integrações em 15 classes**, confirmado por preflight e descoberta VSTest sem execução. Oito casos hospedados e 17 integrações adicionais; matriz com nomes exatos em `Implementacoes.md`. As integrações estão implementadas e compiladas, mas não executadas: conexão MySQL ausente, zero migrations, inclusive 013.
+- Build completo: sucesso, zero erros, quatro warnings preexistentes em `Usuario`/`UsuarioService`, 49,97 s. Primeira tentativa bloqueada pelo sandbox ao ler NuGet.Config; nova execução com permissão passou. Nenhuma dependência/SDK alterada.
+- Direcionados (worker hospedado, orquestrador, DI e preflight): **60 aprovados**, zero falhos/ignorados; inclui **6/6 preflight**. Suíte rápida: **506 aprovados**, zero falhos/ignorados (132 Domain + 177 Application + 109 API + 88 Infrastructure). Comandos exatos e durações registrados em `Implementacoes.md`; exit codes 0.
+- `git diff --check` sem erros; zero Efí/OAuth/Pix real ou dados de produção. Pendência: executar as 141 integrações configuradas e revisar o PR draft; não há liberação para merge/produção.
+
 ## 2026-09-15 — Worker Controlado de Processamento de PagamentoPix — PR #34
 
 ### Adicionado

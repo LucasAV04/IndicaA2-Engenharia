@@ -8,12 +8,30 @@ namespace API.Processing;
 /// Executa ciclos sequenciais e somente quando habilitado explicitamente.
 /// Não toma decisões financeiras nem acessa o provider.
 /// </summary>
-public sealed class PagamentoPixProcessamentoWorker(
-    IServiceScopeFactory scopeFactory,
-    IOptions<PagamentoPixProcessamentoWorkerOptions> options,
-    ILogger<PagamentoPixProcessamentoWorker> logger) : BackgroundService
+public sealed class PagamentoPixProcessamentoWorker : BackgroundService
 {
-    private readonly PagamentoPixProcessamentoWorkerOptions _options = options.Value;
+    private readonly IServiceScopeFactory scopeFactory;
+    private readonly ILogger<PagamentoPixProcessamentoWorker> logger;
+    private readonly PagamentoPixProcessamentoWorkerOptions _options;
+    private readonly Func<TimeSpan, IProcessamentoPixTicks> _criarTicks;
+
+    public PagamentoPixProcessamentoWorker(
+        IServiceScopeFactory scopeFactory,
+        IOptions<PagamentoPixProcessamentoWorkerOptions> options,
+        ILogger<PagamentoPixProcessamentoWorker> logger)
+        : this(scopeFactory, options, logger, intervalo => new ProcessamentoPixTicks(intervalo)) { }
+
+    internal PagamentoPixProcessamentoWorker(
+        IServiceScopeFactory scopeFactory,
+        IOptions<PagamentoPixProcessamentoWorkerOptions> options,
+        ILogger<PagamentoPixProcessamentoWorker> logger,
+        Func<TimeSpan, IProcessamentoPixTicks> criarTicks)
+    {
+        this.scopeFactory = scopeFactory;
+        this.logger = logger;
+        _options = options.Value;
+        _criarTicks = criarTicks;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,22 +42,26 @@ public sealed class PagamentoPixProcessamentoWorker(
             return;
         }
 
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(_options.IntervaloSegundos));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        using var timer = _criarTicks(TimeSpan.FromSeconds(_options.IntervaloSegundos));
+        try
         {
-            try
+            while (await timer.AguardarAsync(stoppingToken))
             {
-                await ExecutarCicloAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception exception)
-            {
-                RegistrarFalhaSegura("SelecaoDeCandidatos", exception);
+                try
+                {
+                    await ExecutarCicloAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    RegistrarFalhaSegura("SelecaoDeCandidatos", exception);
+                }
             }
         }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
     }
 
     public async Task ExecutarCicloAsync(CancellationToken cancellationToken)
@@ -47,6 +69,7 @@ public sealed class PagamentoPixProcessamentoWorker(
         if (!_options.Habilitado)
             return;
 
+        cancellationToken.ThrowIfCancellationRequested();
         using var scope = scopeFactory.CreateScope();
         var seletor = scope.ServiceProvider.GetRequiredService<IPagamentoPixCandidatoProcessamentoStore>();
         var processador = scope.ServiceProvider.GetRequiredService<IPagamentoPixProcessamentoService>();
@@ -67,6 +90,7 @@ public sealed class PagamentoPixProcessamentoWorker(
 
         foreach (var pagamentoPixId in ids.Distinct())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var resultado = await processador.ProcessarAsync(pagamentoPixId, cancellationToken);
