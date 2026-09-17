@@ -1,5 +1,13 @@
 # Implementações
 
+## PR #34 — falhas transacionais sem triggers (2026-09-17)
+
+A primeira execução real teve 141 testes, 133 aprovados, 8 falhos e 0 ignorados (20 s; comando 30,48 s, exit code 1), sem bancos descartáveis restantes. Sete cenários foram bloqueados na criação de triggers pela restrição de binary logging; um teste esperava o estado intermediário `EnvioPendenteRecuperacao` como resultado público, embora o orquestrador já recupere e aplique a confirmação.
+
+Os sete cenários passam a injetar falhas por delegate interno e por instância nos stores de Infrastructure, disponível aos testes pelo `InternalsVisibleTo` existente. Construtores públicos e DI conservam comportamento no-op, sem flags globais, configuração, reflexão, pacote ou contrato público novo. Os callbacks são executados dentro da mesma conexão/transação: após claim, antes/depois da auditoria de Envio, após atualização do Pix e após auditorias de reconciliação. Exceções fictícias propagam pelo rollback existente; a expiração controlada altera o lease na mesma transação, cuja liberação condicional real falha e reverte também essa alteração.
+
+Lease válido e expirado têm testes separados: válido aguarda sem mutação/provider; expirado recupera a mesma auditoria/tentativa/referência, faz um único Envio, aplica confirmação e retorna `Aplicado`. A reaplicação não paga novamente. A validação definitiva executou **142 integrações em 15 classes: 142 aprovadas, 0 falhas e 0 ignoradas**, em 19 s (comando completo em 26,04 s, exit code 0). O script aplicou as migrations no banco descartável temporário e não restaram bancos `indicaa2_test_*` ao final. Não foram alterados servidor, grants, binary log, migrations, worker, seletor, contratos ou regras financeiras; a execução anterior com triggers foi superada.
+
 ## PR #34 — ampliação integral da cobertura (2026-09-16)
 
 - Temporização: seam interna de ticks, sem pacote/scheduler, mantendo `PeriodicTimer` em produção. Testes hospedados usam sinais determinísticos; cancelamento durante a espera encerra normalmente e o token é verificado antes de iniciar cada ID, inclusive se o serviço anterior retornar após cancelamento.

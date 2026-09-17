@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-17 — Rollback MySQL sem privilégio global — PR #34
+
+- Execução intermediária real: 133/141 aprovados, 8 falhos, 0 ignorados; sete bloqueios na criação de triggers e uma expectativa antiga de lease expirado. Zero bancos descartáveis restantes.
+- Triggers substituídas por callback interno/no-op em produção, com falha fictícia ou SQL na mesma conexão e transação. Preservados rollback real e snapshots; nenhuma permissão/configuração global alterada.
+- Contratos de teste separados: lease válido aguarda; expirado recupera a mesma operação e confirma uma única liquidação. Inventário: **142 integrações, 15 classes**. Validação definitiva executada: **142 aprovadas, 0 falhas e 0 ignoradas**, duração de 19 s (comando completo em 26,04 s, exit code 0), com migrations aplicadas em banco descartável temporário e nenhum banco `indicaa2_test_*` restante. A execução anterior com triggers foi superada; nenhuma permissão ou configuração do servidor foi alterada.
+
 ## 2026-09-16 — Cobertura integral do worker — PR #34
 
 - Seam interna de ticks conserva `PeriodicTimer` em produção; testes hospedados verificam primeiro tick, falha do seletor até o tick seguinte, ausência de sobreposição, cancelamento e logs com `exception = null`. Cancelamento na espera é encerrado normalmente; verificação do token antes de cada ID evita iniciar outro item após cancelamento.

@@ -4,6 +4,7 @@ using Application.Interfaces.Providers;
 using Application.Services;
 using Domain.Entities;
 using Domain.Enums;
+using Infrastructure.Database;
 using Infrastructure.Repositories;
 using Infrastructure.Security;
 using MySqlConnector;
@@ -21,12 +22,12 @@ internal sealed class ProcessamentoPixCenario(MySqlIntegrationFixture fixture) :
     public PagamentoPixEnvioMySqlStore Envios => new(fixture.ConnectionFactory);
     public PagamentoPixCandidatoProcessamentoMySqlStore Seletor => new(fixture.ConnectionFactory);
 
-    public PagamentoPixProcessamentoService Processador(IPixProvider provider) => new(
+    public PagamentoPixProcessamentoService Processador(IPixProvider provider, InterceptadorTransacionalPix? interceptarAplicacao = null) => new(
         Pagamentos, new PagamentoPixEnvioService(Pagamentos, Envios, provider),
         new PagamentoPixReconciliacaoService(Pagamentos, Operacoes,
             new PagamentoPixReconciliacaoMySqlStore(fixture.ConnectionFactory), provider),
         new PagamentoPixAplicacaoResultadoService(Pagamentos, Cashbacks,
-            new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory, _protector)));
+            new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory, _protector, interceptarAplicacao ?? TransacaoPixSemIntercepcao.ExecutarAsync)));
 
     public async Task<PagamentoPix> CriarAsync(StatusPagamentoPix status = StatusPagamentoPix.Pendente, int tentativas = 0)
     {

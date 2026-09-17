@@ -15,9 +15,16 @@ namespace Infrastructure.Repositories;
 public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
 {
     private readonly MySqlConnectionFactory _connectionFactory;
+    private readonly InterceptadorTransacionalPix _interceptar;
 
-    public PagamentoPixEnvioMySqlStore(MySqlConnectionFactory connectionFactory) =>
+    public PagamentoPixEnvioMySqlStore(MySqlConnectionFactory connectionFactory)
+        : this(connectionFactory, TransacaoPixSemIntercepcao.ExecutarAsync) { }
+
+    internal PagamentoPixEnvioMySqlStore(MySqlConnectionFactory connectionFactory, InterceptadorTransacionalPix interceptar)
+    {
         _connectionFactory = connectionFactory;
+        _interceptar = interceptar;
+    }
 
     public async Task<PreparacaoEnvioPagamentoPixResult> TentarPrepararEnvioAsync(
         Guid pagamentoPixId, CancellationToken cancellationToken = default)
@@ -71,6 +78,7 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
                 throw new InvalidOperationException("A preparação do envio Pix perdeu a coordenação persistente.");
             }
 
+            await _interceptar(PontoTransacionalPix.ClaimAntesDeInserirEnvio, connection, transaction, cancellationToken);
             await AdicionarOperacaoAsync(connection, transaction, operacao, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return PreparacaoEnvioPagamentoPixResult.AdquiridoCom(
@@ -145,9 +153,12 @@ public sealed class PagamentoPixEnvioMySqlStore : IPagamentoPixEnvioStore
                 envio.CreatedAt, envio.UpdatedAt, envio.FinishedAt);
             auditoria.Finalizar(resultado, identificadorProvider, codigo);
 
-            if (!await FinalizarOperacaoAsync(
-                    connection, transaction, envio, auditoria, cancellationToken) ||
-                !await LiberarLeaseAsync(connection, transaction, pagamentoPixId, leaseId, cancellationToken))
+            await _interceptar(PontoTransacionalPix.AntesDeFinalizarAuditoriaEnvio, connection, transaction, cancellationToken);
+            if (!await FinalizarOperacaoAsync(connection, transaction, envio, auditoria, cancellationToken))
+                throw new InvalidOperationException("A finalização condicional do envio Pix não pôde ser persistida.");
+
+            await _interceptar(PontoTransacionalPix.AuditoriaEnvioAntesDeLiberarLease, connection, transaction, cancellationToken);
+            if (!await LiberarLeaseAsync(connection, transaction, pagamentoPixId, leaseId, cancellationToken))
             {
                 throw new InvalidOperationException("A finalização condicional do envio Pix não pôde ser persistida.");
             }

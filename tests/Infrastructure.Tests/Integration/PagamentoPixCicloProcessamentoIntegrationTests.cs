@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using Application.Interfaces.Providers;
 using Application.Models;
 using Domain.Enums;
-using MySqlConnector;
+using Infrastructure.Database;
 using Xunit;
 
 namespace Infrastructure.Tests.Integration;
@@ -215,21 +215,17 @@ public sealed class PagamentoPixCicloProcessamentoIntegrationTests(MySqlIntegrat
         await c.ExpirarEnvioAsync(pix.Id);
         var imutavel = await c.SnapshotImutavelAsync(pix.Id);
         var cashbackAntes = await c.SnapshotAsync("SELECT * FROM cashbacks ORDER BY id");
-        var trigger = $"teste_cashback_{Guid.NewGuid():N}";
-        await c.ExecutarAsync($"CREATE TRIGGER {trigger} BEFORE UPDATE ON cashbacks FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'falha ficticia controlada'");
         var provider = new ProviderFalso(PixProviderResult.Confirmado());
-        try
-        {
-            await Assert.ThrowsAsync<MySqlException>(() => c.Processador(provider).ProcessarAsync(pix.Id));
-            Assert.Equal(StatusPagamentoPix.Processando, (await c.Pagamentos.ObterPorIdAsync(pix.Id))!.Status);
-            Assert.Equal(cashbackAntes, await c.SnapshotAsync("SELECT * FROM cashbacks ORDER BY id"));
-            Assert.Equal(imutavel, await c.SnapshotImutavelAsync(pix.Id));
-            var op = Assert.Single(await c.Operacoes.ObterPorPagamentoPixIdAsync(pix.Id));
-            Assert.Equal(ResultadoOperacaoPagamentoPix.Confirmado, op.Resultado);
-            Assert.NotNull(op.FinishedAt);
-            Assert.Null(await c.TokenEnvioAsync(pix.Id));
-        }
-        finally { await c.ExecutarAsync($"DROP TRIGGER IF EXISTS {trigger}"); }
+        await Assert.ThrowsAsync<FalhaTransacionalPixException>(() =>
+            c.Processador(provider, FalhaTransacionalPix.LancarEm(PontoTransacionalPix.PagamentoAtualizadoAntesDoCashback))
+                .ProcessarAsync(pix.Id));
+        Assert.Equal(StatusPagamentoPix.Processando, (await c.Pagamentos.ObterPorIdAsync(pix.Id))!.Status);
+        Assert.Equal(cashbackAntes, await c.SnapshotAsync("SELECT * FROM cashbacks ORDER BY id"));
+        Assert.Equal(imutavel, await c.SnapshotImutavelAsync(pix.Id));
+        var op = Assert.Single(await c.Operacoes.ObterPorPagamentoPixIdAsync(pix.Id));
+        Assert.Equal(ResultadoOperacaoPagamentoPix.Confirmado, op.Resultado);
+        Assert.NotNull(op.FinishedAt);
+        Assert.Null(await c.TokenEnvioAsync(pix.Id));
         Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, (await c.Processador(provider).ProcessarAsync(pix.Id)).Status);
         Assert.Equal(StatusCashback.Pago, (await c.Cashbacks.ObterPorIdAsync(pix.CashbackId))!.Status);
         Assert.Equal(StatusPagamentoPix.Concluido, (await c.Pagamentos.ObterPorIdAsync(pix.Id))!.Status);

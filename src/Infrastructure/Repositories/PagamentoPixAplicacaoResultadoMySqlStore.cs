@@ -17,12 +17,18 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
 {
     private readonly MySqlConnectionFactory _connectionFactory;
     private readonly PagamentoPixMySqlRepository _materializador;
+    private readonly InterceptadorTransacionalPix _interceptar;
 
     public PagamentoPixAplicacaoResultadoMySqlStore(
         MySqlConnectionFactory connectionFactory, IDadosPixProtector protector)
+        : this(connectionFactory, protector, TransacaoPixSemIntercepcao.ExecutarAsync) { }
+
+    internal PagamentoPixAplicacaoResultadoMySqlStore(
+        MySqlConnectionFactory connectionFactory, IDadosPixProtector protector, InterceptadorTransacionalPix interceptar)
     {
         _connectionFactory = connectionFactory;
         _materializador = new PagamentoPixMySqlRepository(connectionFactory, protector);
+        _interceptar = interceptar;
     }
 
     public async Task<ResultadoPersistenciaAplicacaoPagamentoPix> AplicarAsync(
@@ -93,6 +99,7 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
                     "A atualização condicional do Pagamento Pix não foi aplicada e requer intervenção técnica.");
             }
 
+            await _interceptar(PontoTransacionalPix.PagamentoAtualizadoAntesDoCashback, connection, transaction, cancellationToken);
             if (resultadoConclusivo == ResultadoOperacaoPagamentoPix.Confirmado &&
                 await AtualizarCashbackAsync(connection, transaction, pagamentoPix.CashbackId, cancellationToken) != 1)
             {
