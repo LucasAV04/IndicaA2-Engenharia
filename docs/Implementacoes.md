@@ -1,5 +1,74 @@
 # Implementações
 
+## PR #34 — falhas transacionais sem triggers (2026-09-17)
+
+A primeira execução real teve 141 testes, 133 aprovados, 8 falhos e 0 ignorados (20 s; comando 30,48 s, exit code 1), sem bancos descartáveis restantes. Sete cenários foram bloqueados na criação de triggers pela restrição de binary logging; um teste esperava o estado intermediário `EnvioPendenteRecuperacao` como resultado público, embora o orquestrador já recupere e aplique a confirmação.
+
+Os sete cenários passam a injetar falhas por delegate interno e por instância nos stores de Infrastructure, disponível aos testes pelo `InternalsVisibleTo` existente. Construtores públicos e DI conservam comportamento no-op, sem flags globais, configuração, reflexão, pacote ou contrato público novo. Os callbacks são executados dentro da mesma conexão/transação: após claim, antes/depois da auditoria de Envio, após atualização do Pix e após auditorias de reconciliação. Exceções fictícias propagam pelo rollback existente; a expiração controlada altera o lease na mesma transação, cuja liberação condicional real falha e reverte também essa alteração.
+
+Lease válido e expirado têm testes separados: válido aguarda sem mutação/provider; expirado recupera a mesma auditoria/tentativa/referência, faz um único Envio, aplica confirmação e retorna `Aplicado`. A reaplicação não paga novamente. A validação definitiva executou **142 integrações em 15 classes: 142 aprovadas, 0 falhas e 0 ignoradas**, em 19 s (comando completo em 26,04 s, exit code 0). O script aplicou as migrations no banco descartável temporário e não restaram bancos `indicaa2_test_*` ao final. Não foram alterados servidor, grants, binary log, migrations, worker, seletor, contratos ou regras financeiras; a execução anterior com triggers foi superada.
+
+## PR #34 — ampliação integral da cobertura (2026-09-16)
+
+- Temporização: seam interna de ticks, sem pacote/scheduler, mantendo `PeriodicTimer` em produção. Testes hospedados usam sinais determinísticos; cancelamento durante a espera encerra normalmente e o token é verificado antes de iniciar cada ID, inclusive se o serviço anterior retornar após cancelamento.
+- Seleção: registros financeiros fictícios reais, snapshots SQL integrais, relógio MySQL para leases, ordenação `updated_at, id`, limites e leases parciais sem reparação. `Pendente` com lease não é estado normal: o seletor apenas o apresenta, e os stores recusam aquisição; lease parcial gera inconsistência explícita. Não há provider nem reparação automática.
+- Migration 013: índice não único, colunas ordenadas e reaplicação controlada exclusivamente no banco descartável, comparando schema, constraints, índices e dados financeiros.
+- Composição: seletor, orquestrador, Envio, reconciliação e aplicação reais; provider exclusivamente falso. Retomada preserva operação, tentativa e referência, troca token e rejeita o antigo durante o lease novo ativo. Dois ciclos selecionam o mesmo ID antes do claim, sincronizados com `TaskCompletionSource`; o segundo processa enquanto o provider do primeiro está bloqueado. Somente um Envio/efeito lógico/auditoria e uma aplicação financeira são permitidos. Provider liberado e ambas as tarefas observadas em `finally`, com timeout defensivo de dez segundos.
+- `Pendente` com lease completo retorna `EstadoAlteradoConcorrentemente` após recusa do store (nenhuma aquisição/provider/mutação); marcadores parciais ou leases simultâneos lançam `InvalidOperationException`. O resultado neutro não normaliza nem repara a corrupção. Contratos, stores, fórmula de Cashback e migrations não foram alterados.
+- Alteração de produção limitada à seam interna e ao cancelamento do worker: a espera do timer antes ficava fora do `catch` de cancelamento e faltava verificar o token entre IDs quando o serviço retornava após cancelamento. Os novos testes hospedados exigem encerramento bem-sucedido e ausência de processamento do próximo ID.
+
+### Matriz de cobertura acrescentada
+
+Os métodos abaixo são novos, salvo o teste existente de índice, que foi fortalecido. Nenhum teste anterior foi removido. Os testes MySQL usam somente dados fictícios no banco descartável da fixture; estão compilados, **não executados nesta revisão**.
+
+| Garantia | Método de teste | Tipo |
+|---|---|---|
+| Primeiro tick, seletor falha sem encerrar, próxima seleção só no próximo tick, `exception = null` no logger | `Hospedado_PrimeiroTickIniciaUmCicloEFalhaDoSeletorAguardaProximoTick` | Hospedado sem MySQL |
+| Sem ciclos sobrepostos; IDs sequenciais e deduplicados | `Hospedado_TicksDurantePagamentoNaoSobrepoemCiclosEItensSaoSequenciais` | Hospedado sem MySQL |
+| Cancelamento durante espera sem erro | `Hospedado_CancelamentoDuranteEsperaEncerraComSucessoSemErro` | Hospedado sem MySQL |
+| Cancelamento no item, com ou sem exceção do serviço, impede próximo ID | `Hospedado_CancelamentoDuranteItemNaoIniciaProximoNemRegistraErro` (dois casos) | Hospedado sem MySQL |
+| Desabilitado não cria timer/escopo | `Hospedado_DesabilitadoNaoCriaEscopoNemTemporizador` | Hospedado sem MySQL |
+| Configuração habilitada inválida falha no startup | `HostedService_ConfiguracaoHabilitadaInvalidaFalhaNoStartup` | Host sem MySQL |
+| API desabilitada inicia sem resolver seletor/provider; processador scoped não capturado no singleton | `Api_DesabilitadaIniciaSemResolverSeletorOuProviderEProcessadorContinuaScoped` | HTTP em memória |
+| Pendente/Processando selecionados, Falhou/Concluido/FalhaDefinitiva/Cancelado excluídos | `ObterCandidatosAsync_EstadosReaisSelecionaSomentePendenteEProcessandoSemMutacao` | MySQL |
+| Lease válido de Envio excluído pelo relógio do MySQL | `ObterCandidatosAsync_LeaseEnvioValidoUsaRelogioMySqlENaoSeleciona` | MySQL |
+| Lease válido de Consulta excluído pelo relógio do MySQL | `ObterCandidatosAsync_LeaseConsultaValidoUsaRelogioMySqlENaoSeleciona` | MySQL |
+| Lease expirado de Envio selecionado e preservado | `ObterCandidatosAsync_LeaseEnvioExpiradoSelecionaSemLimpar` | MySQL |
+| Lease expirado de Consulta selecionado e preservado | `ObterCandidatosAsync_LeaseConsultaExpiradoSelecionaSemLimpar` | MySQL |
+| Token ou expiração isolados dos dois leases não são reparados | `ObterCandidatosAsync_LeasesParciaisSelecionaSemReparar` | MySQL |
+| Limite exato, desempate por ID e ordem estável em duas leituras | `ObterCandidatosAsync_OrdenaPorUpdatedAtDepoisIdELimitaSemMutacao` | MySQL |
+| Seleção preserva todas as colunas de Pix/Cashback/auditoria, incluindo ciphertext, nonce, tag, versão, tentativa, referência, leases e datas | `ObterCandidatosAsync_PreservaAuditoriaSnapshotsEMaterialCriptografico` | MySQL |
+| Índice da fixture é não único em pagamentos_pix, ordem status/updated_at/id | `Migration013_DeveCriarIndiceSomenteComColunasEsperadas` (fortalecido) | MySQL |
+| Reaplicação da migration 013 preserva colunas, constraints, demais índices e dados | `Migration013_AlteraSomenteIndiceEPreservaSchemaFinanceiroEDados` | MySQL |
+| Recuperação com token novo, mesma operação/tentativa/referência, token antigo rejeitado e confirmação aplicada uma vez | `Ciclo_RecuperacaoConfirmadaLiquidaPixECashbackUmaVez` | MySQL |
+| Falha confirmada não paga Cashback nem inicia retry | `Ciclo_RecuperacaoComFalhaConfirmadaNaoPagaNemIniciaRetry` | MySQL |
+| Quinta falha recuperada torna-se definitiva, sem nova tentativa | `Ciclo_RecuperacaoQuintaFalhaTornaDefinitivaSemRetry` | MySQL |
+| Pendente auditado sem Consulta imediata | `Ciclo_RecuperacaoPendenteMantemEvidenciaSemConsultaImediata` | MySQL |
+| Indeterminado auditado sem Consulta imediata | `Ciclo_RecuperacaoIndeterminadaMantemEvidenciaSemConsultaImediata` | MySQL |
+| Dois ciclos reais selecionam mesmo candidato; um claim/provider/efeito lógico/auditoria; Cashback pago no máximo uma vez | `CiclosConcorrentes_MesmoCandidatoTemUmEnvioUmaAuditoriaEUmPagamento` | MySQL |
+| Pendente com lease completo/parcial/simultâneo recusa processamento sem provider nem mutação | `Ciclo_PendenteComLeaseIncompativelRecusaSemProviderNemReparacao` | MySQL |
+| Falha controlada na atualização do Cashback reverte liquidação do Pix; evidência preservada permite aplicação posterior sem reenvio | `Ciclo_RecuperacaoConfirmadaComFalhaNoCashbackRevertePagamentoSemReenvio` | MySQL |
+
+### Validação efetivamente executada
+
+- `dotnet build IndicaA2.slnx`: sucesso em 49,97 s; zero erros, quatro warnings preexistentes de nulabilidade (três CS8618 em `Usuario`, um CS8604 em `UsuarioService`). A primeira tentativa em sandbox foi bloqueada ao ler `NuGet.Config`, antes da compilação; repetida com acesso autorizado, sem mudar código/configuração.
+- Testes direcionados: **60 aprovados**, zero falhos/ignorados (25 Application, 17 API, 18 Infrastructure). Incluem os **6 testes de preflight** aprovados. Comando: `dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&(FullyQualifiedName~PagamentoPixProcessamentoServiceTests|FullyQualifiedName~PagamentoPixProcessamentoWorkerTests|FullyQualifiedName~PagamentoPixWorkerHospedadoTests|FullyQualifiedName~DependencyInjectionTests|FullyQualifiedName~MySqlIntegrationPreflightTests)" --logger "console;verbosity=normal"`. Durações totais por projeto: 8,0424 s, 12,5837 s e 14,2166 s, respectivamente (execução paralela, não somar).
+- Suíte rápida: **506 aprovados**, zero falhos/ignorados; 132 Domain, 177 Application, 109 API e 88 Infrastructure. Comando: `dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"`. Durações informadas por DLL: 223 ms, 1 s, 5 s e 5 s, respectivamente. Exit code 0.
+- Inventário real: **141 integrações MySQL em 15 classes**, 17 casos adicionais; confirmado pelo preflight e pela descoberta VSTest (`--list-tests --filter "Category=MySqlIntegration"`, sem executar integrações). A conexão `INDICA2_TEST_MYSQL_CONNECTION` está ausente: **141 pendentes**, nenhuma aprovada nesta revisão, nenhuma migration executada. Migration 013 continua pendente de validação real.
+- `git diff --check`: sem erros. Zero Efí, OAuth, Pix real ou dados de produção. PR permanece draft; não há liberação financeira nem de produção.
+
+## Worker Controlado de Processamento de PagamentoPix — PR #34
+
+**Data:** 2026-09-15
+
+O worker interno é um `BackgroundService` desabilitado por padrão. A configuração `PagamentoPix:ProcessamentoWorker` expõe somente `Habilitado`, `IntervaloSegundos` (5–3600 quando habilitado) e `TamanhoLote` (1–100 quando habilitado). Ele aguarda o primeiro `PeriodicTimer`, cria um escopo por ciclo, seleciona IDs de forma limitada e determinística e chama exclusivamente `IPagamentoPixProcessamentoService.ProcessarAsync`. A entrada pública do ciclo também respeita `Habilitado=false`, portanto não cria escopo, não consulta o seletor e não processa pagamentos quando desabilitado. O lote é sequencial e deduplicado; falhas do seletor ou de um ID são registradas de forma sanitizada e não bloqueiam o próximo tick ou os demais IDs.
+
+`IPagamentoPixCandidatoProcessamentoStore` retorna somente `PagamentoPixId`. Sua consulta MySQL é somente leitura, parametrizada, ordenada por `updated_at` e `id`, limitada por configuração e avalia leases com `UTC_TIMESTAMP(6)`: seleciona `Pendente` e `Processando` sem lease válido ou com lease expirado, mas não seleciona `Falhou` ou estados terminais. Marcadores parciais não são reparados pelo seletor; a validação transacional posterior continua falhando fechada. A migration `013_add_processamento_idx_pagamentos_pix.sql` adiciona exclusivamente o índice `(status, updated_at, id)` e a fixture MySQL passou a aplicá-la.
+
+O orquestrador continua sendo a única porta de recuperação do Envio com lease expirado. Ao receber `EnvioPendenteRecuperacao`, depois de uma reconciliação que não fez chamada externa, ele chama uma vez o serviço de Envio para assumir o lease existente e reutilizar a mesma auditoria, tentativa e referência idempotente. Resultado conclusivo é aplicado uma vez; resultado não conclusivo aguarda reconciliação posterior; perda concorrente de aquisição faz no máximo uma releitura delimitada. Não há loop, recursão, nova tentativa nem segunda chamada externa.
+
+Os logs do worker registram somente evento, tipo da exceção e `PagamentoPixId`; mensagem arbitrária, identificador/código do provider, payload, chave Pix, connection string, token e credencial não são encaminhados ao logger. A cobertura MySQL inicial tinha testes de limite inválido, coleção vazia e índice da migration 013. O inventário histórico de **124 integrações em 14 classes** foi ampliado para **141 em 15 classes** conforme a matriz de 2026-09-16 acima; sua execução continua pendente. Não houve Efí real, OAuth real, Pix real ou dados financeiros de produção.
+
 ## Orquestração Unitária de Processamento de PagamentoPix — PR #33
 
 **Data:** 2026-09-14

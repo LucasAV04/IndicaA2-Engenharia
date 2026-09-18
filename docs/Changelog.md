@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-09-17 — Rollback MySQL sem privilégio global — PR #34
+
+- Execução intermediária real: 133/141 aprovados, 8 falhos, 0 ignorados; sete bloqueios na criação de triggers e uma expectativa antiga de lease expirado. Zero bancos descartáveis restantes.
+- Triggers substituídas por callback interno/no-op em produção, com falha fictícia ou SQL na mesma conexão e transação. Preservados rollback real e snapshots; nenhuma permissão/configuração global alterada.
+- Contratos de teste separados: lease válido aguarda; expirado recupera a mesma operação e confirma uma única liquidação. Inventário: **142 integrações, 15 classes**. Validação definitiva executada: **142 aprovadas, 0 falhas e 0 ignoradas**, duração de 19 s (comando completo em 26,04 s, exit code 0), com migrations aplicadas em banco descartável temporário e nenhum banco `indicaa2_test_*` restante. A execução anterior com triggers foi superada; nenhuma permissão ou configuração do servidor foi alterada.
+
+## 2026-09-16 — Cobertura integral do worker — PR #34
+
+- Seam interna de ticks conserva `PeriodicTimer` em produção; testes hospedados verificam primeiro tick, falha do seletor até o tick seguinte, ausência de sobreposição, cancelamento e logs com `exception = null`. Cancelamento na espera é encerrado normalmente; verificação do token antes de cada ID evita iniciar outro item após cancelamento.
+- Seletor testado com registros financeiros fictícios, estados, leases válidos/expirados/parciais, relógio MySQL, ordenação, limites e snapshots brutos integrais sem mutação.
+- `Pendente` com lease é incompatível, não estado normal: seleção não repara; processamento recusa aquisição com lease completo e denuncia lease parcial/simultâneo, sem provider.
+- Migration 013: índice não único, ordem das colunas e schema/constraints/dados preservados. Retomada integrada usa serviços/stores reais, token novo e mesma tentativa/operação/referência; token antigo rejeitado, resultados confirmado/falha/não conclusivo e rollback financeiro com trigger fictícia.
+- Dois ciclos concorrentes selecionam o mesmo candidato por barreira explícita, mas somente um chama provider falso e aplica Cashback; sem efeito financeiro real. Nenhum teste anterior removido.
+- Inventário ampliado de 124/14 para **141 integrações em 15 classes**, confirmado por preflight e descoberta VSTest sem execução. Oito casos hospedados e 17 integrações adicionais; matriz com nomes exatos em `Implementacoes.md`. As integrações estão implementadas e compiladas, mas não executadas: conexão MySQL ausente, zero migrations, inclusive 013.
+- Build completo: sucesso, zero erros, quatro warnings preexistentes em `Usuario`/`UsuarioService`, 49,97 s. Primeira tentativa bloqueada pelo sandbox ao ler NuGet.Config; nova execução com permissão passou. Nenhuma dependência/SDK alterada.
+- Direcionados (worker hospedado, orquestrador, DI e preflight): **60 aprovados**, zero falhos/ignorados; inclui **6/6 preflight**. Suíte rápida: **506 aprovados**, zero falhos/ignorados (132 Domain + 177 Application + 109 API + 88 Infrastructure). Comandos exatos e durações registrados em `Implementacoes.md`; exit codes 0.
+- `git diff --check` sem erros; zero Efí/OAuth/Pix real ou dados de produção. Pendência: executar as 141 integrações configuradas e revisar o PR draft; não há liberação para merge/produção.
+
+## 2026-09-15 — Worker Controlado de Processamento de PagamentoPix — PR #34
+
+### Adicionado
+
+- Seletor MySQL somente leitura de IDs candidatos, com ordenação determinística, limite configurável e avaliação de lease pelo horário do MySQL.
+- Migration `013_add_processamento_idx_pagamentos_pix.sql`, limitada ao índice `(status, updated_at, id)`, incluída no bootstrap da fixture MySQL.
+- `BackgroundService` desabilitado por padrão, com escopo por ciclo, primeiro tick obrigatório, lote sequencial e deduplicado e logs sem dados sensíveis.
+
+### Corrigido
+
+- `EnvioPendenteRecuperacao` é tratado pelo orquestrador: a mesma auditoria de Envio com lease expirado é recuperada uma única vez, preservando tentativa e referência idempotente, sem delegar essa decisão ao worker.
+- Falha do seletor de candidatos agora fica contida no ciclo do worker e somente permite nova tentativa no próximo tick; cancelamento do host encerra normalmente.
+- Logs do worker não recebem exceções completas: registram apenas evento, tipo da exceção e identificador do Pagamento Pix. A entrada pública de ciclo também não executa quando o worker está desabilitado.
+- A cobertura inicial MySQL do seletor e da migration 013 foi adicionada; o inventário estático passa a **124 integrações em 14 classes** e permanece pendente de execução configurada.
+
+### Validação e limites
+
+- Build: 0 erros e 0 warnings; testes direcionados: 28 aprovados; suíte rápida: 493 aprovados, 0 falhos e 0 ignorados.
+- `INDICA2_TEST_MYSQL_CONNECTION` estava ausente: integrações MySQL de seletor, worker e migration 013 permanecem pendentes de execução real.
+- Não houve Efí, OAuth, Pix real, worker habilitado em ambiente nem dados financeiros de produção.
+
 ## 2026-09-14 — Orquestração Unitária de Processamento de PagamentoPix — PR #33
 
 ### Adicionado

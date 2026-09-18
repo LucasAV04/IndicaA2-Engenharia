@@ -2,6 +2,7 @@ using API.ExceptionHandling;
 using API.Authorization;
 using API.OpenApi;
 using API.Security;
+using API.Processing;
 using Application.Interfaces.Services;
 using Application.Services;
 using Infrastructure.DependencyInjection;
@@ -67,6 +68,13 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddInfrastructure(builder.Configuration);
+var processamentoWorkerOptions = builder.Configuration
+    .GetSection(PagamentoPixProcessamentoWorkerOptions.SectionName)
+    .Get<PagamentoPixProcessamentoWorkerOptions>() ?? new PagamentoPixProcessamentoWorkerOptions();
+processamentoWorkerOptions.Validate();
+builder.Services.Configure<PagamentoPixProcessamentoWorkerOptions>(
+    builder.Configuration.GetSection(PagamentoPixProcessamentoWorkerOptions.SectionName));
+builder.Services.AddHostedService<PagamentoPixProcessamentoWorker>();
 builder.Services.AddScoped<IIndicacaoService, IndicacaoService>();
 builder.Services.AddScoped<IVistoriaService, VistoriaService>();
 builder.Services.AddScoped<ICashbackService, CashbackService>();

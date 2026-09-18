@@ -14,10 +14,15 @@ namespace Infrastructure.Repositories;
 public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconciliacaoStore
 {
     private readonly MySqlConnectionFactory _connectionFactory;
+    private readonly InterceptadorTransacionalPix _interceptar;
 
     public PagamentoPixReconciliacaoMySqlStore(MySqlConnectionFactory connectionFactory)
+        : this(connectionFactory, TransacaoPixSemIntercepcao.ExecutarAsync) { }
+
+    internal PagamentoPixReconciliacaoMySqlStore(MySqlConnectionFactory connectionFactory, InterceptadorTransacionalPix interceptar)
     {
         _connectionFactory = connectionFactory;
+        _interceptar = interceptar;
     }
 
     public async Task<PreparacaoReconciliacaoPagamentoPixResult> PrepararConsultaAsync(
@@ -248,6 +253,7 @@ public sealed class PagamentoPixReconciliacaoMySqlStore : IPagamentoPixReconcili
                 throw new InvalidOperationException("O envio aberto não pôde ser finalizado junto da consulta conclusiva.");
             }
 
+            await _interceptar(PontoTransacionalPix.AuditoriasConsultaAntesDeLiberarLease, connection, transaction, cancellationToken);
             await LiberarLeaseAsync(connection, transaction, pagamentoPixId, leaseId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new(true, EhConclusivo(resultado) && !cicloAtual.Envio.FinishedAt.HasValue);

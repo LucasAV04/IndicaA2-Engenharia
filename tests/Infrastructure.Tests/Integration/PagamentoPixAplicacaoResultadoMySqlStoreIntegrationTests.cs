@@ -83,17 +83,12 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
     {
         await fixture.LimparDadosAsync();
         var contexto = await CriarContextoPersistidoAsync(ResultadoOperacaoPagamentoPix.Confirmado);
-        await CriarTriggerDeFalhaNoPagamentoDoCashbackAsync();
-
-        try
-        {
-            await Assert.ThrowsAsync<MySqlException>(() =>
-                CriarService().AplicarAsync(contexto.PagamentoPix.Id, CancellationToken.None));
-        }
-        finally
-        {
-            await RemoverTriggerDeFalhaNoPagamentoDoCashbackAsync();
-        }
+        using var snapshots = new ProcessamentoPixCenario(fixture);
+        var antes = await snapshots.SnapshotIntegralAsync();
+        await Assert.ThrowsAsync<FalhaTransacionalPixException>(() =>
+            CriarService(FalhaTransacionalPix.LancarEm(PontoTransacionalPix.PagamentoAtualizadoAntesDoCashback))
+                .AplicarAsync(contexto.PagamentoPix.Id, CancellationToken.None));
+        Assert.Equal(antes, await snapshots.SnapshotIntegralAsync());
 
         var pagamentoPersistido = (await CriarPagamentoRepository()
             .ObterPorIdAsync(contexto.PagamentoPix.Id, CancellationToken.None))!;
@@ -282,11 +277,11 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
         }
     }
 
-    private PagamentoPixAplicacaoResultadoService CriarService() =>
+    private PagamentoPixAplicacaoResultadoService CriarService(InterceptadorTransacionalPix? interceptar = null) =>
         new(
             CriarPagamentoRepository(),
             CriarCashbackRepository(),
-            new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory, new AesGcmDadosPixProtector(CriarChave())));
+            new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory, new AesGcmDadosPixProtector(CriarChave()), interceptar ?? TransacaoPixSemIntercepcao.ExecutarAsync));
 
     private async Task ValidarBloqueioPorLeaseDeEnvioAsync(bool expirado)
     {
@@ -386,34 +381,6 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
         await operacaoRepository.AdicionarAsync(operacao, CancellationToken.None);
         operacao.Finalizar(resultado, "provider-id", "provider-code");
         Assert.True(await operacaoRepository.FinalizarAsync(operacao, CancellationToken.None));
-    }
-
-    private async Task CriarTriggerDeFalhaNoPagamentoDoCashbackAsync()
-    {
-        const string sql = """
-            CREATE TRIGGER tr_bloquear_pagamento_cashback
-            BEFORE UPDATE ON cashbacks
-            FOR EACH ROW
-            BEGIN
-                IF NEW.status = 2 THEN
-                    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'falha induzida para validar rollback';
-                END IF;
-            END;
-            """;
-        await using var connection = fixture.ConnectionFactory.Create();
-        await connection.OpenAsync();
-        await using var command = new MySqlCommand(sql, connection);
-        await command.ExecuteNonQueryAsync();
-    }
-
-    private async Task RemoverTriggerDeFalhaNoPagamentoDoCashbackAsync()
-    {
-        await using var connection = fixture.ConnectionFactory.Create();
-        await connection.OpenAsync();
-        await using var command = new MySqlCommand(
-            "DROP TRIGGER IF EXISTS tr_bloquear_pagamento_cashback;",
-            connection);
-        await command.ExecuteNonQueryAsync();
     }
 
     private PagamentoPixMySqlRepository CriarPagamentoRepository() =>

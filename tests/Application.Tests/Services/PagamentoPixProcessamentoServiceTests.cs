@@ -215,7 +215,6 @@ public sealed class PagamentoPixProcessamentoServiceTests
     [Theory]
     [InlineData(StatusReconciliacaoPagamentoPix.ConsultaEmAndamento, StatusProcessamentoPagamentoPix.ConsultaEmAndamento)]
     [InlineData(StatusReconciliacaoPagamentoPix.EnvioEmAndamento, StatusProcessamentoPagamentoPix.EnvioEmAndamento)]
-    [InlineData(StatusReconciliacaoPagamentoPix.EnvioPendenteRecuperacao, StatusProcessamentoPagamentoPix.EnvioPendenteRecuperacao)]
     public async Task ProcessarAsync_QuandoReconciliacaoEstiverAguardando_DeveRetornarEsperaSemNovaChamada(
         StatusReconciliacaoPagamentoPix statusReconciliacao,
         StatusProcessamentoPagamentoPix statusEsperado)
@@ -231,6 +230,29 @@ public sealed class PagamentoPixProcessamentoServiceTests
         contexto.Aplicacao.Verify(x => x.AplicarAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
         contexto.Reconciliacao.Verify(x => x.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
         contexto.Envio.Verify(x => x.ProcessarEnvioAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessarAsync_QuandoEnvioPendenteRecuperacao_DeveRecuperarUmaVezEApliCarConfirmacao()
+    {
+        var contexto = CriarContexto(StatusPagamentoPix.Processando);
+        contexto.Aplicacao.SetupSequence(x => x.AplicarAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoAplicacaoPagamentoPix.SemResultadoConclusivo(contexto.Pagamento.Id))
+            .ReturnsAsync(ResultadoAplicacaoPagamentoPix.Aplicado(
+                contexto.Pagamento.Id, ResultadoOperacaoPagamentoPix.Confirmado));
+        contexto.Reconciliacao.Setup(x => x.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoReconciliacaoPagamentoPix.EnvioPendenteRecuperacao(contexto.Pagamento.Id));
+        contexto.Envio.Setup(x => x.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token))
+            .ReturnsAsync(ResultadoEnvioPagamentoPix.Executado(
+                contexto.Pagamento.Id, Guid.NewGuid(), 1, ResultadoOperacaoPagamentoPix.Confirmado));
+
+        var resultado = await contexto.Service.ProcessarAsync(contexto.Pagamento.Id, contexto.Token);
+
+        Assert.Equal(StatusProcessamentoPagamentoPix.Aplicado, resultado.Status);
+        Assert.Equal(ResultadoOperacaoPagamentoPix.Confirmado, resultado.ResultadoOperacao);
+        contexto.Reconciliacao.Verify(x => x.ReconciliarAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
+        contexto.Envio.Verify(x => x.ProcessarEnvioAsync(contexto.Pagamento.Id, contexto.Token), Times.Once);
+        contexto.Aplicacao.Verify(x => x.AplicarAsync(contexto.Pagamento.Id, contexto.Token), Times.Exactly(2));
     }
 
     [Fact]
