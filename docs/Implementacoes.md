@@ -1,5 +1,84 @@
 # Implementações
 
+## Painel administrativo web MVP (2026-09-21)
+
+Base: `5594ea8`, branch `feature/admin-web-mvp`. Entrega vertical com API administrativa, leitura agregada MySQL e aplicação React em `src/Web`; o projeto Node não participa da solução .NET.
+
+### Portas HTTP e segurança
+
+Todas as rotas novas exigem a policy `Administrador` (401 sem autenticação, 403 para usuário comum):
+
+| Recurso | Rotas |
+|---|---|
+| Usuários | POST/GET `/api/usuarios`; GET/PUT `/api/usuarios/{id}` |
+| Dados Pix | GET/PUT/DELETE `/api/usuarios/{usuarioId}/dados-pix` |
+| Pagamentos de vistoria | POST/GET `/api/pagamentos-vistoria`; GET por ID e `por-vistoria/{vistoriaId}`; PATCH `{id}/confirmar` e `{id}/cancelar` |
+| Pagamentos Pix | GET `/api/pagamentos-pix` |
+| Dashboard | GET `/api/admin/dashboard` |
+
+Controllers delegam aos serviços existentes, registrados scoped. Usuário criado continua comum; não há campos de role/senha na edição. PUT exige igualdade entre ID da rota e corpo. Duplicidades, unicidade de pagamento por vistoria e transições permanecem no Domain/Application. A confirmação de pagamento não gera Cashback nem recebe Pix. `ActionName` no GET de Vistorias assegura a resolução de `CreatedAtAction`, sem mudar regras de vistoria.
+
+`DadosPixSeguroResponse` expõe ID, usuário, tipo, máscara e timestamps: CPF/CNPJ/telefone revelam no máximo quatro caracteres finais; e-mail oculta toda parte local; aleatória fica inteiramente mascarada. GET de usuário existente sem chave retorna **204**; inexistente, **404**. PUT também retorna somente máscara. A verificação do usuário usa `ObterPorIdAsync` com o mesmo CancellationToken, sem ampliar contratos de repositório.
+
+Falhas de Dados Pix recebem mensagem controlada e log somente de tipo/status. O log bruto de exceção do middleware ASP.NET é suprimido para que não anteceda o handler sanitizado; o handler mantém os logs dos demais fluxos. Teste HTTP captura também os logs e comprova que uma exceção contendo chave fictícia não a expõe. Nenhum corpo de requisição é registrado. Criptografia/schema de Dados Pix e PagamentoPix permanecem intactos.
+
+A listagem global Pix usa o contrato/repositório existente, ordenação `created_at DESC, id DESC` e mapeamento manual para `PagamentoPixResponseDto`, sem chave, material criptográfico, lease ou provider no HTTP. Nenhum novo endpoint de processamento.
+
+### Dashboard somente leitura
+
+`IAdminDashboardStore` pertence à Application; `AdminDashboardMySqlStore` à Infrastructure. A API não contém SQL. Uma transação **somente leitura, RepeatableRead**, mantém os agregados no mesmo snapshot; não usa locks de escrita ou leases. Agrupa todos os status e inicializa ausências com zero. Somas MySQL DECIMAL são lidas como decimal, sem double, joins multiplicadores ou descriptografia. `UTC_TIMESTAMP(6)` fornece o instante UTC de cálculo, sem alterar relógio/configuração do servidor.
+
+Retorna usuários totais/ativos, distribuições de indicação/vistoria/pagamento/Cashback/Pix, receita confirmada, pagamento pendente, Cashback disponível/pago, Pix pendente-processando/concluído e falhas comuns/definitivas. Não depende do worker nem chama provider.
+
+### Frontend e fluxo operacional
+
+React/TypeScript/Vite, Router, TanStack Query, React Hook Form/Zod, Vitest/Testing Library e ESLint; versões resolvidas no package-lock. CSS próprio, paleta solicitada, layouts responsivos, labels/foco, tabelas com rolagem, loading/erro/vazio, notificações e confirmação de cancelamento. Não há dados demonstrativos embutidos na aplicação; os dados fictícios aparecem exclusivamente nos testes e exemplos HTTP.
+
+Rotas: `/login`, `/`, `/usuarios`, `/indicacoes`, `/vistorias`, `/pagamentos-vistoria`, `/cashbacks`, `/pagamentos-pix`, `/acesso-negado`. Todas, exceto login, exigem sessão; usuário comum vai a acesso negado. Token em memória/sessionStorage, nunca localStorage; logout/expiração/401 limpam sessão e cache, 403 redireciona. ProblemDetails é traduzido por status, sem reproduzir detail/payload externo. A policy no servidor é a barreira de autorização, não o estado do navegador.
+
+Cliente → indicação por código → seleção/vínculo de vistoria → realização/conclusão → pagamento confirmado → geração/aprovação de Cashback → criação da ordem Pix. Seletores usam registros da API, sem digitar GUID. Ações incompatíveis com status ficam desabilitadas; o backend permanece autoridade final. Dados Pix podem ser cadastrados, substituídos (formulário vazio) ou removidos com confirmação; nunca recuperados em texto puro. Valores BRL, datas pt-BR, indicação de receita esperada versus recebida.
+
+Desenvolvimento: API HTTP no perfil `http`/porta 5209 e `npm run dev` em src/Web; proxy Vite `/api`, sem CORS wildcard. `.env.example` configura somente destino local do proxy; segredos externos à árvore versionada. Instruções completas em `src/Web/README.md`, exemplos fictícios em `src/API/API.http`.
+
+Limites: listagens integrais e filtros locais (sem paginação nesta etapa); sem refresh token, senha administrativa/role, cadastro público, preço automático, endpoint manual Pix, retry, webhook, deploy ou habilitação de worker. Criar ordem Pix não paga Cashback. SessionStorage exige manter a prevenção de XSS e a futura implantação sob HTTPS.
+
+### Testes e CI
+
+Acrescentados **42 casos HTTP/API**, **4 Application** e **5 MySQL**, preservando os 142 anteriores: inventário atual **147 integrações em 16 classes**. Máscaras dos cinco tipos, ausência 204, autorização em todas as rotas, IDs divergentes, Location, token, DI e não vazamento são cobertos. MySQL verifica dashboard vazio/estados/decimais, snapshots integrais sem mutação, ciphertext deliberadamente ilegível (prova de não descriptografia), ordenação com empate por ID e cancelamento.
+
+Os testes OpenAPI de Cashback/Pix continuam proibindo endpoints financeiros diretos em seus respectivos módulos; seu filtro foi limitado ao módulo para permitir a nova confirmação administrativa de pagamento de vistoria. Nenhum teste foi removido. Os testes DadosPix passaram a simular a consulta cancelável do usuário.
+
+Frontend: **24 testes** no limite HTTP, cobrindo sessão/admin/comum/401/403/logout, dashboard loading/sucesso/vazio/erro, filtros/edição, máscara e formulário vazio, indicação por código, transições de vistoria/pagamento/Cashback, criação/cancelamento Pix, ação desabilitada, validação e formatação. Não são apenas snapshots.
+
+CI em `.github/workflows/ci.yml`: PR para main/push main, contents:read, cancelamento de runs antigos, timeouts e caches; jobs backend .NET 9, frontend Node 24 LTS e MySQL 8 descartável. O job MySQL usa credencial explicitamente efêmera do próprio container, sem banco fixo/conexão externa; script oficial e consulta final de ausência de bancos temporários. Sem deployment.
+
+### Validação local registrada
+
+- Restore: sucesso. Build final incremental: **0 erros, 0 warnings**, 17,78 s. O primeiro build completo registrou quatro warnings preexistentes de nulabilidade em Usuario/UsuarioService; não foram corrigidos nem ocultados.
+- Direcionados: **146 aprovados**, 0 falhos/ignorados (55 Application, 85 API, 6 preflight); nenhum caso Domain correspondia a esse filtro.
+- Suíte rápida: **552 aprovados**, 0 falhos/ignorados (132 Domain, 181 Application, 151 API, 88 Infrastructure).
+- MySQL pelo script oficial, variável privada recarregada somente no processo: **147/147 aprovados**, 0 falhos/ignorados, 21 s, exit code 0. Fixture aplicou migrations existentes 001–013 em banco descartável; nenhuma migration nova.
+- A verificação de metadados encontrou **cinco bancos descartáveis antigos**, com tabelas criadas em 09/09 e 11/09, anteriores à execução desta feature em 18/09. Não foram removidos manualmente. Não se afirma ausência global de resíduos no servidor; a suíte atual concluiu sem falha de descarte.
+- Frontend: npm ci concluído, auditoria de dependências com zero vulnerabilidades; lint sem erros/warnings; 24/24 testes aprovados; TypeScript sem erros/warnings e build Vite aprovado. Rollup emitiu dois avisos sobre comentários PURE da dependência Zod; comentários removidos pelo bundler, não são warnings TypeScript. Revisão visual local da tela de login, sem credenciais.
+- Resultados intermediários superados: referência Moq indevida no novo teste Infrastructure removida (mapeamento real não precisa de mock); asserção OpenAPI abrangente ajustada ao módulo; asserção monetária aceita o espaço não separável pt-BR; cleanup de ref do diálogo corrigido pelo lint; import da extensão de logging incluído. Falha inicial de carregamento esbuild no sandbox resolvida com permissão, sem bypass TLS.
+- Zero Efí/OAuth/Pix real, dados de produção, alterações de permissões MySQL, fórmulas, leases ou habilitação de worker. Documentos históricos/binários preservados. Publicação somente em PR draft, sem liberação para produção.
+
+Comandos de validação (direcionados são subconjunto, não somar com a suíte rápida):
+
+```powershell
+dotnet restore IndicaA2.slnx
+dotnet build IndicaA2.slnx --no-restore
+dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&(FullyQualifiedName~AdminWebPipelineTests|FullyQualifiedName~AdminReadServiceTests|FullyQualifiedName~Authorization|FullyQualifiedName~UsuarioServiceTests|FullyQualifiedName~DadosPixServiceTests|FullyQualifiedName~PagamentoVistoriaServiceTests|FullyQualifiedName~CashbackServiceTests|FullyQualifiedName~PagamentoPixServiceTests|FullyQualifiedName~MySqlIntegrationPreflightTests)" --logger "console;verbosity=minimal"
+dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"
+pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql
+# Em src/Web (npm local acessado pelo runtime disponibilizado no ambiente):
+npm ci
+npm run lint
+npm run test -- --run
+npm run build
+git diff --check
+```
+
 ## PR #34 — falhas transacionais sem triggers (2026-09-17)
 
 A primeira execução real teve 141 testes, 133 aprovados, 8 falhos e 0 ignorados (20 s; comando 30,48 s, exit code 1), sem bancos descartáveis restantes. Sete cenários foram bloqueados na criação de triggers pela restrição de binary logging; um teste esperava o estado intermediário `EnvioPendenteRecuperacao` como resultado público, embora o orquestrador já recupere e aplique a confirmação.

@@ -94,7 +94,7 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<ApiTestWe
         Assert.True(paths.TryGetProperty("/api/cashbacks/{id}/aprovar", out _));
         Assert.True(paths.TryGetProperty("/api/cashbacks/{id}/cancelar", out _));
         Assert.False(paths.TryGetProperty("/api/cashbacks/{id}/pagar", out _));
-        Assert.DoesNotContain(paths.EnumerateObject(), path =>
+        Assert.DoesNotContain(paths.EnumerateObject().Where(path => path.Name.StartsWith("/api/cashbacks", StringComparison.Ordinal)), path =>
             path.Name.Contains("/processar", StringComparison.OrdinalIgnoreCase) ||
             path.Name.Contains("/enviar", StringComparison.OrdinalIgnoreCase) ||
             path.Name.Contains("/pagar", StringComparison.OrdinalIgnoreCase) ||

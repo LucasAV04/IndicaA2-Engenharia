@@ -4,6 +4,8 @@ namespace Application.Interfaces.Services;
 
 public interface IPagamentoPixService
 {
+    Task<IReadOnlyCollection<PagamentoPixResponseDto>> ObterTodosAsync(CancellationToken cancellationToken = default);
+
     Task<PagamentoPixResponseDto> CriarPorCashbackAsync(
         Guid cashbackId,
         CancellationToken cancellationToken = default);

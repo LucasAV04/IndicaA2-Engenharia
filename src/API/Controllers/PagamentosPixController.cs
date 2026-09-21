@@ -13,6 +13,10 @@ namespace API.Controllers;
 [ProducesResponseType(StatusCodes.Status403Forbidden)]
 public sealed class PagamentosPixController(IPagamentoPixService pagamentoPixService) : ControllerBase
 {
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyCollection<PagamentoPixResponseDto>>> ObterTodosAsync(CancellationToken cancellationToken) =>
+        Ok(await pagamentoPixService.ObterTodosAsync(cancellationToken));
+
     [HttpPost("por-cashback/{cashbackId:guid}")]
     [ProducesResponseType(typeof(PagamentoPixResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

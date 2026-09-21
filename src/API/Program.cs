@@ -14,6 +14,10 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// O handler abaixo registra falhas de forma controlada. O middleware não deve
+// registrar antes dele a exceção bruta, que pode conter uma chave Pix inválida.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware", LogLevel.None);
+
 builder.Services.AddControllers();
 builder.Services.AddOpenApi(options =>
 {
@@ -76,6 +80,9 @@ builder.Services.Configure<PagamentoPixProcessamentoWorkerOptions>(
     builder.Configuration.GetSection(PagamentoPixProcessamentoWorkerOptions.SectionName));
 builder.Services.AddHostedService<PagamentoPixProcessamentoWorker>();
 builder.Services.AddScoped<IIndicacaoService, IndicacaoService>();
+builder.Services.AddScoped<IUsuarioService, IndicA2.Application.Services.UsuarioService>();
+builder.Services.AddScoped<IDadosPixService, DadosPixService>();
+builder.Services.AddScoped<IPagamentoVistoriaService, PagamentoVistoriaService>();
 builder.Services.AddScoped<IVistoriaService, VistoriaService>();
 builder.Services.AddScoped<ICashbackService, CashbackService>();
 builder.Services.AddScoped<IPagamentoPixService, PagamentoPixService>();

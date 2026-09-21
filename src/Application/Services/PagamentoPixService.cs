@@ -26,6 +26,9 @@ public sealed class PagamentoPixService : IPagamentoPixService
 
     #region Consultas
 
+    public async Task<IReadOnlyCollection<PagamentoPixResponseDto>> ObterTodosAsync(CancellationToken cancellationToken = default) =>
+        (await _pagamentoPixRepository.ObterTodosAsync(cancellationToken)).ToResponseDto();
+
     public async Task<PagamentoPixResponseDto> ObterPorIdAsync(
         Guid id,
         CancellationToken cancellationToken = default) =>

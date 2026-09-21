@@ -164,3 +164,91 @@ Authorization: Bearer {{AccessToken}}
 
 PATCH {{API_HostAddress}}/api/pagamentos-pix/55555555-5555-5555-5555-555555555555/cancelar
 Authorization: Bearer {{AccessToken}}
+
+### Painel administrativo — exemplos fictícios, exigem role Administrador
+GET {{API_HostAddress}}/api/admin/dashboard
+Authorization: Bearer {{AccessToken}}
+
+### Listagem global segura; nunca retorna chave, criptografia ou lease
+GET {{API_HostAddress}}/api/pagamentos-pix
+Authorization: Bearer {{AccessToken}}
+
+### Criar somente usuário comum (sem campo de role)
+POST {{API_HostAddress}}/api/usuarios
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{
+  "nome": "Cliente de teste",
+  "email": "cliente@example.invalid",
+  "telefone": "11999999999",
+  "senha": "SenhaFicticiaDeExemplo123!"
+}
+
+###
+GET {{API_HostAddress}}/api/usuarios
+Authorization: Bearer {{AccessToken}}
+
+###
+GET {{API_HostAddress}}/api/usuarios/22222222-2222-2222-2222-222222222222
+Authorization: Bearer {{AccessToken}}
+
+### ID do corpo igual ao da rota; não altera senha ou role
+PUT {{API_HostAddress}}/api/usuarios/22222222-2222-2222-2222-222222222222
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{
+  "id": "22222222-2222-2222-2222-222222222222",
+  "nome": "Cliente atualizado",
+  "email": "cliente@example.invalid",
+  "telefone": "11999999999"
+}
+
+### Retorna máscara; 204 se usuário existe sem chave, 404 se usuário inexistente
+GET {{API_HostAddress}}/api/usuarios/22222222-2222-2222-2222-222222222222/dados-pix
+Authorization: Bearer {{AccessToken}}
+
+### Exemplo fictício; resposta nunca devolve a chave original
+PUT {{API_HostAddress}}/api/usuarios/22222222-2222-2222-2222-222222222222/dados-pix
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{
+  "tipoChavePix": 2,
+  "chavePix": "ficticio@example.invalid"
+}
+
+### Remoção idempotente, 204
+DELETE {{API_HostAddress}}/api/usuarios/22222222-2222-2222-2222-222222222222/dados-pix
+Authorization: Bearer {{AccessToken}}
+
+### Valor administrativo meramente fictício de exemplo; não é tabela de preços
+POST {{API_HostAddress}}/api/pagamentos-vistoria
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{
+  "vistoriaId": "33333333-3333-3333-3333-333333333333",
+  "valor": 100.00
+}
+
+###
+GET {{API_HostAddress}}/api/pagamentos-vistoria
+Authorization: Bearer {{AccessToken}}
+
+###
+GET {{API_HostAddress}}/api/pagamentos-vistoria/66666666-6666-6666-6666-666666666666
+Authorization: Bearer {{AccessToken}}
+
+###
+GET {{API_HostAddress}}/api/pagamentos-vistoria/por-vistoria/33333333-3333-3333-3333-333333333333
+Authorization: Bearer {{AccessToken}}
+
+### Confirma registro administrativo, não recebe Pix nem gera Cashback
+PATCH {{API_HostAddress}}/api/pagamentos-vistoria/66666666-6666-6666-6666-666666666666/confirmar
+Authorization: Bearer {{AccessToken}}
+
+###
+PATCH {{API_HostAddress}}/api/pagamentos-vistoria/66666666-6666-6666-6666-666666666666/cancelar
+Authorization: Bearer {{AccessToken}}
