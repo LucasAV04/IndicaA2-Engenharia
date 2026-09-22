@@ -201,6 +201,8 @@ public sealed class AdminWebPipelineTests(ApiTestWebApplicationFactory factory) 
         Assert.IsType<Application.Services.DadosPixService>(scope.ServiceProvider.GetRequiredService<IDadosPixService>());
         Assert.IsType<Application.Services.PagamentoVistoriaService>(scope.ServiceProvider.GetRequiredService<IPagamentoVistoriaService>());
         Assert.IsType<Infrastructure.Repositories.AdminDashboardMySqlStore>(scope.ServiceProvider.GetRequiredService<IAdminDashboardStore>());
+        Assert.IsType<Infrastructure.Repositories.PagamentoPixLeituraAdministrativaMySqlStore>(scope.ServiceProvider.GetRequiredService<IPagamentoPixLeituraAdministrativaStore>());
+        Assert.IsType<Application.Services.PagamentoPixService>(scope.ServiceProvider.GetRequiredService<IPagamentoPixService>());
     }
 
     private sealed class CapturedLogs : ILoggerProvider

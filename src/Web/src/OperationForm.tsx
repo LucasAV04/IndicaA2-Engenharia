@@ -8,7 +8,7 @@ import { optionLabel } from './resources'
 import { send, ApiError } from './api'
 import { ErrorBox } from './components'
 
-export default function OperationForm({ operation, row, lists, done }: { operation: Operation; row?: Registro; lists: Partial<Record<ResourceKey, Registro[]>>; done: () => void }) {
+export default function OperationForm({ operation, row, lists, invalidateKeys, done }: { operation: Operation; row?: Registro; lists: Partial<Record<ResourceKey, Registro[]>>; invalidateKeys: readonly (readonly string[])[]; done: () => void }) {
   const fields = operation.fields || []
   const schema = z.object(Object.fromEntries(fields.map(f => {
     let value = z.string().trim()
@@ -26,11 +26,11 @@ export default function OperationForm({ operation, row, lists, done }: { operati
     mutationFn: (values: Record<string, string>) => {
       const data = Object.fromEntries(Object.entries(values).map(([key, value]) => {
         const field = fields.find(f => f.name === key)
-        return [key, field?.options || field?.type === 'number' ? Number(value) : field?.type === 'datetime-local' ? new Date(value).toISOString() : value]
+        return [key, field?.options || field?.type === 'number' ? Number(value) : value]
       }))
       return send(operation.path(row, values), operation.method, operation.body ? operation.body(values, row) : fields.length ? data : undefined)
     },
-    onSuccess: async () => { await client.invalidateQueries(); done() },
+    onSuccess: async () => { await Promise.all(invalidateKeys.map(queryKey => client.invalidateQueries({ queryKey }))); done() },
   })
   return <form onSubmit={handleSubmit(v => mutation.mutate(v))}>
     {operation.confirm && <p>Confirma esta ação? O estado será alterado conforme as regras do sistema.</p>}

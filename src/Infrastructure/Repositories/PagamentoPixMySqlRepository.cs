@@ -41,17 +41,6 @@ public sealed class PagamentoPixMySqlRepository : IPagamentoPixRepository
         _dadosPixProtector = dadosPixProtector;
     }
 
-    public async Task<IReadOnlyCollection<PagamentoPix>> ObterTodosAsync(CancellationToken cancellationToken = default)
-    {
-        var pagamentos = new List<PagamentoPix>();
-        await using var connection = _connectionFactory.Create();
-        await connection.OpenAsync(cancellationToken);
-        await using var command = new MySqlCommand($"SELECT {Colunas} FROM pagamentos_pix ORDER BY created_at DESC, id DESC;", connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) pagamentos.Add(Materializar(reader));
-        return pagamentos.AsReadOnly();
-    }
-
     public async Task<PagamentoPix?> ObterPorIdAsync(
         Guid id,
         CancellationToken cancellationToken = default)

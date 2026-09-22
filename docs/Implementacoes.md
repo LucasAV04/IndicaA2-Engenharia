@@ -1,5 +1,36 @@
 # Implementações
 
+## PR #35 — correções da revisão (2026-09-22)
+
+- A falha inicial do CI MySQL aconteceu antes dos testes, na autenticação `caching_sha2_password`. `AllowPublicKeyRetrieval=True` fica restrito à conexão do container efêmero em 127.0.0.1, compartilhada com a verificação de descarte. Nenhum servidor, grant ou conexão real foi alterado.
+- `DataAgendada` conserva o horário civil sem fuso: `datetime-local` envia o texto original, sem `toISOString`. `businessDate` formata sem criar um instante; `utcDate` continua tratando CreatedAt, UpdatedAt, PagoEm e CalculadoEmUtc como instantes. Os testes frontend e o job CI usam America/Sao_Paulo para comprovar 14:30 sem deslocamento.
+- A listagem global usa `IPagamentoPixLeituraAdministrativaStore` / `PagamentoPixLeituraAdministrativaMySqlStore`, scoped. SELECT explícito de nove campos seguros, ordem created_at DESC, id DESC, mapeamento direto ao DTO e timestamps UTC. Não seleciona ciphertext, nonce, tag, versão, leases ou provider; não materializa entidade nem chama Desproteger. O serviço delega somente essa listagem à porta; consultas unitárias conservam o repository completo. A extensão de listagem integral adicionada ao repository no MVP foi removida.
+- Páginas carregam apenas o próprio recurso e suas dependências: usuários nenhuma; indicações usuários/vistorias; vistorias usuários; pagamentos vistorias/usuários; Cashback pagamentos/usuários; Pix Cashback/usuários. Formulários verificam somente seus sources. Invalidação limitada ao recurso afetado e dashboard; Dados Pix invalida somente o usuário editado.
+- O card TotalUsuarios passa a **Usuários cadastrados**, pois inclui administradores, não somente clientes.
+- Cobertura ampliada sem remover integrações: inventário **149 casos em 16 classes**. Novos casos MySQL cobrem ciphertext inválido sem descriptografia, ausência de mutação e manutenção da descriptografia nas consultas completas; o teste de ordenação confere todos os nove campos. DI não resolve protetor para a leitura. Testes frontend cobrem horário civil, falhas independentes, seletores e ausência de requisições desnecessárias.
+- Validação local desta correção: build completo aprovado, 0 erros e 4 warnings preexistentes (81,43 s). Build incremental após fortalecer as asserções: 0 erros e 3 warnings preexistentes de Usuario (23,85 s). Nenhum warning novo introduzido.
+- Direcionados: **138 aprovados**, 0 falhos/ignorados (37 Domain, 39 Application, 43 API e 19 Infrastructure, incluindo os **6 preflight**). Suíte rápida: **553 aprovados**, 0 falhos/ignorados (132 + 181 + 151 + 89).
+- MySQL oficial: **149/149 aprovados**, 0 falhos/ignorados, 23 s, exit code 0, em banco descartável com migrations existentes. Verificação de metadados: cinco bancos antigos antes e os mesmos cinco depois; **nenhum novo banco temporário restante**, sem remoção manual. A primeira tentativa de invocar o script não iniciou testes por caminho padrão inexistente do PowerShell; após localizar o executável do runtime 7.6.5, a suíte executou uma vez com sucesso. Nenhuma conexão/configuração do servidor foi alterada.
+- Frontend: npm ci aprovado, zero vulnerabilidades reportadas; lint sem erros/warnings; **30/30 testes aprovados** em America/Sao_Paulo (43,39 s); TypeScript/build Vite aprovados (Vite 6,27 s), com os dois avisos preexistentes de comentários PURE do Zod. npm 11 também informou o postinstall de esbuild fora da lista allowScripts; instalação concluída, sem alteração do lockfile.
+- Resultados do MVP abaixo são históricos. Os três jobs GitHub serão verificados no HEAD publicado e registrados no corpo do PR; os resultados locais não antecipam aprovação do CI. Zero Efí/OAuth/Pix real, dados de produção ou mudança de migrations/worker/finanças.
+
+Comandos desta revisão (testes direcionados são subconjunto, não somar novamente):
+
+```powershell
+dotnet build IndicaA2.slnx
+dotnet build IndicaA2.slnx --no-restore
+dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&(FullyQualifiedName~AdminWebPipelineTests|FullyQualifiedName~AdminReadServiceTests|FullyQualifiedName~PagamentoPixServiceTests|FullyQualifiedName~DependencyInjection|FullyQualifiedName~VistoriaTests|FullyQualifiedName~VistoriaServiceTests|FullyQualifiedName~MySqlIntegrationPreflightTests)" --logger "console;verbosity=minimal"
+dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"
+pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql
+# src/Web: npm 11 pelo runtime disponibilizado; TZ=America/Sao_Paulo
+npm ci
+npm run lint
+npm run test -- --run
+npm run build
+git diff --check
+```
+
+
 ## Painel administrativo web MVP (2026-09-21)
 
 Base: `5594ea8`, branch `feature/admin-web-mvp`. Entrega vertical com API administrativa, leitura agregada MySQL e aplicação React em `src/Web`; o projeto Node não participa da solução .NET.
@@ -22,7 +53,7 @@ Controllers delegam aos serviços existentes, registrados scoped. Usuário criad
 
 Falhas de Dados Pix recebem mensagem controlada e log somente de tipo/status. O log bruto de exceção do middleware ASP.NET é suprimido para que não anteceda o handler sanitizado; o handler mantém os logs dos demais fluxos. Teste HTTP captura também os logs e comprova que uma exceção contendo chave fictícia não a expõe. Nenhum corpo de requisição é registrado. Criptografia/schema de Dados Pix e PagamentoPix permanecem intactos.
 
-A listagem global Pix usa o contrato/repositório existente, ordenação `created_at DESC, id DESC` e mapeamento manual para `PagamentoPixResponseDto`, sem chave, material criptográfico, lease ou provider no HTTP. Nenhum novo endpoint de processamento.
+A listagem global Pix usa a porta administrativa de leitura descrita na correção de 22/09, ordenação `created_at DESC, id DESC` e projeção manual para `PagamentoPixResponseDto`, sem chave, material criptográfico, lease ou provider desde o SELECT. Nenhum novo endpoint de processamento.
 
 ### Dashboard somente leitura
 

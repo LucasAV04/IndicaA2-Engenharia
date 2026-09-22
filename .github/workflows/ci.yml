@@ -27,6 +27,8 @@ jobs:
       - run: dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=minimal"
   frontend:
     runs-on: ubuntu-latest
+    env:
+      TZ: America/Sao_Paulo
     timeout-minutes: 15
     defaults:
       run:
@@ -59,7 +61,7 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     env:
-      INDICA2_TEST_MYSQL_CONNECTION: 'Server=127.0.0.1;Port=3306;User ID=root;Password=ci-only-disposable;SslMode=Disabled;'
+      INDICA2_TEST_MYSQL_CONNECTION: 'Server=127.0.0.1;Port=3306;User ID=root;Password=ci-only-disposable;SslMode=Disabled;AllowPublicKeyRetrieval=True;'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4

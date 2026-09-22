@@ -4,8 +4,6 @@ namespace Domain.Interfaces;
 
 public interface IPagamentoPixRepository
 {
-    Task<IReadOnlyCollection<PagamentoPix>> ObterTodosAsync(CancellationToken cancellationToken = default);
-
     Task<PagamentoPix?> ObterPorIdAsync(
         Guid id,
         CancellationToken cancellationToken = default);

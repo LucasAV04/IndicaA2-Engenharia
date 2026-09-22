@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { saveSession } from '../api'
-import { date, money } from '../format'
+import { businessDate, utcDate, money } from '../format'
 import type { Dashboard, Registro, Sessao } from '../types'
 
 const session: Sessao = { accessToken: 'token-ficticio', usuarioId: 'admin', nome: 'Administradora', email: 'admin@example.invalid', tipoUsuario: 2, expiresAtUtc: '2099-01-01T00:00:00Z' }
@@ -101,6 +101,8 @@ describe('Resumo operacional', () => {
     mount()
     expect(await screen.findByText('R$ 120,50')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Pix por status' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Usuários cadastrados' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Clientes' })).not.toBeInTheDocument()
   })
   it('exibe estado vazio com valores zero reais', async () => {
     data['/api/admin/dashboard'] = { ...dashboard, totalUsuarios: 0, receitaConfirmada: 0 }
@@ -114,6 +116,60 @@ describe('Resumo operacional', () => {
 })
 
 describe('Fluxos administrativos via HTTP', () => {
+  it('envia horário civil 14:30 sem UTC e cria vistoria mesmo com Pix indisponível', async () => {
+    errors['/api/pagamentos-pix'] = 500
+    mount('/vistorias')
+    await userEvent.click(screen.getByRole('button', { name: 'Nova vistoria' }))
+    await screen.findByLabelText('Cliente')
+    await userEvent.selectOptions(screen.getByLabelText('Cliente'), usuario.id)
+    await userEvent.selectOptions(screen.getByLabelText('Pacote'), '0')
+    await fill('Área (m²)', '50'); await fill('Tipo de planta', 'Apartamento')
+    fireEvent.change(screen.getByLabelText('Data agendada'), { target: { value: '2026-09-22T14:30' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(requests.find(r => r.path === '/api/vistorias' && r.method === 'POST')).toBeDefined())
+    const body = requests.find(r => r.method === 'POST')!.body as Record<string, unknown>
+    expect(body.dataAgendada).toBe('2026-09-22T14:30')
+    expect(body.dataAgendada).not.toMatch(/Z|[+-]\d\d:\d\d$/)
+    expect(new Set(requests.filter(r => r.method === 'GET').map(r => r.path))).toEqual(new Set(['/api/vistorias', '/api/usuarios']))
+  })
+  it('exibe horário de negócio retornado sem deslocar 14:30', async () => {
+    data['/api/vistorias'] = [{ ...base, usuarioId: usuario.id, dataAgendada: '2026-09-22T14:30:00' }]
+    mount('/vistorias')
+    expect(await screen.findByText('22/09/2026, 14:30')).toBeInTheDocument()
+  })
+  it('edita usuário sem consultar recursos não relacionados mesmo com Pix indisponível', async () => {
+    errors['/api/pagamentos-pix'] = 500
+    mount('/usuarios'); await screen.findByText(usuario.nome!)
+    await userEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await screen.findByText('Operação concluída.')
+    expect(requests.some(r => r.method === 'PUT')).toBe(true)
+    expect(new Set(requests.filter(r => r.method === 'GET').map(r => r.path))).toEqual(new Set(['/api/usuarios']))
+  })
+  it('falha de usuários bloqueia somente formulário que exige seu seletor', async () => {
+    errors['/api/usuarios'] = 500
+    data['/api/vistorias'] = [{ ...base, usuarioId: usuario.id }]
+    mount('/vistorias')
+    await screen.findByRole('button', { name: 'Realizar' })
+    await userEvent.click(screen.getByRole('button', { name: 'Nova vistoria' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os seletores')
+    expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Fechar/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Realizar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(requests.some(r => r.method === 'PATCH')).toBe(true))
+  })
+  it('página exibe erro do próprio recurso sem consultar todas as listagens', async () => {
+    errors['/api/usuarios'] = 500
+    mount('/usuarios')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar')
+    expect(requests.map(r => r.path)).toEqual(['/api/usuarios'])
+  })
+  it('cada página carrega somente suas dependências declaradas', async () => {
+    mount('/cashbacks')
+    await screen.findByText('Nenhum registro encontrado.')
+    expect(new Set(requests.map(r => r.path))).toEqual(new Set(['/api/cashbacks', '/api/pagamentos-vistoria', '/api/usuarios']))
+  })
   it('lista usuários e filtra por código e status', async () => {
     data['/api/usuarios'] = [usuario, { ...usuario, id: 'user-2', nome: 'João', codigoIndicacao: 'OUTRO123', status: 2 }]
     mount('/usuarios'); await screen.findByText('Maria Cliente')
@@ -191,7 +247,8 @@ describe('Fluxos administrativos via HTTP', () => {
   })
   it('formata moeda, percentual e datas em pt-BR', () => {
     expect(money(1234.56)).toMatch(/1\.234,56/)
-    expect(date('2026-09-01T12:00:00Z')).toMatch(/01\/09\/2026/)
+    expect(utcDate('2026-09-01T12:00:00Z')).toMatch(/01\/09\/2026/)
+    expect(businessDate('2026-09-22T14:30:00')).toBe('22/09/2026, 14:30')
   })
   it('formulário valida campos obrigatórios antes de enviar', async () => {
     mount('/usuarios'); await userEvent.click(screen.getByRole('button', { name: 'Novo usuário' }))

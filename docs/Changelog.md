@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-22 — Correções de leitura e CI do PR #35
+
+- Autenticação MySQL do container CI corrigida com AllowPublicKeyRetrieval, somente na conexão efêmera local; verificação de descarte usa a mesma configuração.
+- Horário civil de vistoria preservado no envio e exibição, separado dos timestamps UTC. Testes em America/Sao_Paulo. TotalUsuarios rotulado Usuários cadastrados.
+- Projeção administrativa Pix scoped de nove campos, sem entidade, ciphertext ou descriptografia. Repository completo preservado para consultas unitárias; listagem integral insegura retirada desse contrato.
+- Queries frontend limitadas às dependências reais; erro de seletor limitado ao source do formulário e invalidação direcionada de cache.
+- Testes de isolamento frontend, campos/ordenação, ciphertext inválido, ausência de mutação e DI sem protetor. **149 integrações em 16 classes**, preservando as 147 anteriores.
+- Validação desta revisão: build completo aprovado, 0 erros, 4 warnings preexistentes; incremental após asserções, 0 erros/3 warnings preexistentes. **138 direcionados** (inclui **6 preflight**), **553 na suíte rápida**, **149/149 MySQL em 23 s**; todos com 0 falhos/ignorados, exit code 0. Cinco bancos antigos antes/depois, nenhum novo temporário restante e nenhuma remoção manual. Corrigido apenas o caminho de invocação do PowerShell antes de iniciar a suíte.
+- Frontend: npm ci sem vulnerabilidades, lint aprovado, **30/30 testes em America/Sao_Paulo**, TypeScript/Vite aprovados; dois avisos Rollup/Zod preexistentes. Comandos, durações e aviso informativo npm registrados em Implementacoes.md. Resultados anteriores abaixo são históricos; CI será confirmado no HEAD publicado e no corpo do PR.
+- Preservados JWT, worker desabilitado, finanças, leases, criptografia, migrations, visual e documentos históricos. Sem Efí/OAuth/Pix real.
+
 ## 2026-09-21 — Painel administrativo web MVP
 
 - Entrega vertical em `feature/admin-web-mvp`, base `5594ea8`: APIs de usuários, Dados Pix mascarados, pagamentos de vistoria, listagem global Pix e dashboard administrativo.
