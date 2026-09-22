@@ -1,5 +1,6 @@
 using Application.DTOs.PagamentoPix;
 using Application.Interfaces.Services;
+using Application.Interfaces.Stores;
 using Application.Mapping;
 using Domain.Entities;
 using Domain.Enums;
@@ -13,18 +14,24 @@ public sealed class PagamentoPixService : IPagamentoPixService
     private readonly ICashbackRepository _cashbackRepository;
     private readonly IDadosPixRepository _dadosPixRepository;
     private readonly IPagamentoPixRepository _pagamentoPixRepository;
+    private readonly IPagamentoPixLeituraAdministrativaStore _leituraAdministrativa;
 
     public PagamentoPixService(
         ICashbackRepository cashbackRepository,
         IDadosPixRepository dadosPixRepository,
-        IPagamentoPixRepository pagamentoPixRepository)
+        IPagamentoPixRepository pagamentoPixRepository,
+        IPagamentoPixLeituraAdministrativaStore leituraAdministrativa)
     {
         _cashbackRepository = cashbackRepository;
         _dadosPixRepository = dadosPixRepository;
         _pagamentoPixRepository = pagamentoPixRepository;
+        _leituraAdministrativa = leituraAdministrativa;
     }
 
     #region Consultas
+
+    public Task<IReadOnlyCollection<PagamentoPixResponseDto>> ObterTodosAsync(CancellationToken cancellationToken = default) =>
+        _leituraAdministrativa.ObterTodosAsync(cancellationToken);
 
     public async Task<PagamentoPixResponseDto> ObterPorIdAsync(
         Guid id,

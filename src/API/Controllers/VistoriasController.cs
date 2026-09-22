@@ -31,6 +31,7 @@ public sealed class VistoriasController(
     }
 
     [HttpGet("{id:guid}")]
+    [ActionName(nameof(ObterPorIdAsync))]
     [ProducesResponseType(typeof(VistoriaResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<VistoriaResponseDto>> ObterPorIdAsync(

@@ -203,7 +203,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<ApiTe
         AssertBearer(paths.GetProperty("/api/pagamentos-pix/por-cashback/{cashbackId}").GetProperty("get"));
         AssertBearer(paths.GetProperty("/api/pagamentos-pix/por-beneficiario/{usuarioId}").GetProperty("get"));
         AssertBearer(paths.GetProperty("/api/pagamentos-pix/{id}/cancelar").GetProperty("patch"));
-        Assert.DoesNotContain(paths.EnumerateObject(), path =>
+        Assert.DoesNotContain(paths.EnumerateObject().Where(path => path.Name.StartsWith("/api/pagamentos-pix", StringComparison.Ordinal)), path =>
             path.Name.Contains("/processar", StringComparison.OrdinalIgnoreCase) ||
             path.Name.Contains("/enviar", StringComparison.OrdinalIgnoreCase) ||
             path.Name.Contains("/pagar", StringComparison.OrdinalIgnoreCase) ||

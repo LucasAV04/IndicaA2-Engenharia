@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-22 — Correções de leitura e CI do PR #35
+
+- Autenticação MySQL do container CI corrigida com AllowPublicKeyRetrieval, somente na conexão efêmera local; verificação de descarte usa a mesma configuração.
+- Horário civil de vistoria preservado no envio e exibição, separado dos timestamps UTC. Testes em America/Sao_Paulo. TotalUsuarios rotulado Usuários cadastrados.
+- Projeção administrativa Pix scoped de nove campos, sem entidade, ciphertext ou descriptografia. Repository completo preservado para consultas unitárias; listagem integral insegura retirada desse contrato.
+- Queries frontend limitadas às dependências reais; erro de seletor limitado ao source do formulário e invalidação direcionada de cache.
+- Testes de isolamento frontend, campos/ordenação, ciphertext inválido, ausência de mutação e DI sem protetor. **149 integrações em 16 classes**, preservando as 147 anteriores.
+- Validação desta revisão: build completo aprovado, 0 erros, 4 warnings preexistentes; incremental após asserções, 0 erros/3 warnings preexistentes. **138 direcionados** (inclui **6 preflight**), **553 na suíte rápida**, **149/149 MySQL em 23 s**; todos com 0 falhos/ignorados, exit code 0. Cinco bancos antigos antes/depois, nenhum novo temporário restante e nenhuma remoção manual. Corrigido apenas o caminho de invocação do PowerShell antes de iniciar a suíte.
+- Frontend: npm ci sem vulnerabilidades, lint aprovado, **30/30 testes em America/Sao_Paulo**, TypeScript/Vite aprovados; dois avisos Rollup/Zod preexistentes. Comandos, durações e aviso informativo npm registrados em Implementacoes.md. Resultados anteriores abaixo são históricos; CI será confirmado no HEAD publicado e no corpo do PR.
+- Preservados JWT, worker desabilitado, finanças, leases, criptografia, migrations, visual e documentos históricos. Sem Efí/OAuth/Pix real.
+
+## 2026-09-21 — Painel administrativo web MVP
+
+- Entrega vertical em `feature/admin-web-mvp`, base `5594ea8`: APIs de usuários, Dados Pix mascarados, pagamentos de vistoria, listagem global Pix e dashboard administrativo.
+- Serviços existentes scoped; usuário comum na criação, edição sem senha/role; ID rota/corpo consistente; ausência de Dados Pix 204 e usuário inexistente 404. Token propagado inclusive na consulta de usuário. Logs e ProblemDetails de Dados Pix sanitizados, com teste HTTP de não vazamento também nos logs do middleware.
+- Dashboard Application/Infrastructure somente leitura, snapshot RepeatableRead, agregados DECIMAL, zeros e UTC do MySQL, sem chave/crypto/provider/lease. Lista Pix ordenada por `created_at DESC, id DESC` e DTO seguro.
+- React/TS/Vite, Router, Query, RHF/Zod, CSS próprio e nove rotas; login administrativo, memória/sessionStorage, logout/401 limpa cache, 403 nega acesso. Fluxos CRUD/transições/selects integrados; Dados Pix sempre mascarados; nenhum disparo/retry Pix.
+- Cinco novas integrações: inventário **147/16 classes**; 42 novos casos API e quatro Application. Preservados testes existentes; filtros OpenAPI ajustados ao respectivo módulo para não bloquear confirmação administrativa de pagamento de vistoria.
+- Restore aprovado; build final 0 erros/0 warnings (17,78 s), primeiro build com quatro warnings de nulabilidade preexistentes. Direcionados **146 aprovados**, incluindo **6 preflight**; rápida **552 aprovados**, zero falhos/ignorados.
+- MySQL real somente em banco descartável: **147/147 aprovados, 0 falhos, 0 ignorados, 21 s, exit code 0**, migrations existentes 001–013. Consulta posterior identificou cinco bancos antigos de 09/09 e 11/09; não foram removidos e não se afirma ausência global de resíduos. Nenhuma migration nova.
+- Frontend: npm ci e auditoria sem vulnerabilidades; lint aprovado; **24 testes aprovados**; TypeScript e Vite build aprovados. Dois avisos Rollup sobre comentários PURE da dependência Zod, sem warning TypeScript. Tela de login revisada no navegador local, sem credenciais.
+- Correções intermediárias de compilação/lint/teste e comandos exatos registrados em Implementacoes.md; resultados finais acima os superam. CI novo com .NET 9, Node LTS, MySQL 8 efêmero, permissões mínimas, cache, timeout e verificação de descarte. README Web e API.http atualizados.
+- Zero Efí/OAuth/Pix real ou dados financeiros de produção. Preservados fórmulas, leases, worker desabilitado e documentos binários; sem deploy. Paginação, refresh token e operações Pix manuais continuam fora do escopo.
+
 ## 2026-09-17 — Rollback MySQL sem privilégio global — PR #34
 
 - Execução intermediária real: 133/141 aprovados, 8 falhos, 0 ignorados; sete bloqueios na criação de triggers e uma expectativa antiga de lease expirado. Zero bancos descartáveis restantes.

@@ -65,7 +65,12 @@ public sealed class GlobalExceptionHandler(
                 "Ocorreu um erro inesperado ao processar a solicitação.")
         };
 
-        if (status >= StatusCodes.Status500InternalServerError)
+        if (httpContext.Request.Path.Value?.Contains("/dados-pix", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            detail = "Não foi possível concluir a operação de Dados Pix. Verifique o tipo e o formato da chave.";
+            logger.LogWarning("Falha de Dados Pix: {Tipo}, status {Status}.", exception.GetType().Name, status);
+        }
+        else if (status >= StatusCodes.Status500InternalServerError)
         {
             logger.LogError(exception, "Erro inesperado durante o processamento da solicitação.");
         }

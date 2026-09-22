@@ -14,6 +14,22 @@ namespace Infrastructure.Tests.DependencyInjection;
 public sealed class InfrastructureDependencyInjectionTests
 {
     [Fact]
+    public void LeituraAdministrativaPixEhScopedESemDependenciaDeProtector()
+    {
+        var services = new ServiceCollection();
+        services.AddInfrastructure(CriarConfiguration());
+        // Resolver a leitura não deve sequer instanciar um protetor de chaves.
+        services.AddSingleton<IDadosPixProtector>(_ => throw new InvalidOperationException("Protetor não deve ser resolvido."));
+        Assert.Equal(ServiceLifetime.Scoped, Assert.Single(services,
+            d => d.ServiceType == typeof(IPagamentoPixLeituraAdministrativaStore)).Lifetime);
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var leitura = scope.ServiceProvider.GetRequiredService<IPagamentoPixLeituraAdministrativaStore>();
+        Assert.IsType<PagamentoPixLeituraAdministrativaMySqlStore>(leitura);
+        Assert.Same(leitura, scope.ServiceProvider.GetRequiredService<IPagamentoPixLeituraAdministrativaStore>());
+    }
+
+    [Fact]
     public void AddInfrastructure_DeveRegistrarIUsuarioRepositoryComoScoped()
     {
         var configuration = new ConfigurationBuilder()

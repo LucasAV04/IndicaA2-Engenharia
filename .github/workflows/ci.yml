@@ -1,0 +1,93 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+      - run: dotnet restore IndicaA2.slnx
+      - run: dotnet build IndicaA2.slnx --no-restore
+      - run: dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=minimal"
+  frontend:
+    runs-on: ubuntu-latest
+    env:
+      TZ: America/Sao_Paulo
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: src/Web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: src/Web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test -- --run
+      - run: npm run build
+  mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          # Exclusiva do container descartável deste job; não é segredo de ambiente.
+          MYSQL_ROOT_PASSWORD: ci-only-disposable
+          MYSQL_ROOT_HOST: '%'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      INDICA2_TEST_MYSQL_CONNECTION: 'Server=127.0.0.1;Port=3306;User ID=root;Password=ci-only-disposable;SslMode=Disabled;AllowPublicKeyRetrieval=True;'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+      - run: dotnet restore IndicaA2.slnx
+      - run: dotnet build IndicaA2.slnx --no-restore
+      - name: Integrações exclusivas em banco descartável
+        shell: pwsh
+        run: ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql
+      - name: Verificar descarte dos bancos de testes
+        if: always()
+        shell: pwsh
+        run: |
+          Add-Type -Path ./tests/Infrastructure.Tests/bin/Debug/net9.0/MySqlConnector.dll
+          $connection = [MySqlConnector.MySqlConnection]::new($env:INDICA2_TEST_MYSQL_CONNECTION)
+          try {
+            $connection.Open()
+            $command = $connection.CreateCommand()
+            try {
+              $command.CommandText = "SELECT COUNT(*) FROM information_schema.schemata WHERE LEFT(schema_name, 14) = 'indicaa2_test_';"
+              if ([int]$command.ExecuteScalar() -ne 0) { throw 'Restaram bancos descartáveis de testes.' }
+              'Bancos temporários restantes: 0'
+            } finally { $command.Dispose() }
+          } finally { $connection.Dispose() }

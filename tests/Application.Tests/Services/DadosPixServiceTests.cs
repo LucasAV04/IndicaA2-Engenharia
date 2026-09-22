@@ -157,7 +157,8 @@ public sealed class DadosPixServiceTests
     private static Mock<IUsuarioRepository> CriarUsuarioRepositoryExistente(Guid usuarioId)
     {
         var usuarioRepository = new Mock<IUsuarioRepository>();
-        usuarioRepository.Setup(repository => repository.ExistePorIdAsync(usuarioId)).ReturnsAsync(true);
+        usuarioRepository.Setup(repository => repository.ObterPorIdAsync(usuarioId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Usuario("Cliente fictício", "cliente@example.invalid", "hash-ficticio", tipoUsuario: TipoUsuario.Administrador));
         return usuarioRepository;
     }
 

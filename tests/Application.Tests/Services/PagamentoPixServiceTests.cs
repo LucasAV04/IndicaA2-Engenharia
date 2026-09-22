@@ -290,7 +290,8 @@ public sealed class PagamentoPixServiceTests
         Mock<ICashbackRepository> cashbackRepository,
         Mock<IDadosPixRepository> dadosPixRepository,
         Mock<IPagamentoPixRepository> pagamentoPixRepository) =>
-        new(cashbackRepository.Object, dadosPixRepository.Object, pagamentoPixRepository.Object);
+        new(cashbackRepository.Object, dadosPixRepository.Object, pagamentoPixRepository.Object,
+            Mock.Of<Application.Interfaces.Stores.IPagamentoPixLeituraAdministrativaStore>(MockBehavior.Strict));
 
     private static Cashback CriarCashbackDisponivel(decimal valorTotalPago = 500m)
     {

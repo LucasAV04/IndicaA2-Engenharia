@@ -26,7 +26,7 @@ public sealed class DadosPixService : IDadosPixService
         Guid usuarioId,
         CancellationToken cancellationToken = default)
     {
-        await GarantirUsuarioExisteAsync(usuarioId);
+        await GarantirUsuarioExisteAsync(usuarioId, cancellationToken);
 
         var dadosPix = await _dadosPixRepository.ObterPorUsuarioIdAsync(usuarioId, cancellationToken);
         return dadosPix?.ToResponseDto();
@@ -43,7 +43,7 @@ public sealed class DadosPixService : IDadosPixService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        await GarantirUsuarioExisteAsync(usuarioId);
+        await GarantirUsuarioExisteAsync(usuarioId, cancellationToken);
 
         var dadosPix = await _dadosPixRepository.ObterPorUsuarioIdAsync(usuarioId, cancellationToken);
         if (dadosPix is null)
@@ -62,7 +62,7 @@ public sealed class DadosPixService : IDadosPixService
 
     public async Task RemoverAsync(Guid usuarioId, CancellationToken cancellationToken = default)
     {
-        await GarantirUsuarioExisteAsync(usuarioId);
+        await GarantirUsuarioExisteAsync(usuarioId, cancellationToken);
 
         var dadosPix = await _dadosPixRepository.ObterPorUsuarioIdAsync(usuarioId, cancellationToken);
         if (dadosPix is not null)
@@ -73,9 +73,10 @@ public sealed class DadosPixService : IDadosPixService
 
     #region Métodos Privados
 
-    private async Task GarantirUsuarioExisteAsync(Guid usuarioId)
+    private async Task GarantirUsuarioExisteAsync(Guid usuarioId, CancellationToken cancellationToken)
     {
-        if (usuarioId == Guid.Empty || !await _usuarioRepository.ExistePorIdAsync(usuarioId))
+        cancellationToken.ThrowIfCancellationRequested();
+        if (usuarioId == Guid.Empty || await _usuarioRepository.ObterPorIdAsync(usuarioId, cancellationToken) is null)
             throw new UsuarioNaoEncontradoException();
     }
 
