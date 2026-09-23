@@ -56,6 +56,14 @@ public sealed class VistoriasController(
         return Ok(vistorias);
     }
 
+    [HttpGet("{id:guid}/precificacao")]
+    [Authorize(Policy = AuthorizationPolicies.Administrador)]
+    public async Task<IActionResult> Precificacao(Guid id, CancellationToken cancellationToken)
+    {
+        var vistoria = await vistoriaService.ObterPorIdAsync(id, cancellationToken);
+        return Ok(new { vistoria.Id, vistoria.Legado, vistoria.TipoPlanta, vistoria.TipoPlantaId, vistoria.Precificacao });
+    }
+
     [HttpGet("por-usuario/{usuarioId:guid}")]
     [ProducesResponseType(typeof(IReadOnlyCollection<VistoriaResponseDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyCollection<VistoriaResponseDto>>> ObterPorUsuarioIdAsync(

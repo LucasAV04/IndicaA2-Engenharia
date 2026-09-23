@@ -11,7 +11,7 @@ import type { Dashboard, Registro, Sessao } from '../types'
 const session: Sessao = { accessToken: 'token-ficticio', usuarioId: 'admin', nome: 'Administradora', email: 'admin@example.invalid', tipoUsuario: 2, expiresAtUtc: '2099-01-01T00:00:00Z' }
 const base = { id: 'registro-1', createdAt: '2026-09-01T12:00:00Z', updatedAt: '2026-09-01T12:00:00Z', status: 0 }
 const usuario: Registro = { ...base, id: 'user-1', nome: 'Maria Cliente', email: 'maria@example.invalid', codigoIndicacao: 'ABC12345', status: 1 }
-const dashboard: Dashboard = { totalUsuarios: 1, usuariosAtivos: 1, receitaConfirmada: 120.50, pagamentosPendentes: 20, cashbackDisponivel: 24.10, cashbackPago: 0, pixPendenteProcessando: 24.10, pixConcluido: 0, falhasPix: 0, falhasDefinitivasPix: 0, calculadoEmUtc: base.createdAt, indicacoes: { Pendente: 1 }, vistorias: { Agendada: 1 }, pagamentosVistoria: { Confirmado: 1 }, cashbacks: { Disponivel: 1 }, pagamentosPix: { Pendente: 1 } }
+const dashboard: Dashboard = { tiposCadastrados: 0, tiposComPrecoAtivo: 0, tiposSemConfiguracao: 0, ultimaVersaoPreco: null, ultimoTipoPreco: null, totalUsuarios: 1, usuariosAtivos: 1, receitaConfirmada: 120.50, pagamentosPendentes: 20, cashbackDisponivel: 24.10, cashbackPago: 0, pixPendenteProcessando: 24.10, pixConcluido: 0, falhasPix: 0, falhasDefinitivasPix: 0, calculadoEmUtc: base.createdAt, indicacoes: { Pendente: 1 }, vistorias: { Agendada: 1 }, pagamentosVistoria: { Confirmado: 1 }, cashbacks: { Disponivel: 1 }, pagamentosPix: { Pendente: 1 } }
 let data: Record<string, unknown>
 let errors: Record<string, number>
 let requests: { path: string; method: string; body: unknown }[]
@@ -26,11 +26,20 @@ beforeEach(() => {
     requests.push({ path: input, method, body: init.body ? JSON.parse(String(init.body)) : undefined })
     if (errors[input]) return response({ title: 'segredo-token-chave', detail: 'senha-privada' }, errors[input])
     if (input === '/api/auth/login') return response(session)
+    if (input === '/api/precos-vistoria/simular') return response({ precoId: 'preco', versao: 1, precoM2: 2, valorBase: 100, valorFinal: 100, simulacao: true })
     if (method !== 'GET') return response(null, 204)
     return response(data[input] ?? [])
   }))
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
+})
+it('dashboard sem preços retorna zero sem consultar módulos independentes', async () => {
+  errors['/api/precos-vistoria'] = 500
+  mount('/')
+  const heading = await screen.findByRole('heading', { name: 'Tipos sem configuração' })
+  expect(heading.parentElement).toHaveTextContent('0')
+  expect(screen.getByText(/Nenhum preço publicado/)).toBeInTheDocument()
+  expect(requests.map(r => r.path)).toEqual(['/api/admin/dashboard'])
 })
 afterEach(() => vi.unstubAllGlobals())
 function mount(path = '/', authenticated = true) {
@@ -118,19 +127,24 @@ describe('Resumo operacional', () => {
 describe('Fluxos administrativos via HTTP', () => {
   it('envia horário civil 14:30 sem UTC e cria vistoria mesmo com Pix indisponível', async () => {
     errors['/api/pagamentos-pix'] = 500
+    const clienteId = 'ca9a2547-d31f-4462-828b-241eae947831'
+    const tipoId = '06becc5d-69fd-4676-a0c0-2463e5f7e434'
+    data['/api/usuarios'] = [{ ...usuario, id: clienteId }]
+    data['/api/tipos-planta'] = [{ id: tipoId, nome: 'Tipo fictício', ativo: true, possuiPrecoAtivo: true }]
     mount('/vistorias')
     await userEvent.click(screen.getByRole('button', { name: 'Nova vistoria' }))
     await screen.findByLabelText('Cliente')
-    await userEvent.selectOptions(screen.getByLabelText('Cliente'), usuario.id)
+    await userEvent.selectOptions(screen.getByLabelText('Cliente'), clienteId)
     await userEvent.selectOptions(screen.getByLabelText('Pacote'), '0')
-    await fill('Área (m²)', '50'); await fill('Tipo de planta', 'Apartamento')
+    await fill('Área (m²)', '50'); await userEvent.selectOptions(screen.getByLabelText('Tipo de planta'), tipoId)
     fireEvent.change(screen.getByLabelText('Data agendada'), { target: { value: '2026-09-22T14:30' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled())
     await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(requests.find(r => r.path === '/api/vistorias' && r.method === 'POST')).toBeDefined())
-    const body = requests.find(r => r.method === 'POST')!.body as Record<string, unknown>
+    const body = requests.find(r => r.method === 'POST' && r.path === '/api/vistorias')!.body as Record<string, unknown>
     expect(body.dataAgendada).toBe('2026-09-22T14:30')
     expect(body.dataAgendada).not.toMatch(/Z|[+-]\d\d:\d\d$/)
-    expect(new Set(requests.filter(r => r.method === 'GET').map(r => r.path))).toEqual(new Set(['/api/vistorias', '/api/usuarios']))
+    expect(new Set(requests.filter(r => r.method === 'GET').map(r => r.path))).toEqual(new Set(['/api/vistorias', '/api/usuarios', '/api/tipos-planta']))
   })
   it('exibe horário de negócio retornado sem deslocar 14:30', async () => {
     data['/api/vistorias'] = [{ ...base, usuarioId: usuario.id, dataAgendada: '2026-09-22T14:30:00' }]

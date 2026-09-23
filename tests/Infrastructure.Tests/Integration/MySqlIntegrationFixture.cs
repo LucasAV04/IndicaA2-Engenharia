@@ -76,6 +76,8 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
                      "DELETE FROM pagamentos_vistoria;",
                      "DELETE FROM indicacoes;",
                      "DELETE FROM vistorias;",
+                     "DELETE FROM precos_vistoria;",
+                     "DELETE FROM tipos_planta;",
                      "DELETE FROM usuarios;"
                  })
         {
@@ -109,6 +111,7 @@ public sealed class MySqlIntegrationFixture : IAsyncLifetime
                     , "database/011_add_reconciliacao_lease_pagamentos_pix.sql"
                     , "database/012_add_envio_lease_pagamentos_pix.sql"
                     , "database/013_add_processamento_idx_pagamentos_pix.sql"
+                    , "database/014_create_precificacao_vistorias.sql"
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Combine(raiz, script));

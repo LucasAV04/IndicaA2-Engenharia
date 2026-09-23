@@ -1,5 +1,82 @@
 # Implementações
 
+## Precificação versionada e catálogo de plantas (2026-09-23)
+
+Contrato desta entrega: requisitos aprovados pelo proprietário na conversa de implementação. A especificação `IndicA2-especificacao-tecnica.md` é um documento externo; o caminho histórico `sources/IndicA2-especificacao-tecnica.md` não existe no repositório. Os documentos Word históricos são preservados, sem conversão. As decisões desta seção substituem a referência a uma cópia local e a antiga decisão de texto livre para novas vistorias.
+
+- Catálogo administrável, sem enum comercial ou seeds: nome com Trim, unicidade sem diferença de caixa, ID estável e desativação sem exclusão. Nenhum tipo ou preço comercial será inserido. A A2 deve fornecer os valores comerciais; os exemplos da especificação não são oficiais.
+- Novas vistorias exigem tipo ativo por ID e preço ativo; textos legados continuam intactos, sem correspondência por nome, backfill, recálculo ou conversão automática.
+- Versionamento e criação calculada coordenados pelo lock da linha do catálogo, seguido do preço. Versões crescentes por tipo; a unicidade da versão ativa é protegida no MySQL. Renomeação conserva nomes históricos das versões e vistorias.
+- Dashboard: tipos cadastrados = ativos; com preço = ativos com versão ativa; sem configuração = ativos sem versão ativa. Inativos e textos legados não entram; catálogo vazio retorna zero.
+- Motor decimal puro: base = preço/m² × área; Total adiciona fixo ou percentual da base, Simples não adiciona. Somente o valor monetário final é arredondado em duas casas, AwayFromZero. Limites técnicos e precisão são validados antes de persistir, sem arredondamento silencioso dos parâmetros.
+- Decisões consolidadas: migration 014 sem seeds, catálogo com nome normalizado por Trim/ToUpperInvariant e UNIQUE binária; preço com UNIQUE(tipo, versão) e coluna gerada `tipo_ativo` UNIQUE. Publicação, renomeação, desativação e criação bloqueiam primeiro o catálogo; nova vistoria grava base e snapshot na mesma transação ReadCommitted. Os pontos internos de falha são no-op em produção, sem triggers. Nenhuma transação toca em Pix ou Cashback.
+- Limites técnicos, não comerciais: nome até 150 caracteres; área DECIMAL(10,2); preço/acréscimo DECIMAL(12,4); percentual máximo 10000%; base DECIMAL(24,6); final DECIMAL(12,2). Entradas fora da precisão são rejeitadas, nunca arredondadas silenciosamente. O snapshot usa nome atual do catálogo; cada versão conserva o nome que tinha ao ser publicada.
+- Validação intermediária: build com 0 erros e 4 warnings preexistentes; frontend lint/build aprovados, 50 testes aprovados. Uma seleção direcionada sem parênteses incluiu indevidamente testes MySQL; falharam no TLS local antes dos cenários, sem validação do schema. O preflight daquele binário anterior ainda esperava 174 casos; recompilado com inventário 177. Seleção corrigida, excluindo MySQL: 101 aprovados (22 Domain, 30 Application, 43 API, 6 preflight), 0 falhos/ignorados. Cobertura da API continua sendo ampliada; estes não são resultados finais.
+- Não houve publicação parcial, chamada Efí/OAuth/Pix real, alteração de Cashback, leases ou auditorias Pix.
+
+### Contratos e persistência
+
+`TipoPlanta`, `PrecoVistoria` e `MotorPrecificacaoVistoria` pertencem ao Domain; `IPrecificacaoService` e `IPrecificacaoStore` são portas da Application, com mapeamento manual. Serviço/store são Scoped e recebem o relógio `TimeProvider`. O motor recebe o instante explicitamente, sem I/O, horário global, HTTP ou banco. SQL parametrizado; strings interpoladas contêm apenas listas constantes de colunas, nunca entradas. Nenhuma dependência financeira nova, EF Core, AutoMapper ou barramento.
+
+Publicação recebe `versaoEsperada`: 0 na primeira, última versão histórica nas seguintes, inclusive após desativação. Lock do catálogo serializa publicação/criação/renomeação/desativação; leitura MAX sob esse lock produz a próxima versão. Conflito retorna 409. A transação desativa a anterior e insere a nova, ou reverte tudo. UNIQUE(tipo, versão) e UNIQUE da coluna gerada `tipo_ativo` são garantias persistentes adicionais. Não há edição financeira de versão histórica nem endpoint DELETE. Desativação de tipo com preço ativo retorna conflito e exige ação explícita no preço.
+
+Vistoria usa o nome atual do catálogo, preço/m², modalidade, acréscimo aplicado (zero no Simples), base, final, tipo/versão/IDs e instante UTC. A coluna existente `tipo_planta` passa a ser snapshot do nome nas novas linhas e continua texto original nas antigas; área e pacote existentes também pertencem ao snapshot. Nove colunas novas são todas nulas no legado ou completas na criação calculada, protegidas por CHECK e FKs restritivas. Não há backfill, recálculo, exclusão ou conversão de textos. `VistoriaMySqlRepository` lê o snapshot sem recalcular e atualiza somente status/timestamp; sua inserção legada rejeita entidade calculada para não perder o snapshot.
+
+### API e painel
+
+Todos os endpoints novos exigem Administrador (401 anônimo, 403 usuário comum). Respostas são DTOs; falhas de domínio 422, configuração/conflito 409, tipo inexistente 404, campos desconhecidos 400. Logs desta fronteira registram somente tipo técnico/status, sem objeto de exceção ou mensagem arbitrária.
+
+| Operação | Endpoint |
+| --- | --- |
+| Listar/cadastrar catálogo | GET/POST `/api/tipos-planta` |
+| Renomear/desativar | PUT `/api/tipos-planta/{id}`; PATCH `/{id}/desativar` |
+| Preços ativos | GET `/api/precos-vistoria` |
+| Histórico decrescente | GET `/api/precos-vistoria/por-tipo/{id}/historico` |
+| Primeira/nova versão | POST `/api/precos-vistoria/por-tipo/{id}` |
+| Desativar versão ativa | PATCH `/api/precos-vistoria/por-tipo/{tipoId}/{precoId}/desativar` |
+| Simulação sem persistência | POST `/api/precos-vistoria/simular` |
+| Snapshot/legado | GET `/api/vistorias/{id}/precificacao` |
+
+Breaking change administrativo explícito: POST `/api/vistorias` exige `tipoPlantaId`; não aceita `tipoPlanta`, `valor` ou `valorFinal`. `usuarioId`, `areaM2`, `pacote` e `dataAgendada` permanecem. Resposta informa `legado`, `tipoPlantaId` opcional e `precificacao` opcional; registros antigos continuam legíveis. A simulação recebe somente tipo, área e pacote e retorna `simulacao=true`; na criação o servidor recarrega a versão e responde `simulacao=false`, sem confiar na prévia.
+
+Web adiciona `/tipos-planta` e `/precos-vistoria`, histórico somente leitura, conflitos controlados e seletor ativo na criação. RHF/Zod validam formato; decimais de entrada seguem como strings para leitura decimal no backend. JavaScript somente formata a resposta, não calcula tarifa. Exibição preserva até quatro casas dos parâmetros/seis da base, final BRL com duas. DataAgendada conserva o horário civil sem conversão de fuso. Queries de histórico são abertas sob demanda; alteração de área consulta somente simulação. Invalidação é limitada aos recursos envolvidos, histórico/simulação do tipo e dashboard; falhas não bloqueiam módulos independentes.
+
+### Matriz de cobertura
+
+Casos são subconjuntos das suítes abaixo, não somar duas vezes. Prefixos identificam as classes; nomes abreviados nesta matriz referem-se aos métodos exatos nessas classes.
+
+| Requisito | Evidência automatizada |
+| --- | --- |
+| Fórmulas Simples/fixo/percentual | Domain `PrecificacaoTests.Formula`; MySQL `TotalFixoGravaValorCalculado`, `TotalPercentualArredondaSomenteFinal`, `SimplesGravaSnapshotCompleto` |
+| Frações/quatro casas/meio centavo/determinismo/limites | `FracionariosEPreservacaoQuatroCasas`, `MeioCentavoAwayFromZero`, `DeterminismoSemMutacao`, `AreaInvalida`, `PrecoInvalido`, `AcrescimoNegativo`, `PercentualForaDoLimite`, `OverflowECapacidadeColuna` |
+| Catálogo, Trim, caixa, tamanho, rename, inativo | Domain `CriarRenomearDesativarTipoPreservaId`, `NomeVazio`, `NomeLongo`; MySQL `CriarTipoNormalizaNomeERejeitaDuplicidadeDeCaixa`, `ConcorrenciaNomesEquivalentesTemUmaCriacao`, `TipoInativoNaoRecebePrecoNemVistoria`, `TipoComPrecoAtivoNaoPodeSerDesativado` |
+| Versionamento/ativação/histórico/concorrência | MySQL `PrimeiraVersaoAtivaEPersistenciaDecimal`, `PublicacaoPreservaHistoricoInativaAnteriorEOrdena`, `PublicacoesConcorrentesConflitamSemDuasAtivas`, `DesativacaoNaoReutilizaNumeroHistorico`, `ConstraintRejeitaDuasVersoesAtivasMesmoForaDoStore` |
+| Sem seeds/preço ativo ausente | MySQL `CatalogoVazioNaoGeraSeedsOuPrecos`, `SemPrecoFalhaFechadoSemVistoria`; Application `PrecoAusentePropagaSemCriarVistoria` |
+| Snapshot/legado/rename/atualização não financeira | MySQL `LegadoPermaneceSemCatalogoSemConversao`, `RenomeacaoENovoPrecoNaoAlteramSnapshot`, `AtualizacaoNaoFinanceiraPreservaSnapshot`; Application `DtoLegadoESnapshotSaoExplicitos` |
+| Rollback/cancelamento/FK/concorrência de criação | MySQL `FalhaAposVistoriaReverteTudo`, `FalhaAposSnapshotReverteTudo`, `FalhaPublicacaoReverteDesativacaoAnterior`, `FalhaFkNaVistoriaNaoAlteraPreco`, `CancelamentoNaoEscreve`, `CancelamentoAposInsertReverteVistoriaESnapshot`, `PublicacaoConcorrenteComVistoriaNaoMisturaVersoes` |
+| Leitura/simulação não altera finanças/auditorias | MySQL `SimulacaoESelecaoPreservamFinancasEAuditorias`; Application `SimulacaoNaoEscreveEUsaRelogio`; API `SimulacaoRetornaDtoSemEscritaOuSegredos` |
+| Schema/decimais/nullable/FKs/índices/sem alteração Pix | MySQL `Migration014ColunasDecimaisNullableEUnicidade`, `SchemaFinanceiroNaoRecebeColunasDePreco`; bootstrap aplica 014 depois de 013 |
+| Dashboard ativo/inativo/vazio/sem preço | MySQL `DashboardContaSomenteAtivosComOuSemPreco`; Web `dashboard sem preços retorna zero sem consultar módulos independentes` |
+| Token/DI/cancelamento | Application `CriacaoNormalizaEPropagaToken`, `RenomeacaoDesativacaoHistoricoPropagamToken`, `CancelamentoNaoAcessaStore`; API `DiResolveServicosScoped`, `CancelamentoDoControllerPropagaSemRepetir` |
+| HTTP/admin/erros/sem exclusão/sem valor cliente | API `AutorizacaoObrigatoria`, `ConflitosRetornamProblemDetailsSeguro`, `CriacaoVistoriaRejeitaTextoLivreEValorManual`, `NomeInvalidoNaoPersiste`, `PublicacaoInvalidaNaoAcessaStore`, `SimulacaoInvalidaNaoAcessaStore`, `SemExclusaoFisica` |
+| Criação HTTP e snapshot oficial | API `CriacaoHttpRetornaSnapshotCalculadoELocation`, `AdministradorPublicaEDesativaSemEditarVersaoHistorica`; Application `NovaVistoriaSemCatalogoNaoAcessaDependencias` |
+| Sanitização | API `PrecificacaoSanitizacaoTests.ExcecaoArbitrariaNaoVazaEmRespostaOuLogger`, marcador secreto fictício |
+| Web/catalogar/publicar/desativar/histórico/Zod | `Precificacao.test.tsx`: `cadastra tipo com nome normalizado`, `renomeia sem exclusão física`, `conflito ao desativar orienta remover preço ativo`, `publica nova versão com modalidade %s`, `mostra lista ativa e histórico imutável`, `valida Zod sem cálculo financeiro` |
+| Web/preview/BRL/horário/cache/independência/acessibilidade | `simula usando backend e exibe BRL`, `vistoria envia ID área pacote sem valores calculados e preserva horário`, `mudança de área refaz somente simulação`, `cache de módulos independentes não é invalidado`, `falha do histórico não bloqueia catálogo ou simulação`, `preserva quatro casas do preço na exibição`, `campos do catálogo são acessíveis por teclado e label` |
+
+### Resultados locais desta entrega
+
+- Build `dotnet build IndicaA2.slnx --no-restore`: sucesso. Build completo 0 erros/4 warnings preexistentes em Usuario/UsuarioService (19,85 s); último incremental 0 erros/0 warnings (10,61 s). O warning xUnit2031 introduzido no teste foi corrigido antes da validação final.
+- Direcionados: **131 aprovados**, 0 falhos/ignorados (22 Domain, 30 Application, 60 API, 19 Infrastructure incluindo os **6 preflight**).
+- Suíte rápida oficial: **632 aprovados**, 0 falhos/ignorados (154 Domain + 189 Application + 200 API + 89 Infrastructure). Durações por projeto: 359 ms, 1 s, 10 s, 5 s. Filtro excluiu todas as integrações MySQL e ambas as classes externas Efí.
+- MySQL oficial: variável privada disponível, conexão local sem Database. **177/177 aprovados em 17 classes**, 0 falhos/ignorados, testes 26 s, comando 35,0 s, exit 0. Inclui 28 novas integrações de precificação e migrations 001–014 no banco descartável. Cinco bancos antigos antes e os mesmos cinco depois, nenhum novo restante, nenhuma remoção manual. Falha TLS anterior foi restrição do processo sandbox; a execução autorizada fora dessa restrição usou a mesma conexão, sem mudar SSL, senha ou permissões.
+- Frontend: npm ci aprovado; lint final sem erros/warnings; **53/53 testes aprovados**, 0 falhos/ignorados, 15,87 s; TypeScript/Vite aprovados (Vite 5,51 s). Execução intermediária **50/50** (20,90 s) precedeu três cenários adicionais e a preservação visual de quatro casas. Dois avisos preexistentes Rollup/Zod sobre anotações PURE e aviso informativo npm11 de postinstall do esbuild; zero vulnerabilidades reportadas por npm ci. Fuso America/Sao_Paulo. A primeira tentativa de lint foi impedida pela leitura do runtime Node no sandbox (EPERM); executada com autorização fora dessa restrição, sem alteração de dependências ou lockfile.
+- Workflow preserva backend/frontend/MySQL, sem enfraquecer filtros, sem continue-on-error e com checagem de bancos restantes. CI do novo PR ainda não executado; consultar no HEAD publicado, sem antecipar aprovação.
+
+Comandos: build acima; direcionados com filtro `Category!=MySqlIntegration&(FullyQualifiedName~Precificacao|FullyQualifiedName~VistoriaServiceTests|FullyQualifiedName~VistoriasControllerTests|FullyQualifiedName~MySqlIntegrationPreflightTests|FullyQualifiedName~Dashboard|FullyQualifiedName~DependencyInjection)`; suíte rápida com filtro oficial `Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests`; `pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql`; frontend `npm ci`, `npm run lint`, `npm test -- --run`, `npm run build` (npm11 via runtime local); `git diff --check` e revisão do diff.
+
+Limites: nenhum preço comercial ou tipo pré-cadastrado; A2 deve informar seus valores. Recálculo de registros existentes, recebimento Pix, webhook, notificações, alteração dos 20%, retry, deploy e produção não fazem parte desta entrega. Documentos binários/históricos, regras financeiras e migrations anteriores foram preservados. Não houve Efí/OAuth/Pix real ou dado financeiro de produção.
+
 ## PR #35 — correções da revisão (2026-09-22)
 
 - A falha inicial do CI MySQL aconteceu antes dos testes, na autenticação `caching_sha2_password`. `AllowPublicKeyRetrieval=True` fica restrito à conexão do container efêmero em 127.0.0.1, compartilhada com a verificação de descarte. Nenhum servidor, grant ou conexão real foi alterado.

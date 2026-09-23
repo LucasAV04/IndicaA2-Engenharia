@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-23 — Precificação versionada e catálogo de plantas
+
+- Decisão aprovada: catálogo administrável e preços versionados, sem tipos ou tarifas pré-cadastrados. Novas vistorias exigem catálogo ativo; registros legados mantêm o texto original, sem migração automática.
+- A especificação é externa, fornecida pelo proprietário; não existe cópia em `sources/`. Requisitos e decisões vigentes registrados em Implementacoes.md, preservando documentos históricos binários.
+- Migration 014, catálogo sem seeds, preços imutáveis versionados e snapshot atômico de vistoria implementados; backend é a autoridade e novos DTOs rejeitam texto livre/valor manual. Painel inclui Tipos de planta, Tabela de preços e prévia oficial no formulário.
+- Validação intermediária: build 0 erros/4 warnings preexistentes; frontend 50 testes, lint e build aprovados; 101 direcionados corrigidos aprovados. Seleção inicial incorreta incluiu MySQL e encontrou falha TLS antes dos cenários; binário de preflight desatualizado foi recompilado. Resultados finais ainda pendentes, sem antecipar aprovação MySQL.
+
+O registro intermediário acima é superado pela validação final desta entrega:
+
+- **131 direcionados**, incluindo **6 preflight**, e **632 testes rápidos** aprovados, zero falhos/ignorados. Build completo com quatro warnings preexistentes e zero erros; último incremental zero warnings/erros.
+- **177/177 MySQL em 17 classes**, 28 novas integrações, zero falhos/ignorados, 26 s de testes/35,0 s do comando, exit 0. Migrations 001–014 aplicadas no banco descartável. Os mesmos cinco bancos antigos antes/depois, nenhum novo restante e nenhuma remoção manual. Mesma conexão privada, sem alterar TLS ou permissões; execução autorizada fora da restrição do sandbox.
+- Frontend final: lint e TypeScript/build aprovados, **53/53 testes** em America/Sao_Paulo (15,87 s). Preservação visual de quatro casas dos parâmetros, seis da base e duas do valor final. Avisos preexistentes Rollup/Zod e informativo de postinstall npm documentados.
+- API administrativa de catálogo/preços/histórico/simulação/snapshot; payload antigo com texto livre ou valor manual é rejeitado. Frontend inclui os dois módulos, novo formulário calculado, estados vazios e dashboard agregado. Documentação técnica, matriz requisito/teste, API.http e READMEs acompanham a implementação.
+- Sem seeds comerciais, backfill, recálculo legado, alterações nos 20%, Pix, leases, auditorias ou migrations anteriores. Nenhum provider/Efí/OAuth/Pix real ou dado de produção. CI do PR será consultado após publicar, sem antecipar resultado.
+
 ## 2026-09-22 — Correções de leitura e CI do PR #35
 
 - Autenticação MySQL do container CI corrigida com AllowPublicKeyRetrieval, somente na conexão efêmera local; verificação de descarte usa a mesma configuração.

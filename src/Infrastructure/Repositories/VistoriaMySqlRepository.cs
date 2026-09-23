@@ -19,6 +19,7 @@ public sealed class VistoriaMySqlRepository : IVistoriaRepository
         status,
         created_at,
         updated_at
+        ,tipo_planta_id,preco_vistoria_id,preco_versao,preco_m2,preco_modalidade,preco_acrescimo,valor_base,valor_final,calculado_em
         """;
 
     private readonly MySqlConnectionFactory _connectionFactory;
@@ -63,6 +64,9 @@ public sealed class VistoriaMySqlRepository : IVistoriaRepository
     public async Task AdicionarAsync(Vistoria vistoria, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(vistoria);
+
+        if (vistoria.Precificacao is not null)
+            throw new InvalidOperationException("Vistorias calculadas devem ser persistidas atomicamente pelo store de precificação.");
 
         const string sql = """
             INSERT INTO vistorias (
@@ -171,7 +175,7 @@ public sealed class VistoriaMySqlRepository : IVistoriaRepository
         if (!Enum.IsDefined(typeof(StatusVistoria), statusPersistido))
             throw new DataException($"O status persistido '{statusPersistido}' é inválido.");
 
-        return Vistoria.Reidratar(
+        var vistoria = Vistoria.Reidratar(
             reader.ObterGuid("id"),
             reader.ObterGuid("usuario_id"),
             reader.GetString(reader.GetOrdinal("tipo_planta")),
@@ -181,6 +185,13 @@ public sealed class VistoriaMySqlRepository : IVistoriaRepository
             (StatusVistoria)statusPersistido,
             ObterDataUtc(reader, "created_at"),
             ObterDataUtc(reader, "updated_at"));
+        if (!reader.IsDBNull(reader.GetOrdinal("preco_vistoria_id")))
+            vistoria.ReidratarPrecificacao(new Domain.Services.CalculoVistoria(
+                reader.ObterGuid("preco_vistoria_id"), reader.GetInt32("preco_versao"), reader.ObterGuid("tipo_planta_id"),
+                vistoria.TipoPlanta, vistoria.AreaM2, vistoria.Pacote, reader.GetDecimal("preco_m2"),
+                (ModalidadeAcrescimo)reader.GetInt32("preco_modalidade"), reader.GetDecimal("preco_acrescimo"),
+                reader.GetDecimal("valor_base"), reader.GetDecimal("valor_final"), ObterDataUtc(reader, "calculado_em")));
+        return vistoria;
     }
 
     private static DateTime ObterDataUtc(MySqlDataReader reader, string nomeColuna) =>

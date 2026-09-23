@@ -2,6 +2,11 @@ namespace Application.DTOs.Admin;
 
 public sealed class DashboardResponseDto
 {
+    public long TiposCadastrados { get; init; }
+    public long TiposComPrecoAtivo { get; init; }
+    public long TiposSemConfiguracao { get; init; }
+    public int? UltimaVersaoPreco { get; init; }
+    public string? UltimoTipoPreco { get; init; }
     public long TotalUsuarios { get; init; }
     public long UsuariosAtivos { get; init; }
     public IReadOnlyDictionary<string, long> Indicacoes { get; init; } = new Dictionary<string, long>();

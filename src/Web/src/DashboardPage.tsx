@@ -13,6 +13,7 @@ export default function DashboardPage() {
 }
 function Resumo({ data: d }: { data: Dashboard }) {
   const cards: [string, string | number][] = [
+    ['Tipos cadastrados', d.tiposCadastrados ?? 0], ['Tipos com preço ativo', d.tiposComPrecoAtivo ?? 0], ['Tipos sem configuração', d.tiposSemConfiguracao ?? 0],
     ['Usuários cadastrados', d.totalUsuarios], ['Usuários ativos', d.usuariosAtivos], ['Indicações pendentes', d.indicacoes.Pendente || 0],
     ['Vistorias agendadas', d.vistorias.Agendada || 0], ['Receita confirmada', money(d.receitaConfirmada)],
     ['Pagamentos pendentes', money(d.pagamentosPendentes)], ['Cashback disponível', money(d.cashbackDisponivel)],
@@ -22,6 +23,7 @@ function Resumo({ data: d }: { data: Dashboard }) {
   return <><div className="cards">{cards.map(([label, value]) => <article className="card" key={label}><h2>{label}</h2><strong>{value}</strong></article>)}</div>
     {d.totalUsuarios === 0 && <p className="notice">Ainda não há usuários cadastrados. Comece pela página Usuários.</p>}
     <div className="status-grid">{([['Indicações', d.indicacoes], ['Vistorias', d.vistorias], ['Pagamentos de vistoria', d.pagamentosVistoria], ['Cashback', d.cashbacks], ['Pix', d.pagamentosPix]] as [string, Record<string, number>][]).map(([title, counts]) => <section className="panel" key={title}><h2>{title} por status</h2>{Object.entries(counts).map(([s, count]) => <div className="status-line" key={s}><span>{labels[s] || s}</span><strong>{count}</strong></div>)}</section>)}</div>
+    <p>Último preço publicado: {d.ultimaVersaoPreco ? `${d.ultimoTipoPreco} — versão ${d.ultimaVersaoPreco}` : 'Nenhum preço publicado.'}</p>
     <p className="muted">Resumo calculado em {utcDate(d.calculadoEmUtc)}. Valores pendentes não representam dinheiro recebido.</p>
   </>
 }

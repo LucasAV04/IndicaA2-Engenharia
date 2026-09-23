@@ -1,6 +1,61 @@
 @API_HostAddress = http://localhost:5209
 @AccessToken = INSIRA_TOKEN_AQUI
 
+### Catálogo: IDs e valores abaixo são exclusivamente fictícios, não tarifas comerciais
+GET {{API_HostAddress}}/api/tipos-planta
+Authorization: Bearer {{AccessToken}}
+
+### Cadastro administrativo, sem seeds ou exclusão física
+POST {{API_HostAddress}}/api/tipos-planta
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{ "nome": "Tipo fictício para teste" }
+
+### Renomeação não modifica snapshots históricos
+PUT {{API_HostAddress}}/api/tipos-planta/44444444-4444-4444-4444-444444444444
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{ "nome": "Tipo fictício renomeado" }
+
+### Conflito se ainda houver preço ativo
+PATCH {{API_HostAddress}}/api/tipos-planta/44444444-4444-4444-4444-444444444444/desativar
+Authorization: Bearer {{AccessToken}}
+
+### Tabela ativa
+GET {{API_HostAddress}}/api/precos-vistoria
+Authorization: Bearer {{AccessToken}}
+
+### Histórico ordenado, somente leitura
+GET {{API_HostAddress}}/api/precos-vistoria/por-tipo/44444444-4444-4444-4444-444444444444/historico
+Authorization: Bearer {{AccessToken}}
+
+### Exemplo fictício; versão esperada 0 somente no primeiro cadastro
+# Modalidade 0 = fixo; 1 = percentual. Publicar outra versão exige a última versão conhecida.
+POST {{API_HostAddress}}/api/precos-vistoria/por-tipo/44444444-4444-4444-4444-444444444444
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{ "precoM2": "2.1234", "modalidade": 0, "acrescimo": "5.0000", "versaoEsperada": 0 }
+
+### Desativação preserva a versão; substituir IDs pelos retornados no cadastro
+PATCH {{API_HostAddress}}/api/precos-vistoria/por-tipo/44444444-4444-4444-4444-444444444444/55555555-5555-5555-5555-555555555555/desativar
+Authorization: Bearer {{AccessToken}}
+
+### Simulação não persiste nada; o backend recalcula na criação definitiva
+POST {{API_HostAddress}}/api/precos-vistoria/simular
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{ "tipoPlantaId": "44444444-4444-4444-4444-444444444444", "areaM2": "10.25", "pacote": 1 }
+
+### Snapshot aplicado (legado=true e precificacao=null nos registros antigos)
+GET {{API_HostAddress}}/api/vistorias/33333333-3333-3333-3333-333333333333/precificacao
+Authorization: Bearer {{AccessToken}}
+
+### Login de exemplo preexistente — nunca inserir credenciais reais neste arquivo
+
 POST {{API_HostAddress}}/api/auth/login
 Content-Type: application/json
 
@@ -98,7 +153,7 @@ Authorization: Bearer {{AccessToken}}
 
 {
   "usuarioId": "22222222-2222-2222-2222-222222222222",
-  "tipoPlanta": "Apartamento",
+  "tipoPlantaId": "44444444-4444-4444-4444-444444444444",
   "areaM2": 75.5,
   "pacote": 0,
   "dataAgendada": "2026-09-15T14:30:00"

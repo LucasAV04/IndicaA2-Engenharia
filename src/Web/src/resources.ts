@@ -38,8 +38,8 @@ export const resources: Record<ResourceKey, Resource> = {
   vistorias: {
     title: 'Vistorias', singular: 'vistoria', description: 'Agenda, execução e conclusão das vistorias dos clientes.',
     statuses: ['Agendada', 'Realizada', 'Concluída', 'Cancelada'],
-    columns: [{ label: 'Cliente', value: (r, l) => nome(l, r.usuarioId) }, { label: 'Pacote', value: r => r.pacote === 0 ? 'Simples' : 'Total' }, { label: 'Área (m²)', value: r => String(r.areaM2) }, { label: 'Planta', value: r => r.tipoPlanta! }, { label: 'Agendamento', value: r => businessDate(r.dataAgendada) }],
-    create: { label: 'Nova vistoria', method: 'POST', path: () => '/vistorias', fields: [{ name: 'usuarioId', label: 'Cliente', source: 'usuarios' }, { name: 'pacote', label: 'Pacote', options: ['Simples', 'Total'] }, { name: 'areaM2', label: 'Área (m²)', type: 'number', min: 0.01 }, { name: 'tipoPlanta', label: 'Tipo de planta' }, { name: 'dataAgendada', label: 'Data agendada', type: 'datetime-local' }] },
+    columns: [{ label: 'Cliente', value: (r, l) => nome(l, r.usuarioId) }, { label: 'Pacote', value: r => r.pacote === 0 ? 'Simples' : 'Total' }, { label: 'Área (m²)', value: r => String(r.areaM2) }, { label: 'Planta', value: r => r.tipoPlanta! }, { label: 'Precificação', value: r => r.precificacao ? `${money(r.precificacao.valorFinal)} • v${r.precificacao.versao}` : 'Legado — sem catálogo/snapshot' }, { label: 'Agendamento', value: r => businessDate(r.dataAgendada) }],
+    create: { label: 'Nova vistoria', method: 'POST', path: () => '/vistorias', fields: [{ name: 'usuarioId', label: 'Cliente', source: 'usuarios' }] },
     actions: [{ label: 'Realizar', method: 'PATCH', path: r => '/vistorias/' + r!.id + '/realizar', allowed: r => r.status === 0 }, { label: 'Concluir', method: 'PATCH', path: r => '/vistorias/' + r!.id + '/concluir', allowed: r => r.status === 1 }, cancel('vistorias', [0])],
   },
   'pagamentos-vistoria': {

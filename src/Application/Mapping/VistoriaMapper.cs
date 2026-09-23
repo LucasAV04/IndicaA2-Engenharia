@@ -8,6 +8,8 @@ public static class VistoriaMapper
     public static VistoriaResponseDto ToResponseDto(this Vistoria vistoria) => new()
     {
         Id = vistoria.Id,
+        TipoPlantaId = vistoria.Precificacao?.TipoPlantaId,
+        Precificacao = vistoria.Precificacao?.ToResponseDto(false),
         UsuarioId = vistoria.UsuarioId,
         TipoPlanta = vistoria.TipoPlanta,
         AreaM2 = vistoria.AreaM2,
