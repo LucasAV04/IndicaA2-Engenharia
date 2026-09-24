@@ -25,6 +25,7 @@ CREATE TABLE precos_vistoria (
     desativado_em DATETIME(6) NULL,
     CONSTRAINT fk_precos_tipo FOREIGN KEY (tipo_planta_id) REFERENCES tipos_planta(id),
     CONSTRAINT uq_precos_tipo_versao UNIQUE (tipo_planta_id, versao),
+    CONSTRAINT uq_precos_identidade UNIQUE (id, tipo_planta_id, versao),
     CONSTRAINT uq_precos_tipo_ativo UNIQUE (tipo_ativo),
     INDEX ix_precos_criacao (created_at, id),
     INDEX ix_precos_ativos (ativo, nome_tipo_planta),
@@ -44,7 +45,8 @@ ALTER TABLE vistorias
     ADD COLUMN valor_final DECIMAL(12,2) NULL,
     ADD COLUMN calculado_em DATETIME(6) NULL,
     ADD CONSTRAINT fk_vistorias_tipo_planta FOREIGN KEY (tipo_planta_id) REFERENCES tipos_planta(id),
-    ADD CONSTRAINT fk_vistorias_preco FOREIGN KEY (preco_vistoria_id) REFERENCES precos_vistoria(id),
+    ADD CONSTRAINT fk_vistorias_preco FOREIGN KEY (preco_vistoria_id, tipo_planta_id, preco_versao)
+        REFERENCES precos_vistoria(id, tipo_planta_id, versao) ON DELETE RESTRICT ON UPDATE RESTRICT,
     ADD CONSTRAINT ck_vistorias_snapshot CHECK (
         (tipo_planta_id IS NULL AND preco_vistoria_id IS NULL AND preco_versao IS NULL
          AND preco_m2 IS NULL AND preco_modalidade IS NULL AND preco_acrescimo IS NULL

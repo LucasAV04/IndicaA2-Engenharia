@@ -147,6 +147,53 @@ public sealed class PrecificacaoPipelineTests(ApiTestWebApplicationFactory facto
         service.Verify(s => s.SimularAsync(dto, cts.Token), Times.Once);
     }
 
+    [Theory]
+    [InlineData("valor")] [InlineData("valorFinal")] [InlineData("preco")]
+    [InlineData("desconto")] [InlineData("acrescimo")] [InlineData("percentual")]
+    public async Task PagamentoRejeitaQualquerCampoFinanceiro(string campo)
+    {
+        var service = new Mock<IPagamentoVistoriaService>();
+        using var app = factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddScoped(_ => service.Object)));
+        using var client = app.CreateHttpsClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", Token("Administrador"));
+        var response = await client.PostAsJsonAsync("/api/pagamentos-vistoria", new Dictionary<string, object> { ["vistoriaId"] = Id, [campo] = "SEGREDO_FICTICIO" });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.DoesNotContain("SEGREDO_FICTICIO", await response.Content.ReadAsStringAsync());
+        Assert.Empty(service.Invocations);
+    }
+
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public async Task PagamentoSemSnapshotRetornaErroControlado(bool existe)
+    {
+        var pagamentos = new Mock<Domain.Interfaces.IPagamentoVistoriaRepository>();
+        var vistorias = new Mock<Domain.Interfaces.IVistoriaRepository>();
+        if (existe) vistorias.Setup(v => v.ObterPorIdAsync(Id, It.IsAny<CancellationToken>())).ReturnsAsync(new Vistoria(Guid.NewGuid(), "Legado", 10, PacoteVistoria.Simples, DateTime.UtcNow));
+        using var app = factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => { s.AddScoped(_ => pagamentos.Object); s.AddScoped(_ => vistorias.Object); }));
+        using var client = app.CreateHttpsClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", Token("Administrador"));
+        var response = await client.PostAsJsonAsync("/api/pagamentos-vistoria", new { vistoriaId = Id });
+        Assert.Equal(existe ? HttpStatusCode.Conflict : HttpStatusCode.NotFound, response.StatusCode);
+        if (existe) Assert.Contains("regulariza", await response.Content.ReadAsStringAsync());
+        pagamentos.Verify(p => p.AdicionarAsync(It.IsAny<PagamentoVistoria>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PagamentoHttpDerivaValorDoSnapshot()
+    {
+        var agora = DateTime.UtcNow;
+        var calculo = Domain.Services.MotorPrecificacaoVistoria.Calcular(new(Id, "Fictício", 1.2345m, ModalidadeAcrescimo.Fixo, 0, 1, agora), "Fictício", 10, PacoteVistoria.Simples, agora);
+        var vistorias = new Mock<Domain.Interfaces.IVistoriaRepository>();
+        vistorias.Setup(v => v.ObterPorIdAsync(Id, It.IsAny<CancellationToken>())).ReturnsAsync(Vistoria.CriarCalculada(Id, agora, calculo));
+        var pagamentos = new Mock<Domain.Interfaces.IPagamentoVistoriaRepository>();
+        using var app = factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => { s.AddScoped(_ => pagamentos.Object); s.AddScoped(_ => vistorias.Object); }));
+        using var client = app.CreateHttpsClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", Token("Administrador"));
+        var response = await client.PostAsJsonAsync("/api/pagamentos-vistoria", new { vistoriaId = Id });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(12.35m, (await response.Content.ReadFromJsonAsync<Application.DTOs.PagamentoVistoria.PagamentoVistoriaResponseDto>())!.Valor);
+        pagamentos.Verify(p => p.AdicionarAsync(It.Is<PagamentoVistoria>(p => p.Valor == 12.35m), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact] public void DiResolveServicosScoped()
     { using var scope=factory.Services.CreateScope();Assert.IsType<Application.Services.PrecificacaoService>(scope.ServiceProvider.GetRequiredService<IPrecificacaoService>());Assert.IsType<Infrastructure.Repositories.PrecificacaoMySqlStore>(scope.ServiceProvider.GetRequiredService<IPrecificacaoStore>()); }
     private static string Token(string role)=>new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken("IndicA2.Api.Tests","IndicA2.Api.Tests.Client",

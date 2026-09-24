@@ -1,5 +1,39 @@
 # Implementações
 
+## Revisão do PR #36 — pagamento e identidade do snapshot (2026-09-24)
+
+- Correção localizada: criação de PagamentoVistoria recebe exclusivamente `VistoriaId`, rejeitando campos desconhecidos com HTTP 400. O valor é exatamente `Precificacao.ValorFinal` persistido, sem consultar preço ativo, recalcular ou aceitar valor do navegador. Pagamentos já persistidos e a fórmula de Cashback permanecem intactos.
+- Vistoria sem snapshot falha fechada com `VistoriaLegadaSemPrecificacaoException`/409 e orientação de regularização administrativa futura, fora deste PR. Nenhuma criação automática de Cashback/Pix ou chamada de provider.
+- Migration 014 ainda inédita em main corrigida: UNIQUE(id, tipo_planta_id, versao) e FK composta das três referências. Catálogo continua com FK própria; referências legadas totalmente nulas continuam permitidas. Sem migration 015, cascade ou trigger.
+- Web remove valor editável e envia somente o ID. Mostra valor histórico para conferência, desabilita opções legadas e mantém confirmação/cancelamento e cache limitado. Erros da fronteira de pagamentos são sanitizados sem mensagem arbitrária ou objeto de exceção no logger.
+- Cobertura adicional implementada para contrato, valor fracionário, legado, cancelamento, duplicidade real concorrente, identidade composta, conservação financeira e frontend. Resultados atuais abaixo; resultados do commit anterior nas seções seguintes são históricos.
+
+### Validação da correção e matriz de cobertura
+
+- `dotnet build`: sucesso, 0 erros e 4 warnings preexistentes em Usuario/UsuarioService, 1min33s. A primeira tentativa foi bloqueada pela leitura de NuGet.Config no sandbox antes de compilar; repetida com a permissão necessária, sem alteração de SDK, pacotes ou configuração.
+- Direcionados: **392 aprovados**, 0 falhos/ignorados (85 Domain, 65 Application, 210 API, 32 Infrastructure, incluindo 6 preflight). Comando: `dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&(FullyQualifiedName~Precificacao|FullyQualifiedName~Vistoria|FullyQualifiedName~Cashback|FullyQualifiedName~API.Tests|FullyQualifiedName~DependencyInjection|FullyQualifiedName~MySqlIntegrationPreflightTests)" --logger "console;verbosity=minimal"`.
+- Suíte rápida: **647 aprovados**, 0 falhos/ignorados (154 Domain, 194 Application, 210 API, 89 Infrastructure). Comando: `dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"`.
+- MySQL oficial executado uma única vez após os direcionados: **185/185 aprovados em 18 classes**, 0 falhos/ignorados, 30 s de testes e 39,0 s do comando, exit 0. `pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql`, conexão privada local sem Database; migrations 001–014 no banco descartável. Cinco bancos antigos antes e os mesmos cinco depois; zero novos restantes, zero antigos removidos e nenhuma remoção manual. Oito integrações adicionais nesta correção.
+- Frontend: `npm run lint`, `npm test -- --run` e `npm run build` aprovados, **59/59 testes**, 37,45 s, TZ America/Sao_Paulo; TypeScript/Vite build em 15,82 s, dois avisos preexistentes Rollup/Zod. Nenhuma nova execução de npm ci nesta correção.
+- Comandos de validação concluídos com exit 0, exceto a tentativa inicial de build bloqueada por permissão. `git diff --check` sem erros. Zero Efí/OAuth/Pix real, dados de produção ou alteração dos 20%. Recebimento Pix, webhook e regularização de legado permanecem fora do escopo. CI do novo commit será confirmado no PR, sem antecipar seu resultado.
+
+Os testes abaixo são subconjuntos das suítes, não devem ser somados novamente. Nenhum teste anterior foi removido; os testes existentes de criação passaram a preparar vistoria calculada em vez de enviar valor manual.
+
+| Garantia da revisão | Teste |
+| --- | --- |
+| Somente ID; campos financeiros rejeitados antes do serviço | Application `DtoPossuiSomenteVistoriaId`; API `PagamentoRejeitaQualquerCampoFinanceiro` (seis campos) |
+| Valor histórico exato e duas casas; nenhuma escrita em outras tabelas | Application `CriarAsync_PreservaValorFinalFracionarioSemRecalcular`; API `PagamentoHttpDerivaValorDoSnapshot`; MySQL `PagamentoDerivaSnapshotComDuasCasasSemAlterarOutrasTabelas` |
+| Nova versão, renomeação e desativação não mudam o pagamento | MySQL `PublicacaoRenomeacaoDesativacaoNaoAlteramValorHistoricoDoPagamento` |
+| Legado sem referências permanece válido, mas não cria pagamento | Application `CriarAsync_LegadoFalhaFechadoSemEscrita`; API `PagamentoSemSnapshotRetornaErroControlado` (404/409); MySQL `LegadoComReferenciasNulasNaoCriaPagamentoNemRecalcula` |
+| Cancelamento, propagação e falha sem retry/pagamento parcial | Application `CriarAsync_CanceladoNaoAcessaRepositorios`, `CriarAsync_FalhaPersistenciaNaoRepeteNemRetornaPagamento`, `CriarAsync_QuandoVistoriaExisteESemPagamento_DeveAdicionarERepassarCancellationToken`; MySQL `CancelamentoNaPersistenciaDeixaZeroPagamento` |
+| Concorrência produz um pagamento, sem Cashback/Pix/auditoria | MySQL `DuasCriacoesConcorrentesPersistemUmPagamentoDoMesmoSnapshot`, barreira explícita e observação de ambas as tarefas em finally |
+| FK aceita snapshot completo e rejeita tipo/versão incompatíveis | MySQL `PagamentoDerivaSnapshotComDuasCasasSemAlterarOutrasTabelas`, `FkCompostaRejeitaPrecoDeOutroTipoSemMutacao`, `FkCompostaRejeitaVersaoIncompativelSemMutacao` |
+| Ordem das três colunas, índice único e regras restritivas | MySQL `SchemaConfirmaIdentidadeCompostaRestritivaEIndiceUnico` |
+| Resposta/log sem payload arbitrário | API `PrecificacaoSanitizacaoTests.ExcecaoArbitrariaNaoVazaEmRespostaOuLogger`, agora também na rota de pagamentos |
+| Formulário sem valor editável, legado bloqueado, payload somente ID | Web `pagamento não possui campo de valor e legado fica indisponível`, `pagamento mostra conferência histórica e envia somente vistoriaId` |
+| Erros seguros, cache limitado e teclado | Web `pagamento traduz erro %s sem exibir payload arbitrário`, `pagamento invalida somente pagamentos e dashboard`, `seletor de pagamento e botão são acessíveis por teclado` |
+
+
 ## Precificação versionada e catálogo de plantas (2026-09-23)
 
 Contrato desta entrega: requisitos aprovados pelo proprietário na conversa de implementação. A especificação `IndicA2-especificacao-tecnica.md` é um documento externo; o caminho histórico `sources/IndicA2-especificacao-tecnica.md` não existe no repositório. Os documentos Word históricos são preservados, sem conversão. As decisões desta seção substituem a referência a uma cópia local e a antiga decisão de texto livre para novas vistorias.

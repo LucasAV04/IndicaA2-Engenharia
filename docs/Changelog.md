@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-24 — Revisão financeira do PR #36 validada localmente
+
+- Pagamento de vistoria deriva somente do snapshot histórico; DTO aceita apenas VistoriaId e rejeita valor manual. Legado sem snapshot falha fechado com resposta 409, sem regularização ou recálculo implícito.
+- Migration 014 recebe identidade composta preço/tipo/versão, com FKs restritivas e legado nulo preservado. Nenhuma migration adicional.
+- Formulário de pagamento exibe valor somente para conferência, bloqueia legado e preserva confirmação/cancelamento. Cobertura unitária/HTTP/MySQL/Web ampliada sem remover cenários válidos; matriz da revisão em Implementacoes.md.
+- Build: sucesso, 0 erros/4 warnings preexistentes; tentativa inicial bloqueada por leitura de NuGet.Config no sandbox, resolvida com permissão de execução, sem alteração de código/configuração para contornar a falha. **392 direcionados** (incluindo 6 preflight) e **647 rápidos**, zero falhos/ignorados.
+- **185/185 MySQL em 18 classes**, zero falhos/ignorados, 30 s de testes/39,0 s do comando, exit 0; execução oficial única, migrations 001–014 aplicadas no banco descartável. Cinco bancos antigos preservados e nenhum novo restante; nenhuma remoção manual. Oito novos casos de pagamento histórico, concorrência, cancelamento, legado e FK composta.
+- Frontend: **59/59**, lint e build aprovados; 37,45 s de testes, TZ America/Sao_Paulo. Dois avisos preexistentes Rollup/Zod. `git diff --check` sem erros. Resultados anteriores abaixo são históricos e superados por esta validação da revisão.
+- Nenhum pagamento existente, regra de Cashback ou fluxo Pix alterado; zero Efí/OAuth/Pix real e dados financeiros de produção. Recebimento Pix, webhook e regularização administrativa do legado continuam fora do escopo. PR permanece draft; CI do novo commit será confirmado no GitHub.
+
 ## 2026-09-23 — Precificação versionada e catálogo de plantas
 
 - Decisão aprovada: catálogo administrável e preços versionados, sem tipos ou tarifas pré-cadastrados. Novas vistorias exigem catálogo ativo; registros legados mantêm o texto original, sem migração automática.

@@ -11,6 +11,7 @@ public sealed class PrecificacaoSanitizacaoTests
     [InlineData("/api/tipos-planta")]
     [InlineData("/api/precos-vistoria/simular")]
     [InlineData("/api/vistorias")]
+    [InlineData("/api/pagamentos-vistoria")]
     public async Task ExcecaoArbitrariaNaoVazaEmRespostaOuLogger(string path)
     {
         const string segredo = "SEGREDO_FICTICIO_NAO_LOGAR";

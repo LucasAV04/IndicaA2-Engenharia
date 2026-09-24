@@ -51,6 +51,7 @@ public sealed class PagamentoVistoriaService : IPagamentoVistoriaService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var vistoria = await _vistoriaRepository.ObterPorIdAsync(dto.VistoriaId, cancellationToken);
 
@@ -64,7 +65,8 @@ public sealed class PagamentoVistoriaService : IPagamentoVistoriaService
         if (pagamentoExistente is not null)
             throw new DomainException("Já existe um pagamento registrado para esta vistoria.");
 
-        var pagamentoVistoria = new PagamentoVistoria(dto.VistoriaId, dto.Valor);
+        var snapshot = vistoria.Precificacao ?? throw new VistoriaLegadaSemPrecificacaoException();
+        var pagamentoVistoria = new PagamentoVistoria(dto.VistoriaId, snapshot.ValorFinal);
 
         await _pagamentoVistoriaRepository.AdicionarAsync(pagamentoVistoria, cancellationToken);
 

@@ -278,14 +278,13 @@ Content-Type: application/json
 DELETE {{API_HostAddress}}/api/usuarios/22222222-2222-2222-2222-222222222222/dados-pix
 Authorization: Bearer {{AccessToken}}
 
-### Valor administrativo meramente fictício de exemplo; não é tabela de preços
+### Valor derivado exclusivamente do snapshot histórico; legado sem snapshot retorna 409
 POST {{API_HostAddress}}/api/pagamentos-vistoria
 Authorization: Bearer {{AccessToken}}
 Content-Type: application/json
 
 {
-  "vistoriaId": "33333333-3333-3333-3333-333333333333",
-  "valor": 100.00
+  "vistoriaId": "33333333-3333-3333-3333-333333333333"
 }
 
 ###

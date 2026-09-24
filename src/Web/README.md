@@ -27,7 +27,7 @@ Dados Pix retornam somente `chaveMascarada`; o formulário de substituição sem
 - `/tipos-planta`: cadastrar, renomear e desativar tipos; sem exclusão física. Desative o preço antes do tipo.
 - `/precos-vistoria`: tabela ativa, publicação de versões, histórico e simulação oficial do backend.
 - `/vistorias`: cliente, catálogo ativo, área, pacote e agendamento; prévia oficial e criação com snapshot. Registros legados mantêm texto histórico. Realizar/concluir/cancelar não recalcula preço.
-- `/pagamentos-vistoria`: informar valor administrativo, confirmar recebimento ou cancelar.
+- `/pagamentos-vistoria`: selecionar vistoria calculada e conferir valor histórico; confirmar recebimento ou cancelar. O navegador envia somente `vistoriaId`, nunca valor.
 - `/cashbacks`: gerar a partir de pagamento confirmado, aprovar/cancelar, visualizar snapshot de 20%.
 - `/pagamentos-pix`: criar ordem por Cashback disponível e cancelar quando permitido.
 
@@ -44,6 +44,8 @@ Base = preço/m² × área. Simples usa a base; Total adiciona o fixo ou a porce
 Novas vistorias enviam `tipoPlantaId`, nunca texto livre nem valor final. Tipos inativos não aparecem no seletor. Sem catálogo ou preço ativo, o formulário orienta e bloqueia a criação. Renomear/desativar não modifica histórico. Dashboard conta somente tipos ativos: cadastrados, com preço ativo e sem configuração; vazio retorna zero.
 
 Recebimento Pix, webhook, notificações e produção permanecem fora desta entrega. Os testes usam dados fictícios e não fazem chamadas Efí/OAuth/Pix reais.
+
+O pagamento deriva de `Precificacao.ValorFinal` persistido, mesmo se o preço for substituído/desativado ou o tipo renomeado depois. Vistorias legadas ficam indisponíveis no seletor e são rejeitadas pela API com 409; regularização futura está fora do escopo. Campos financeiros extras no payload retornam 400. A FK composta da migration 014 protege a identidade preço/tipo/versão do snapshot. Nenhum pagamento antigo é alterado.
 
 ## Validação
 

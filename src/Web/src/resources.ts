@@ -43,10 +43,10 @@ export const resources: Record<ResourceKey, Resource> = {
     actions: [{ label: 'Realizar', method: 'PATCH', path: r => '/vistorias/' + r!.id + '/realizar', allowed: r => r.status === 0 }, { label: 'Concluir', method: 'PATCH', path: r => '/vistorias/' + r!.id + '/concluir', allowed: r => r.status === 1 }, cancel('vistorias', [0])],
   },
   'pagamentos-vistoria': {
-    title: 'Pagamentos de vistoria', singular: 'pagamento', description: 'Valores informados administrativamente. Pendente é receita esperada, não recebida.',
+    title: 'Pagamentos de vistoria', singular: 'pagamento', description: 'Valores derivados do snapshot da vistoria. Pendente é receita esperada, não recebida.',
     statuses: ['Pendente', 'Confirmado', 'Cancelado'],
     columns: [{ label: 'Vistoria / cliente', value: (r, l) => nome(l, l.vistorias?.find(v => v.id === r.vistoriaId)?.usuarioId) }, { label: 'Valor', value: r => money(r.valor) }, { label: 'Confirmado em', value: r => utcDate(r.pagoEm) }],
-    create: { label: 'Novo pagamento', method: 'POST', path: () => '/pagamentos-vistoria', fields: [{ name: 'vistoriaId', label: 'Vistoria', source: 'vistorias' }, { name: 'valor', label: 'Valor (R$)', type: 'number', min: 0.01 }] },
+    create: { label: 'Novo pagamento', method: 'POST', path: () => '/pagamentos-vistoria', fields: [{ name: 'vistoriaId', label: 'Vistoria', source: 'vistorias' }] },
     actions: [{ label: 'Confirmar pagamento', method: 'PATCH', path: r => '/pagamentos-vistoria/' + r!.id + '/confirmar', allowed: r => r.status === 0 }, cancel('pagamentos-vistoria', [0])],
   },
   cashbacks: {

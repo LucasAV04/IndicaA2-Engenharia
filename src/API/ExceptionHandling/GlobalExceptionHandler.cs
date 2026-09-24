@@ -15,6 +15,10 @@ public sealed class GlobalExceptionHandler(
     {
         var (status, title, detail) = exception switch
         {
+            VistoriaLegadaSemPrecificacaoException => (
+                StatusCodes.Status409Conflict,
+                "Vistoria legada sem precificação",
+                "Esta vistoria precisa de regularização administrativa futura antes de criar um pagamento."),
             PrecificacaoException p => (
                 p.Codigo == "tipo_ausente" ? 404 : 409,
                 "Configuração de precificação",
@@ -78,9 +82,9 @@ public sealed class GlobalExceptionHandler(
         };
 
         var path = httpContext.Request.Path;
-        if (path.StartsWithSegments("/api/precos-vistoria") || path.StartsWithSegments("/api/tipos-planta") || path.StartsWithSegments("/api/vistorias"))
+        if (path.StartsWithSegments("/api/precos-vistoria") || path.StartsWithSegments("/api/tipos-planta") || path.StartsWithSegments("/api/vistorias") || path.StartsWithSegments("/api/pagamentos-vistoria"))
         {
-            if (exception is not PrecificacaoException)
+            if (exception is not (PrecificacaoException or VistoriaLegadaSemPrecificacaoException))
                 detail = status < 500 ? "Verifique os campos e o estado da configuração de precificação." : "Não foi possível concluir a operação.";
             logger.LogWarning("Falha de vistoria/precificação: {Tipo}, status {Status}.", exception.GetType().Name, status);
         }

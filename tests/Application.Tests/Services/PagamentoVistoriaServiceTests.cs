@@ -15,7 +15,7 @@ public sealed class PagamentoVistoriaServiceTests
     public async Task CriarAsync_QuandoVistoriaExisteESemPagamento_DeveAdicionarERepassarCancellationToken()
     {
         var vistoria = CriarVistoria();
-        var dto = CriarDto(vistoria.Id, 500m);
+        var dto = CriarDto(vistoria.Id);
         var cancellationToken = new CancellationTokenSource().Token;
         var vistoriaRepository = new Mock<IVistoriaRepository>();
         var pagamentoRepository = new Mock<IPagamentoVistoriaRepository>();
@@ -41,7 +41,7 @@ public sealed class PagamentoVistoriaServiceTests
     [Fact]
     public async Task CriarAsync_QuandoVistoriaNaoExiste_DeveLancarVistoriaNaoEncontradaException()
     {
-        var dto = CriarDto(Guid.NewGuid(), 500m);
+        var dto = CriarDto(Guid.NewGuid());
         var vistoriaRepository = new Mock<IVistoriaRepository>();
         var pagamentoRepository = new Mock<IPagamentoVistoriaRepository>();
         vistoriaRepository
@@ -68,7 +68,7 @@ public sealed class PagamentoVistoriaServiceTests
             .ReturnsAsync(pagamentoExistente);
 
         await Assert.ThrowsAsync<DomainException>(() =>
-            CriarService(pagamentoRepository, vistoriaRepository).CriarAsync(CriarDto(vistoria.Id, 800m)));
+            CriarService(pagamentoRepository, vistoriaRepository).CriarAsync(CriarDto(vistoria.Id)));
 
         pagamentoRepository.Verify(
             repository => repository.AdicionarAsync(It.IsAny<PagamentoVistoria>(), It.IsAny<CancellationToken>()),
@@ -233,18 +233,60 @@ public sealed class PagamentoVistoriaServiceTests
         return repository;
     }
 
-    private static CreatePagamentoVistoriaDto CriarDto(Guid vistoriaId, decimal valor) => new()
+    private static CreatePagamentoVistoriaDto CriarDto(Guid vistoriaId) => new()
     {
-        VistoriaId = vistoriaId,
-        Valor = valor
+        VistoriaId = vistoriaId
     };
 
     private static PagamentoVistoria CriarPagamento() => new(Guid.NewGuid(), 500m);
 
-    private static Vistoria CriarVistoria() => new(
-        Guid.NewGuid(),
-        "Apartamento",
-        70m,
-        PacoteVistoria.Simples,
-        DateTime.UtcNow);
+    private static Vistoria CriarVistoria(decimal precoM2 = 50m)
+    {
+        var agora = DateTime.UtcNow;
+        var preco = new PrecoVistoria(Guid.NewGuid(), "Fictício", precoM2, ModalidadeAcrescimo.Fixo, 0, 1, agora);
+        return Vistoria.CriarCalculada(Guid.NewGuid(), agora,
+            Domain.Services.MotorPrecificacaoVistoria.Calcular(preco, preco.NomeTipoPlanta, 10, PacoteVistoria.Simples, agora));
+    }
+
+    [Fact]
+    public async Task CriarAsync_PreservaValorFinalFracionarioSemRecalcular()
+    {
+        var vistoria = CriarVistoria(1.2345m);
+        var pagamentos = new Mock<IPagamentoVistoriaRepository>();
+        var response = await CriarService(pagamentos, CriarVistoriaRepository(vistoria)).CriarAsync(CriarDto(vistoria.Id));
+        Assert.Equal(12.35m, response.Valor);
+        Assert.Equal(vistoria.Precificacao!.ValorFinal, response.Valor);
+    }
+
+    [Fact]
+    public async Task CriarAsync_LegadoFalhaFechadoSemEscrita()
+    {
+        var vistoria = new Vistoria(Guid.NewGuid(), "Histórico", 10, PacoteVistoria.Simples, DateTime.UtcNow);
+        var pagamentos = new Mock<IPagamentoVistoriaRepository>();
+        await Assert.ThrowsAsync<VistoriaLegadaSemPrecificacaoException>(() => CriarService(pagamentos, CriarVistoriaRepository(vistoria)).CriarAsync(CriarDto(vistoria.Id)));
+        Assert.Null(vistoria.Precificacao);
+        pagamentos.Verify(p => p.AdicionarAsync(It.IsAny<PagamentoVistoria>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CriarAsync_CanceladoNaoAcessaRepositorios()
+    {
+        var pagamentos = new Mock<IPagamentoVistoriaRepository>();
+        var vistorias = new Mock<IVistoriaRepository>();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CriarService(pagamentos, vistorias).CriarAsync(CriarDto(Guid.NewGuid()), new(true)));
+        Assert.Empty(pagamentos.Invocations); Assert.Empty(vistorias.Invocations);
+    }
+
+    [Fact]
+    public async Task CriarAsync_FalhaPersistenciaNaoRepeteNemRetornaPagamento()
+    {
+        var vistoria = CriarVistoria(); var pagamentos = new Mock<IPagamentoVistoriaRepository>();
+        pagamentos.Setup(p => p.AdicionarAsync(It.IsAny<PagamentoVistoria>(), It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("falha fictícia"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => CriarService(pagamentos, CriarVistoriaRepository(vistoria)).CriarAsync(CriarDto(vistoria.Id)));
+        pagamentos.Verify(p => p.AdicionarAsync(It.IsAny<PagamentoVistoria>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void DtoPossuiSomenteVistoriaId()
+    { Assert.Equal(new[] { "VistoriaId" }, typeof(CreatePagamentoVistoriaDto).GetProperties().Select(p => p.Name)); }
 }

@@ -41,6 +41,59 @@ it('campos do catálogo são acessíveis por teclado e label', async () => {
   expect(screen.getByRole('button', { name: 'Salvar tipo' })).toHaveFocus()
 })
 
+async function abrirPagamento() {
+  data['/api/vistorias'] = [
+    { id: tipoId, tipoPlanta: 'Calculada', status: 0, precificacao: { ...preco, valorFinal: 12.35 } },
+    { id: usuarioId, tipoPlanta: 'Histórica', status: 0, precificacao: null, legado: true },
+  ]
+  const client = mount('/pagamentos-vistoria')
+  await userEvent.click(screen.getByRole('button', { name: 'Novo pagamento' }))
+  await screen.findByLabelText('Vistoria')
+  return client
+}
+
+it('pagamento não possui campo de valor e legado fica indisponível', async () => {
+  await abrirPagamento()
+  expect(screen.queryByLabelText('Valor (R$)')).not.toBeInTheDocument()
+  expect(screen.getByRole('option', { name: /Histórica.*legada/ })).toBeDisabled()
+  expect(screen.getByRole('option', { name: /Calculada/ })).not.toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
+})
+
+it('pagamento mostra conferência histórica e envia somente vistoriaId', async () => {
+  await abrirPagamento()
+  await userEvent.selectOptions(screen.getByLabelText('Vistoria'), tipoId)
+  expect(screen.getByText(/Valor para conferência/)).toHaveTextContent('12,35')
+  await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+  await waitFor(() => expect(calls.find(c => c.method === 'POST')?.body).toEqual({ vistoriaId: tipoId }))
+  expect(calls.some(c => c.path.endsWith('/simular'))).toBe(false)
+})
+
+it.each([409, 422])('pagamento traduz erro %s sem exibir payload arbitrário', async status => {
+  await abrirPagamento()
+  errors['/api/pagamentos-vistoria'] = status
+  await userEvent.selectOptions(screen.getByLabelText('Vistoria'), tipoId)
+  await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('legada ou já possuir pagamento')
+  expect(document.body).not.toHaveTextContent('SEGREDO_FICTICIO')
+})
+
+it('pagamento invalida somente pagamentos e dashboard', async () => {
+  const client = await abrirPagamento(); const spy = vi.spyOn(client, 'invalidateQueries')
+  await userEvent.selectOptions(screen.getByLabelText('Vistoria'), tipoId)
+  await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+  await waitFor(() => expect(spy).toHaveBeenCalledTimes(2))
+  expect(spy.mock.calls.map(c => c[0]?.queryKey)).toEqual([['pagamentos-vistoria'], ['dashboard']])
+})
+
+it('seletor de pagamento e botão são acessíveis por teclado', async () => {
+  await abrirPagamento()
+  const select = screen.getByLabelText('Vistoria')
+  select.focus(); expect(select).toHaveFocus()
+  await userEvent.selectOptions(select, tipoId); await userEvent.tab()
+  expect(screen.getByRole('button', { name: 'Salvar' })).toHaveFocus()
+})
+
 afterEach(() => vi.unstubAllGlobals())
 function mount(path: string) { const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><App /></MemoryRouter></QueryClientProvider>); return client }
 async function historico() { mount('/precos-vistoria'); await userEvent.click(await screen.findByRole('button', { name: /Histórico e preços/ })); await screen.findByRole('heading', { name: 'Publicar nova versão' }) }
