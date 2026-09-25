@@ -5,6 +5,14 @@ namespace Domain.Entities;
 
 public sealed class Vistoria : BaseEntity
 {
+    public Domain.Services.CalculoVistoria? Precificacao { get; private set; }
+
+    public static Vistoria CriarCalculada(Guid usuarioId, DateTime dataAgendada, Domain.Services.CalculoVistoria calculo) =>
+        new(usuarioId, calculo.NomeTipoPlanta, calculo.AreaM2, calculo.Pacote, dataAgendada)
+        { Precificacao = calculo, CreatedAt = calculo.CalculadoEmUtc, UpdatedAt = calculo.CalculadoEmUtc };
+
+    internal void ReidratarPrecificacao(Domain.Services.CalculoVistoria calculo) => Precificacao = calculo;
+
     public Guid UsuarioId { get; private set; }
 
     public string TipoPlanta { get; private set; } = string.Empty;

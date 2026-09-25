@@ -12,13 +12,19 @@ public sealed class VistoriaService : IVistoriaService
 {
     private readonly IVistoriaRepository _vistoriaRepository;
     private readonly IUsuarioRepository _usuarioRepository;
+    private readonly Application.Interfaces.Stores.IPrecificacaoStore _precificacao;
+    private readonly TimeProvider _clock;
 
     public VistoriaService(
         IVistoriaRepository vistoriaRepository,
-        IUsuarioRepository usuarioRepository)
+        IUsuarioRepository usuarioRepository,
+        Application.Interfaces.Stores.IPrecificacaoStore precificacao,
+        TimeProvider clock)
     {
         _vistoriaRepository = vistoriaRepository;
         _usuarioRepository = usuarioRepository;
+        _precificacao = precificacao;
+        _clock = clock;
     }
 
     #region Consultas
@@ -47,17 +53,14 @@ public sealed class VistoriaService : IVistoriaService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        if (!await _usuarioRepository.ExistePorIdAsync(dto.UsuarioId))
+        cancellationToken.ThrowIfCancellationRequested();
+        if (dto.TipoPlantaId == Guid.Empty) throw new DomainException("Selecione um tipo de planta do catálogo.");
+        Domain.Services.MotorPrecificacaoVistoria.ValidarEntrada(dto.AreaM2, dto.Pacote);
+        if (await _usuarioRepository.ObterPorIdAsync(dto.UsuarioId, cancellationToken) is null)
             throw new UsuarioNaoEncontradoException();
 
-        var vistoria = new Vistoria(
-            dto.UsuarioId,
-            dto.TipoPlanta,
-            dto.AreaM2,
-            dto.Pacote,
-            dto.DataAgendada);
-
-        await _vistoriaRepository.AdicionarAsync(vistoria, cancellationToken);
+        var vistoria = await _precificacao.CriarVistoriaAsync(dto.UsuarioId, dto.TipoPlantaId,
+            dto.AreaM2, dto.Pacote, dto.DataAgendada, _clock.GetUtcNow().UtcDateTime, cancellationToken);
 
         return vistoria.ToResponseDto();
     }

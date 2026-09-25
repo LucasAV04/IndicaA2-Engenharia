@@ -143,7 +143,7 @@ public sealed class VistoriasControllerTests
     private static CreateVistoriaDto CriarDto() => new()
     {
         UsuarioId = Guid.NewGuid(),
-        TipoPlanta = "Apartamento",
+        TipoPlantaId = Guid.NewGuid(),
         AreaM2 = 75.5m,
         Pacote = PacoteVistoria.Simples,
         DataAgendada = new DateTime(2026, 9, 15, 14, 30, 0, DateTimeKind.Unspecified)

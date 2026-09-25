@@ -4,6 +4,9 @@ namespace Application.DTOs.Vistoria;
 
 public sealed class VistoriaResponseDto
 {
+    public Guid? TipoPlantaId { get; set; }
+    public bool Legado => Precificacao is null;
+    public Application.DTOs.Precificacao.CalculoVistoriaResponseDto? Precificacao { get; set; }
     public Guid Id { get; set; }
 
     public Guid UsuarioId { get; set; }

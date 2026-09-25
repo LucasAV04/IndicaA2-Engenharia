@@ -84,6 +84,7 @@ builder.Services.AddScoped<IUsuarioService, IndicA2.Application.Services.Usuario
 builder.Services.AddScoped<IDadosPixService, DadosPixService>();
 builder.Services.AddScoped<IPagamentoVistoriaService, PagamentoVistoriaService>();
 builder.Services.AddScoped<IVistoriaService, VistoriaService>();
+builder.Services.AddScoped<IPrecificacaoService, PrecificacaoService>();
 builder.Services.AddScoped<ICashbackService, CashbackService>();
 builder.Services.AddScoped<IPagamentoPixService, PagamentoPixService>();
 builder.Services.AddScoped<IPagamentoPixEnvioService, PagamentoPixEnvioService>();

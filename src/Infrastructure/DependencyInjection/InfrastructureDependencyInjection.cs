@@ -31,6 +31,8 @@ public static class InfrastructureDependencyInjection
         jwtOptions.Validate();
 
         services.AddSingleton(new MySqlConnectionFactory(connectionString));
+        services.AddSingleton(TimeProvider.System);
+        services.AddScoped<IPrecificacaoStore, PrecificacaoMySqlStore>();
         services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
         services.Configure<EfiPixOptions>(configuration.GetSection(EfiPixOptions.SectionName));
         services.AddSingleton<EfiPixAccessTokenCache>();

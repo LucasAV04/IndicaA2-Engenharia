@@ -33,7 +33,11 @@ public sealed class AdminDashboardMySqlStore(MySqlConnectionFactory factory) : I
                 (SELECT COALESCE(SUM(valor), 0) FROM cashbacks WHERE status = @pago) AS cashback_pago,
                 (SELECT COALESCE(SUM(valor), 0) FROM pagamentos_pix WHERE status IN (@pendentePix, @processando)) AS pix_pendente,
                 (SELECT COALESCE(SUM(valor), 0) FROM pagamentos_pix WHERE status = @concluido) AS pix_concluido,
-                UTC_TIMESTAMP(6) AS calculado_em
+                UTC_TIMESTAMP(6) AS calculado_em,
+                (SELECT COUNT(*) FROM tipos_planta WHERE ativo=1) AS tipos,
+                (SELECT COUNT(*) FROM tipos_planta t JOIN precos_vistoria p ON p.tipo_ativo=t.id WHERE t.ativo=1) AS precificados,
+                (SELECT versao FROM precos_vistoria ORDER BY created_at DESC,id DESC LIMIT 1) AS ultima_versao,
+                (SELECT nome_tipo_planta FROM precos_vistoria ORDER BY created_at DESC,id DESC LIMIT 1) AS ultimo_tipo
             """;
         await using var command = new MySqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@ativo", (int)StatusUsuario.Ativo);
@@ -51,6 +55,10 @@ public sealed class AdminDashboardMySqlStore(MySqlConnectionFactory factory) : I
             result = new()
             {
                 TotalUsuarios = reader.GetInt64(0), UsuariosAtivos = reader.GetInt64(1),
+                TiposCadastrados = reader.GetInt64(9), TiposComPrecoAtivo = reader.GetInt64(10),
+                TiposSemConfiguracao = reader.GetInt64(9) - reader.GetInt64(10),
+                UltimaVersaoPreco = reader.IsDBNull(11) ? null : reader.GetInt32(11),
+                UltimoTipoPreco = reader.IsDBNull(12) ? null : reader.GetString(12),
                 ReceitaConfirmada = reader.GetDecimal(2), PagamentosPendentes = reader.GetDecimal(3),
                 CashbackDisponivel = reader.GetDecimal(4), CashbackPago = reader.GetDecimal(5),
                 PixPendenteProcessando = reader.GetDecimal(6), PixConcluido = reader.GetDecimal(7),

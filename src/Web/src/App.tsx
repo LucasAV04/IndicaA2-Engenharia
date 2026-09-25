@@ -9,6 +9,8 @@ import type { Sessao } from './types'
 import { resources, type ResourceKey } from './resources'
 import ResourcePage from './ResourcePage'
 import DashboardPage from './DashboardPage'
+import PrecosPage from './PrecosPage'
+import TiposPlantaPage from './TiposPlantaPage'
 import { ErrorBox } from './components'
 
 export default function App() {
@@ -31,6 +33,8 @@ export default function App() {
     <Route path="/acesso-negado" element={session ? <div className="access-denied"><h1>Acesso negado</h1><p>Este painel é exclusivo de administradores.</p><button onClick={() => saveSession(null)}>Sair</button></div> : <Navigate to="/login" replace />} />
     <Route element={!session ? <Navigate to="/login" replace /> : session.tipoUsuario !== 2 ? <Navigate to="/acesso-negado" replace /> : <Layout session={session} />}>
       <Route index element={<DashboardPage />} />
+      <Route path="/tipos-planta" element={<TiposPlantaPage />} />
+      <Route path="/precos-vistoria" element={<PrecosPage />} />
       {(Object.keys(resources) as ResourceKey[]).map(key => <Route key={key} path={'/' + key} element={<ResourcePage key={key} resourceKey={key} />} />)}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Route>
@@ -41,6 +45,7 @@ function Layout({ session }: { session: Sessao }) {
   const fetching = useIsFetching()
   return <div className="shell"><aside className={open ? 'sidebar open' : 'sidebar'}>
     <div className="brand">IndicA2<span>ADMINISTRAÇÃO</span></div><nav aria-label="Principal"><NavLink to="/" end onClick={() => setOpen(false)}>Visão geral</NavLink>{Object.entries(resources).map(([key, value]) => <NavLink key={key} to={'/' + key} onClick={() => setOpen(false)}>{value.title}</NavLink>)}</nav>
+    <nav aria-label="Configuração de preços"><NavLink to="/tipos-planta" onClick={() => setOpen(false)}>Tipos de planta</NavLink><NavLink to="/precos-vistoria" onClick={() => setOpen(false)}>Tabela de preços</NavLink></nav>
     <div className="sidebar-note">Painel operacional<br />A2 Engenharia & Diagnóstico</div></aside>
     <div className="workspace"><header className="topbar"><button className="menu" aria-expanded={open} aria-label="Alternar navegação" onClick={() => setOpen(!open)}>☰ Menu</button><span className="muted">Área administrativa</span><div className="identity"><strong>{session.nome}</strong><small>{session.email}</small></div><button onClick={() => saveSession(null)}>Sair</button></header>
     {fetching > 0 && <div role="status" className="global-loading" aria-label="Atualizando dados" />}
