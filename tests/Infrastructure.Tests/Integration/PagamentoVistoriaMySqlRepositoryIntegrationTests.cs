@@ -81,7 +81,7 @@ public sealed class PagamentoVistoriaMySqlRepositoryIntegrationTests(MySqlIntegr
         var pagamento = IntegrationTestData.CriarPagamentoVistoria(vistoria.Id);
         await repository.AdicionarAsync(pagamento, CancellationToken.None);
 
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
         await repository.AtualizarAsync(pagamento, CancellationToken.None);
         var persistido = await repository.ObterPorIdAsync(pagamento.Id, CancellationToken.None);
 

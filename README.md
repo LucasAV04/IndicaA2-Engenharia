@@ -23,4 +23,14 @@ pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql
 
 MySQL exige conexão privada de testes em `INDICA2_TEST_MYSQL_CONNECTION`, sem Database, autorizada somente para bancos descartáveis `indicaa2_test_`. Nunca use banco de produção nem registre credenciais. O script falha fechado sem configuração/preflight. Testes externos Efí não pertencem à suíte rápida. Frontend: `npm ci`, `npm run lint`, `npm test -- --run`, `npm run build`, com TZ America/Sao_Paulo.
 
-Worker Pix continua desabilitado por padrão. Esta entrega não executa Efí/OAuth/Pix real, não implanta produção nem implementa recebimento, webhook ou notificações.
+Workers Pix continuam desabilitados por padrão. O módulo de recebimento usa cobrança imediata, inbox mTLS e consulta autenticada antes de confirmar o pagamento. Não há confirmação manual, devolução automática, notificações ou implantação em produção. Validação local: 744 testes rápidos, 214 integrações MySQL e 77 testes frontend aprovados; detalhes e limites em Implementacoes.md. Nenhuma chamada Efí/OAuth/Pix real faz parte da validação local.
+
+## Recebimento de vistoria
+
+O módulo exige migration 015 e configuração privada explícita. `RecebimentoPix__Habilitado=false` e `RecebimentoPix__ProcessamentoWorker__Habilitado=false` são os padrões. Quando desabilitado, não carrega certificados, não resolve provider operacional nem inicia polling.
+
+Configuração habilitada: base Efí de homologação, credenciais/P12 externos, chave recebedora externa, CA cliente oficial externa, URL HTTPS do webhook e URL pública HTTPS. `INDICA2_COBRANCA_PIX_ENCRYPTION_KEY` deve conter Base64 de 32 bytes independentes da chave de Dados Pix. Consulte `.env.example` apenas como inventário; ele não é carregado automaticamente pelo .NET.
+
+O webhook `/api/webhooks/efi/pix` aceita somente certificado cliente da conexão TLS validado pela CA configurada. Nesta implantação o TLS deve chegar ao Kestrel (direto ou passthrough); headers de certificado de proxy não são aceitos. Não configure bypass mTLS. O cadastro do webhook é administrativo explícito, nunca executado no startup.
+
+A página `/pagar#TOKEN` remove o fragmento imediatamente e transmite o token somente no header `PaymentLink`, sem armazenamento persistente. O token é devolvido uma única vez na geração/rotação; no banco há somente hash e validade. QR é gerado localmente. Webhook sozinho nunca confirma pagamento: é necessária evidência obtida pela consulta autenticada e aplicada na transação financeira.

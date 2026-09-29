@@ -86,7 +86,7 @@ jobs:
             $connection.Open()
             $command = $connection.CreateCommand()
             try {
-              $command.CommandText = "SELECT COUNT(*) FROM information_schema.schemata WHERE LEFT(schema_name, 14) = 'indicaa2_test_';"
+              $command.CommandText = "SELECT COUNT(*) FROM information_schema.schemata WHERE LEFT(schema_name, CHAR_LENGTH('indicaa2_test_')) = 'indicaa2_test_';"
               if ([int]$command.ExecuteScalar() -ne 0) { throw 'Restaram bancos descartáveis de testes.' }
               'Bancos temporários restantes: 0'
             } finally { $command.Dispose() }

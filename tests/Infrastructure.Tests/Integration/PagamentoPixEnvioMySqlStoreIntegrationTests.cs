@@ -551,7 +551,7 @@ public sealed class PagamentoPixEnvioMySqlStoreIntegrationTests(MySqlIntegration
         indicacao.VincularVistoria(vistoria.Id);
         await indicacaoRepository.AdicionarAsync(indicacao, CancellationToken.None);
         var pagamentoVistoria = IntegrationTestData.CriarPagamentoVistoria(vistoria.Id);
-        pagamentoVistoria.Confirmar();
+        pagamentoVistoria.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamentoVistoria.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
         await pagamentoVistoriaRepository.AdicionarAsync(pagamentoVistoria, CancellationToken.None);
         var cashback = Cashback.Criar(indicacao.Id, pagamentoVistoria.Id, indicador.Id, pagamentoVistoria.Valor);
         cashback.Aprovar();

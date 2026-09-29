@@ -31,17 +31,15 @@ public sealed class PagamentosVistoriaController(IPagamentoVistoriaService servi
     public async Task<ActionResult<PagamentoVistoriaResponseDto>> ObterPorVistoriaAsync(Guid vistoriaId, CancellationToken cancellationToken) =>
         Ok(await service.ObterPorVistoriaIdAsync(vistoriaId, cancellationToken));
 
-    [HttpPatch("{id:guid}/confirmar")]
-    public async Task<IActionResult> ConfirmarAsync(Guid id, CancellationToken cancellationToken)
-    {
-        await service.ConfirmarAsync(id, cancellationToken);
-        return NoContent();
-    }
-
     [HttpPatch("{id:guid}/cancelar")]
-    public async Task<IActionResult> CancelarAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> CancelarAsync(Guid id, [FromServices] IServiceProvider services, CancellationToken cancellationToken)
     {
-        await service.CancelarAsync(id, cancellationToken);
-        return NoContent();
+        // Não resolve criptografia/mTLS quando o módulo está desabilitado.
+        // A autorização administrativa já foi avaliada antes desta ação.
+        if (!services.GetRequiredService<Application.Recebimentos.RecebimentoPixOptions>().Habilitado)
+            return Conflict(new ProblemDetails { Status=409, Title="Recebimento Pix desabilitado." });
+        var recebimento=services.GetRequiredService<Application.Recebimentos.ICobrancaPixVistoriaService>();
+        await recebimento.CancelarPagamentoAsync(id, cancellationToken);
+        return Accepted();
     }
 }

@@ -47,7 +47,7 @@ export const resources: Record<ResourceKey, Resource> = {
     statuses: ['Pendente', 'Confirmado', 'Cancelado'],
     columns: [{ label: 'Vistoria / cliente', value: (r, l) => nome(l, l.vistorias?.find(v => v.id === r.vistoriaId)?.usuarioId) }, { label: 'Valor', value: r => money(r.valor) }, { label: 'Confirmado em', value: r => utcDate(r.pagoEm) }],
     create: { label: 'Novo pagamento', method: 'POST', path: () => '/pagamentos-vistoria', fields: [{ name: 'vistoriaId', label: 'Vistoria', source: 'vistorias' }] },
-    actions: [{ label: 'Confirmar pagamento', method: 'PATCH', path: r => '/pagamentos-vistoria/' + r!.id + '/confirmar', allowed: r => r.status === 0 }, cancel('pagamentos-vistoria', [0])],
+    actions: [{ label: 'Gerar cobrança Pix', method: 'POST', path: r => '/cobrancas-pix-vistoria/por-pagamento/' + r!.id, allowed: r => r.status === 0 }, cancel('pagamentos-vistoria', [0])],
   },
   cashbacks: {
     title: 'Cashback', singular: 'cashback', description: 'Gere a partir de um pagamento confirmado. Disponível não significa pago.',

@@ -132,16 +132,21 @@ public sealed class PagamentoVistoriaMySqlRepository : IPagamentoVistoriaReposit
                 status = @status,
                 pago_em = @pagoEm,
                 updated_at = @updatedAt
-            WHERE id = @id;
+            WHERE id = @id
+              AND NOT EXISTS (
+                SELECT 1 FROM cobrancas_pix_vistoria c
+                WHERE c.pagamento_vistoria_id = pagamentos_vistoria.id);
             """;
 
-        await ExecutarComandoAsync(sql, command =>
-        {
-            AdicionarGuid(command, "@id", pagamentoVistoria.Id);
-            command.Parameters.Add("@status", MySqlDbType.Int32).Value = (int)pagamentoVistoria.Status;
-            AdicionarDataOpcional(command, "@pagoEm", pagamentoVistoria.PagoEm);
-            command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = pagamentoVistoria.UpdatedAt;
-        }, cancellationToken);
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = CriarComando(connection, sql);
+        AdicionarGuid(command, "@id", pagamentoVistoria.Id);
+        command.Parameters.Add("@status", MySqlDbType.Int32).Value = (int)pagamentoVistoria.Status;
+        AdicionarDataOpcional(command, "@pagoEm", pagamentoVistoria.PagoEm);
+        command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = pagamentoVistoria.UpdatedAt;
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new DomainException("Pagamento com cobrança exige coordenação de recebimento.");
     }
 
     private async Task ExecutarComandoAsync(

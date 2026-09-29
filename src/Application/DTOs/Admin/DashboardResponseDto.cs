@@ -2,6 +2,8 @@ namespace Application.DTOs.Admin;
 
 public sealed class DashboardResponseDto
 {
+    public IReadOnlyDictionary<string, long> CobrancasPixVistoria { get; init; } = new Dictionary<string, long>();
+    public long RecebimentosDivergentes { get; init; }
     public long TiposCadastrados { get; init; }
     public long TiposComPrecoAtivo { get; init; }
     public long TiposSemConfiguracao { get; init; }

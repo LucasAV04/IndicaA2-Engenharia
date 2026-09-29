@@ -42,7 +42,7 @@ internal sealed class ProcessamentoPixCenario(MySqlIntegrationFixture fixture) :
         indicacao.VincularVistoria(vistoria.Id);
         await new IndicacaoMySqlRepository(fixture.ConnectionFactory).AdicionarAsync(indicacao, default);
         var pagamento = IntegrationTestData.CriarPagamentoVistoria(vistoria.Id);
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
         await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).AdicionarAsync(pagamento, default);
         var cashback = Cashback.Criar(indicacao.Id, pagamento.Id, indicador.Id, pagamento.Valor);
         cashback.Aprovar();

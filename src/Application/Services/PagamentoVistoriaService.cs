@@ -73,19 +73,6 @@ public sealed class PagamentoVistoriaService : IPagamentoVistoriaService
         return pagamentoVistoria.ToResponseDto();
     }
 
-    public async Task ConfirmarAsync(
-        Guid id,
-        CancellationToken cancellationToken = default)
-    {
-        var pagamentoVistoria = await ObterPagamentoOuLancarExceptionAsync(id, cancellationToken);
-        var statusAnterior = pagamentoVistoria.Status;
-
-        pagamentoVistoria.Confirmar();
-
-        if (pagamentoVistoria.Status != statusAnterior)
-            await _pagamentoVistoriaRepository.AtualizarAsync(pagamentoVistoria, cancellationToken);
-    }
-
     public async Task CancelarAsync(
         Guid id,
         CancellationToken cancellationToken = default)

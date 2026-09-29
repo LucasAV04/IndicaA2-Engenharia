@@ -1,5 +1,134 @@
 # Implementações
 
+## Recebimento Pix de vistoria — entrega vertical validada localmente (2026-09-29)
+
+Esta seção supera as pendências e contagens intermediárias abaixo, preservadas como histórico. Base `cc9c6f79053fde6b3a73bd9988d424aef0c35405`; branch `feature/recebimento-pix-vistoria`. Publicação somente como draft, sem liberação para produção. CI será confirmado no PR, sem antecipar aprovação.
+
+### Contrato e segurança
+
+- Recebimento separado do envio de Cashback: `ICobrancaPixVistoriaProvider`, serviço administrativo, store transacional, inbox, processador e seletor próprios. Reutiliza somente handler mTLS e cache OAuth por escopo, agora seguro para acesso concorrente. Nenhuma mudança na fórmula de 20%, preços, snapshots, leases de envio ou migrations 001–014.
+- Migration **015** cria `cobrancas_pix_vistoria`, `operacoes_cobranca_pix` e `recebimentos_pix_inbox`: FKs restritivas, DECIMAL(12,2), DATETIME(6), unicidades de txid/e2e/hash/link, checks e coluna gerada única por pagamento não terminal. Sem seed, trigger, procedure ou privilégio global. A fixture aplica 001–015 e remove apenas seu banco.
+- Estados: Preparada, CriacaoEmProcessamento, Ativa, Indeterminada, ConfirmacaoPendente, Confirmada, Expirada, RemocaoPendente, Removida, FalhaDefinitiva e DivergenciaFinanceira. Respostas desconhecidas permanecem indeterminadas; não são convertidas arbitrariamente em falha financeira definitiva.
+- Preparação bloqueia pagamento pendente, copia valor, cria txid GUID N, auditoria e lease em uma transação. Chamadas repetidas devolvem a cobrança existente. Provider sempre fora da transação; finalização exige token vigente e auditoria compatível. Lease: cinco minutos pelo relógio MySQL. Após crash/timeout, GET da mesma identidade vem antes de qualquer novo PUT; ausência comprovada permite PUT somente numa invocação posterior, nunca loop imediato.
+- Remoção é solicitada e reconciliada. Resposta indeterminada não cancela pagamento. Reemissão explícita só após expiração/remoção comprovada e pagamento pendente; identidade antiga é conservada. Ausência de cobrança após pedido incerto de remoção permanece pendente de conciliação, sem presumir cancelamento externo. Recebimento tardio é divergência, nunca devolução automática; uma cobrança terminal já substituída não é reativada e a divergência é exposta no registro, na inbox/auditoria e nos indicadores.
+- Webhook é sinal, não evidência financeira. Validação mTLS ocorre antes da leitura do corpo; limite 64 KiB/100 itens, campos mínimos e hash canonicalizado em microssegundos. HTTP 200 somente após commit; duplicata é idempotente. Não se persiste JSON ou dados do pagador. GET `/v2/pix/:e2eId` falso nos testes confirma identidade, valor e horário antes da transação cobrança/pagamento/inbox/auditoria. `PagoEm` vem da evidência autenticada. E2e já usado, txid desconhecido, valor divergente ou pagamento cancelado não confirmam.
+- Ordem de locks financeiros: pagamento, depois inbox/cobrança relacionados, compatível com cancelamento/geração. Um claim de inbox isolado não mantém transação durante HTTP. Finalização após resposta/exceção/cancelamento usa `CancellationToken.None`; falha de persistência permanece explícita. Nenhum recebimento cria Cashback ou PagamentoPix automaticamente.
+- Criptografia AES-256-GCM versionada usa chave independente `INDICA2_COBRANCA_PIX_ENCRYPTION_KEY`, nonce/tag e AAD `CobrancaPix:v1|id`. Material usa a primitiva existente com descarte seguro; Dados Pix não muda. Link aleatório de 256 bits, hash SHA-256, validade 24h, rotação invalida anterior. Texto puro do token somente na resposta de geração/rotação e memória transitória do navegador.
+- `/pagar#TOKEN` remove fragmento imediatamente; `Authorization: PaymentLink`, sem query/path/storage/cache. Resposta pública contém apenas valor/status/vencimento/código utilizável/confirmação. Rate limit 30/min/IP retorna 429, corpo vazio, no-store/no-referrer e Retry-After quando informado. Teste comprova 30 consultas ao serviço e nenhuma adicional, zero chamada a store MySQL/provider, ausência de token/corpo nos logs e resposta sanitizada.
+- QR gerado localmente com `qrcode.react` **4.2.0**, fixado no lockfile, sem CDN/serviço externo. Consulta periódica de estados não terminais a cada 10s, sem sobreposição, suspensa com aba oculta, interrompida nos terminais/desmontagem. Código só aparece quando ativo e utilizável.
+- Painel: geração/cópia de link no pagamento, listagem com cliente/vistoria em JOIN único, estado/vencimento/confirmação/divergência, auditoria sob demanda, rotação confirmada e reemissão terminal. Dashboard agrega os indicadores sem provider. Nenhum token persistido é recuperado para exibição posterior.
+- Worker separado e desabilitado por padrão; primeiro ciclo apenas após tick, lotes limitados, sequenciais, deduplicados e com backoff de 30s na seleção. Falha de seletor/item não encerra ciclos; cancelamento não vira erro e logs recebem somente tipo técnico, nunca exceção bruta.
+
+### Endpoints e operação de homologação
+
+| Método/rota | Proteção e efeito |
+| --- | --- |
+| GET `/api/cobrancas-pix-vistoria` e `/indicadores` | Administrador; somente leitura |
+| POST `/api/cobrancas-pix-vistoria/por-pagamento/{id}` | Administrador; preparação idempotente e uma operação externa |
+| GET `/api/cobrancas-pix-vistoria/{id}/auditoria` | Administrador; metadados seguros |
+| POST `/api/cobrancas-pix-vistoria/{id}/link` | Administrador; cria/rotaciona hash; resposta no-store |
+| PUT/GET `/api/cobrancas-pix-vistoria/webhook` | Administrador; URL/chave somente da configuração; nunca startup |
+| GET `/api/public/cobranca-pix-vistoria` | PaymentLink + limite; sem ID e sem PII |
+| POST `/api/webhooks/efi` e `/api/webhooks/efi/pix` | Certificado TLS confiável; probe e inbox durável |
+| PATCH `/api/pagamentos-vistoria/{id}/cancelar` | Administrador; 202, coordenação de remoção, não confirmação imediata |
+
+A rota manual `/confirmar` foi removida (404), assim como o método público de Application/Domain. A reidratação continua aceitando pagamentos históricos; evidência nova é vinculada pela auditoria à inbox. Idempotência após nova leitura é protegida no store por e2e/horário e estado persistido, não por propriedade transitória do objeto.
+
+Configuração completa em `.env.example`, sem segredos preenchidos: flags de recebimento/worker false, prazo 3600s, tick 30s/lote 20, URLs HTTPS, CA externa, chave recebedora, AES independente e `EfiPix__*` sandbox/P12 externos. Desabilitado inicia sem esses segredos; habilitado valida opções, CA, chave privada e AES no startup. Somente host sandbox HTTPS raiz/443. O TLS cliente deve chegar diretamente ao Kestrel ou por passthrough; não há suporte a terminação com header encaminhado nesta entrega. Não confia em X-Client-Cert, não pula mTLS e não faz download externo de certificados durante validação. A CA oficial deve ser mantida externamente pela operação. Recebimento, worker e cadastro real do webhook exigem habilitação operacional posterior explícita.
+
+### Validação final local
+
+- `dotnet restore IndicaA2.slnx`: sucesso com acesso autorizado ao NuGet.Config local. Tentativa inicial no sandbox foi bloqueada antes da compilação; nenhum arquivo/configuração alterado para contornar.
+- Build detectou uso indevido de Moq no projeto Infrastructure.Tests; substituído por provider falso próprio com contadores `Interlocked`, sem nova dependência. Build subsequente `dotnet build IndicaA2.slnx --no-restore`: **0 erros, 0 warnings**, 15,99s. A execução anterior mostrou o warning preexistente CS8604 em UsuarioService; não foi corrigido nesta feature.
+- Direcionados: **258 aprovados, 0 falhos, 0 ignorados** (36 Domain, 80 Application, 61 Infrastructure, 81 API), incluindo seis preflight, segurança pública e regressão de envio/reconciliação/aplicação. Maior duração por projeto: 4s.
+- Suíte rápida: **744 aprovados, 0 falhos, 0 ignorados** (169 Domain, 208 Application, 119 Infrastructure, 248 API); maior duração por projeto: 6s, exit 0. Efí sandbox/TLS e MySQL excluídos pelo filtro oficial.
+- MySQL: **214/214 em 19 classes**, incluindo **29 novos casos** de recebimento; **0 falhos, 0 ignorados**, 25s de testes/32s do comando, exit 0. Execução oficial única `pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql`; conexão local sem Database, preflight real único, migrations **001–015** no banco descartável. Cinco bancos antigos antes/depois, zero novos restantes e zero antigos removidos, confirmado por consulta somente leitura. Nenhuma exclusão manual.
+- Frontend: `npm ci` (259 pacotes auditados, zero vulnerabilidades), lint aprovado, **77/77** testes em 21,18s, TypeScript/Vite build aprovado (4,24s de Vite), TZ America/Sao_Paulo. Dois avisos preexistentes de comentário PURE do Zod/Rollup e informativo de script esbuild no npm; não houve enfraquecimento do CI.
+- Rate limit intermediário: 4/5; corrigido 503 para 429, caso isolado 1/1 e seleção seguinte 5/5. A suíte final inclui as asserções adicionais de logs, store/provider e Retry-After.
+- `git diff --check` sem erros. Zero Efí/OAuth/Pix real, registro de webhook externo ou dados de produção. Build/testes reais acima não representam validação operacional do certificado ou das credenciais Efí.
+
+Comando direcionado: `dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&(FullyQualifiedName~RecebimentoPix|FullyQualifiedName~CobrancaPix|FullyQualifiedName~CobrancaPublica|FullyQualifiedName~EfiCobranca|FullyQualifiedName~PagamentoVistoria|FullyQualifiedName~EfiPixProviderTests|FullyQualifiedName~PagamentoPixEnvio|FullyQualifiedName~PagamentoPixReconciliacao|FullyQualifiedName~PagamentoPixAplicacao|FullyQualifiedName~AdminWebPipelineTests|FullyQualifiedName~MySqlIntegrationPreflightTests)" --logger "console;verbosity=minimal"`. Suíte rápida usa o filtro oficial registrado no README. Frontend: `npm ci`, `npm run lint`, `npm run test -- --run`, `npm run build`.
+
+### Matriz de cobertura
+
+Os métodos MySQL abaixo pertencem a `CobrancaPixVistoriaMySqlIntegrationTests`; os casos são subconjuntos dos 214, não somar novamente.
+
+| Requisito | Teste(s) |
+| --- | --- |
+| Migration, precisão, FKs, índices/unicidades, fixture e ausência de seed | `Migration015ProtegeUnicidadePrecisaoEFksRestritivasSemSeed`, `ConstraintsImpedemTxidELeaseIncompativeisSemMutacao`; bootstrap existente aplica 001–015 |
+| Preparação, valor, auditoria/lease antes de HTTP, geração repetida | `PreparacaoPersisteIdentidadeAuditoriaELeaseAntesDoProvider` |
+| Claim concorrente e uma cobrança aberta | `DuasPreparacoesConcorrentesPersistemUmaCobrancaEUmLease` |
+| Rollback da preparação | `FalhaDePreparacaoReverteCobrancaAuditoriaEPagamento` |
+| Lease expirado/reinício, GET da mesma identidade, token antigo | `RecuperacaoExpiradaConsultaMesmaIdentidadeERejeitaExecutorAntigo` |
+| Timeout/indeterminado, GET antes de PUT posterior, sem loop | `TimeoutRecuperaPorGetEAusenciaPermitePutSomenteNaInvocacaoPosterior` |
+| Código cifrado, hash/rotação/link anterior | `CodigoPublicoCriptografadoELinkRotacionadoInvalidaAnterior` |
+| Adulteração e expiração do token | `CiphertextAdulteradoFalhaFechadoETokenExpiradoNaoDescriptografa`; `CobrancaPixProtectorTests` |
+| Finalização/token incorreto/rollback durante expiração | `FalhaAoFinalizarReverteAuditoriaEConservaLease`, `TokenAdulteradoNaoFinalizaAuditoriaNemLiberaLease`, `ExpiracaoDuranteFinalizacaoReverteAuditoriaEAtualizacao` |
+| Inbox durável/duplicidade, prova externa e confirmação idempotente | `InboxDuplicadaNaoConfirmaSemConsultaEConfirmacaoEhAtomicaIdempotente`, `PersistenciaInboxFalhaSemAceitarParcialmenteLote` |
+| Atomicidade financeira e falha entre cobrança/pagamento | `FalhaEntreCobrancaEPagamentoReverteConfirmacaoEInbox` |
+| Valor divergente/txid desconhecido/pagamento cancelado | `ValorDivergenteNuncaConfirmaPagamento`, `TxidDesconhecidoERecebimentoDePagamentoCanceladoGeramDivergencia` |
+| E2e de outra cobrança não paga segundo pagamento | `EvidenciaVinculadaAOutraCobrancaNaoConfirmaSegundoPagamento` |
+| Dois processadores, uma consulta/uma confirmação, zero Cashback/Pix | `DoisProcessadoresDisputamInboxComUmaConsultaEUmaConfirmacao` (sinais, liberação e await em finally) |
+| Inbox expirada e executor antigo | `InboxExpiradaPermiteNovoExecutorSemAutorizarTokenAntigo` |
+| Reemissão/histórico e concorrência | `ReemissaoSomenteDepoisDaExpiracaoComprovadaMantemHistorico`, `ReemissaoConcorrenteCriaUmaNovaIdentidadePreservandoAnterior` |
+| Cancelamento/remoção/indeterminado/tardio | `CancelamentoEsperaRemocaoConfirmadaPeloProvider`, `CancelamentoIndeterminadoNaoCancelaEConfirmacaoTardiaAposRemocaoEhDivergencia`, `RecebimentoTardioDeCobrancaExpiradaNaoConfirmaNovaCobranca` |
+| Proteção contra fluxo legado e pagamento inexistente/terminal | `CancelamentoLegadoNaoPodeContornarCobrancaPersistida`, `PagamentoInexistenteOuTerminalNaoCriaCobranca` |
+| Backoff e consultas sem escrita | `ConsultaIndeterminadaNaoConfirmaELimitaProximaSelecao`, `LeituraPublicaAuditoriaESelecaoNaoAlteramDados` |
+| Contratos provider, HTTP/scopes, erros, timeout/JSON/cancelamento | `EfiCobrancaPixVistoriaProviderTests`, regressão `EfiPixProviderTests`; `CacheOAuthIsolaEscoposDeEnvioERecebimento` |
+| Configuração e lifetimes | `RecebimentoPixDependencyInjectionTests`, `DesabilitadoNaoExigeSegredos`, `HabilitadoSemSegredosFalha` |
+| Certificado, header forjado, limites/validação e persistência antes de 200 | `RecebimentoPixWebhookTests` (23 casos, CA efêmera e store falso) |
+| HTTP público, sanitização/limite/token/headers/nenhum SQL/provider | `CobrancaPublicaPipelineTests` (5); `CobrancaHabilitadaExigeAdministradorAntesDeResolverProvider` |
+| Tick, sem sobreposição, falhas, cancelamento, deduplicação e logs | `RecebimentoPixWorkerTests` (7), composição MySQL em disputa/recuperação da inbox |
+| Link/QR local/cópia/polling/fragmento/header/aba oculta | `Pagar.test.tsx` (8); estados terminais interrompem polling |
+| Geração, rotação, histórico sob demanda, reemissão e cache limitado | `Cobrancas.test.tsx` (10), `App.test.tsx` (fluxo de pagamentos) |
+
+### Testes adaptados por remoção da confirmação manual
+
+| Teste anterior alterado/removido | Motivo | Preservação/substituto |
+| --- | --- | --- |
+| `ConfirmarAsync_QuandoPendente_DeveAtualizarPagamento` | Caso de uso manual removido por contrato | `ConfirmacaoManualNaoPertenceAoContratoPublico`, confirmação transacional MySQL e Domain `ConfirmacaoUsaHorarioProviderEEvidenciaIdempotente` |
+| `ConfirmarAsync_QuandoJaConfirmado_NaoDevePersistirNovamente` | Não há mais comando público de confirmar | `LeituraDePagamentoConfirmadoNaoDevePersistirNovamente`, `InboxDuplicadaNaoConfirmaSemConsultaEConfirmacaoEhAtomicaIdempotente` |
+| `PagamentoCriadoTemLocationETransicoes204` e duas combinações de autorização de `/confirmar` | Rota removida deve ser 404, não rota autorizável | `PagamentoCriadoTemLocationSemConfirmacaoManualECancelamentoCoordenado`, mantém Location e valida cancelamento 202 |
+| Arranjos de pagamento confirmado em Domain/Application/MySQL | Método interno exige evidência/horário explícitos | Cenários/as­serções existentes conservados; fixtures passam evidência fictícia e horário, sem API manual |
+| Ação frontend “Confirmar pagamento” | Substituída por cobrança | Teste de transição chama POST geração; página pública/worker/inbox cobrem confirmação verificável |
+
+Limites: sem devolução, notificações, produção/deploy, autenticação pública de cliente ou proxy TLS por header. Listagens administrativas integrais como padrão do MVP. Não há chamada real para verificar credenciais nem cadastro real de webhook; isso exige operação posterior autorizada. Workers permanecem false em arquivos versionados.
+
+## Recebimento Pix de vistoria — em implementação (2026-09-25)
+
+Base aprovada: `cc9c6f79053fde6b3a73bd9988d424aef0c35405`. Recebimento será separado do envio de Cashback e permanecerá desabilitado por padrão. Webhook é sinal durável, não evidência financeira: confirmação exige consulta autenticada por endToEndId e comparação de identidade, valor e horário antes da transação financeira. Nenhuma chamada externa é autorizada nesta implementação.
+
+Fontes oficiais consultadas: [cobranças imediatas](https://dev.efipay.com.br/docs/api-pix/cobrancas-imediatas/), [webhooks](https://dev.efipay.com.br/docs/api-pix/webhooks/), [gestão de Pix](https://dev.efipay.com.br/docs/api-pix/gestao-de-pix/) e [credenciais](https://dev.efipay.com.br/docs/api-pix/credenciais/). Contratos: PUT/GET/PATCH `/v2/cob/:txid`, GET `/v2/pix/:e2eId`, PUT/GET `/v2/webhook/:chave`. Não confundir a validação incremental abaixo com aprovação integral desta feature ou com os resultados históricos do PR #36.
+
+### Decisões e validação incremental — entrega ainda incompleta
+
+- Continuação de 2026-09-29: rate limit responde 429 sem corpo, `no-store`, `no-referrer` e propaga `Retry-After` quando disponível; teste captura logs e usa stores/provider estritos para provar ausência de acesso financeiro na rejeição. Novos cenários MySQL cobrem dois processadores concorrentes, retomada de inbox, GET antes de repetir PUT, reemissão concorrente, divergência tardia, ciphertext adulterado, evidência de outra cobrança e rollback por expiração dentro da transação. Inventário fonte: **214 casos em 19 classes**, ainda não executados nesta etapa.
+- Listagem administrativa resolve cliente/vistoria em um único JOIN, sem N+1 e sem ampliar o contrato público. A geração na tela de pagamentos disponibiliza o link somente no estado transitório da janela. Auditoria e divergência tardia permanecem visíveis.
+- CI mantém os três jobs. Corrigida a verificação preexistente do prefixo dos bancos: agora usa `CHAR_LENGTH('indicaa2_test_')`, pois o literal tem 13 caracteres, não 14. Não remove bancos antigos; o job apenas verifica seu servidor descartável.
+- A configuração MySQL está presente nesta sessão (somente presença verificada). A execução real ocorrerá após revisão dos testes; resultados anteriores de ausência de configuração são históricos, não aprovação de integração.
+
+- Em 2026-09-29, build incremental: 0 erros e 0 warnings. A primeira seleção dos cinco testes HTTP públicos produziu 4 aprovados e 1 falho: o middleware rejeitava excesso com HTTP 503 padrão. A configuração agora retorna explicitamente 429; o teste afetado foi recompilado e aprovado isoladamente (1/1, zero falhos/ignorados), comprovando também que a requisição excedente não consulta o serviço. Não houve teste MySQL ou chamada financeira externa.
+
+- Identidade de evento canonicaliza horário em microssegundos antes do hash e da persistência, compatível com `DATETIME(6)`. A comparação financeira não deve divergir apenas por um tick que o banco não representa.
+- Comandos relacionados a uma cobrança bloqueiam primeiro o pagamento, antes da cobrança e da inbox financeira. Provider permanece fora da transação. A cobertura transacional MySQL desta implementação ainda está pendente.
+- Leitura HTTP com `ResponseHeadersRead` recebe também timeout próprio de 30 segundos para o corpo e limite de 64 KiB. Respostas incompletas, desconhecidas ou erros HTTP não autorizam confirmação nem retry imediato.
+- Webhook distingue payload inválido de falha de persistência: erro do store não é convertido em HTTP 200 ou erro de validação. A resposta de sucesso exige commit da inbox.
+- Build incremental `dotnet build IndicaA2.slnx --no-restore`: sucesso, 0 erros e 1 warning preexistente em `UsuarioService`, 1min00,67s. Alterações posteriores de coordenação e canonicalização ainda exigem novo build.
+- Primeiro conjunto direcionado: **49 aprovados, 0 falhos e 0 ignorados** (15 Domain, 13 Application, 21 Infrastructure; maior duração por projeto 6,38s), exit 0. Filtro `FullyQualifiedName~RecebimentoPixTests|FullyQualifiedName~CobrancaPixVistoriaTests|FullyQualifiedName~CobrancaPixProtectorTests|FullyQualifiedName~EfiCobrancaPixVistoriaProviderTests`, com `--no-build --no-restore`. Provider usa exclusivamente handler HTTP falso. O teste de canonicalização adicionado após esse build não integra essa contagem.
+- Ainda faltam cobertura completa HTTP/mTLS, worker, frontend, integrações MySQL e validação final. Nenhuma migration desta feature foi executada; nenhum commit ou publicação parcial foi feito; zero Efí/OAuth/Pix real.
+
+### Continuação local — 2026-09-28 (não publicada)
+
+- Preparação inicial passou a gravar cobrança, auditoria aberta e lease no mesmo commit. Uma geração repetida devolve a identidade existente sem chamar o provider novamente. Recuperação de lease expirado consulta primeiro o txid persistido.
+- Confirmação usa o Domain com ID da evidência persistida e horário autenticado, dentro da transação da inbox/cobrança/pagamento. E2e vinculado a outra cobrança, valor/identidade/horário divergentes e recebimento tardio não autorizam confirmação. Cobrança terminal substituída não é reativada; divergência fica visível na inbox/auditoria e nos indicadores.
+- Cancelamento administrativo desabilitado retorna conflito antes de resolver certificados/chaves. A atualização legada do repositório é bloqueada quando existe cobrança, impedindo contornar a coordenação com o provider.
+- TLS do webhook deve chegar ao Kestrel diretamente ou por passthrough; nenhum header de certificado é confiado. A CA externa é verificada no startup habilitado. Não há relaxamento de validação TLS, registro automático de webhook ou chamada real.
+- Página administrativa inclui navegação, geração explícita com link, rotação, reemissão terminal e histórico sob demanda. Dashboard mantém consulta própria somente leitura, sem resolver provider. Página pública usa QR SVG local e não persiste o token.
+- Segundo conjunto direcionado: 14 Application e 15 API aprovados, sem falhos/ignorados. Os 13 Application da primeira execução estão contidos nos 14, não devem ser somados. Os 15 API cobrem mTLS, certificado não confiável/expirado, header forjado, limites e commit antes do HTTP 200. Worker: 7 aprovados em 7,99s, temporização por sinais, falha de seletor/item, cancelamento, lote e ausência de sobreposição.
+- Suíte rápida intermediária: **710 aprovados, 0 falhos e 0 ignorados** (169 Domain, 208 Application, 110 Infrastructure, 223 API), exit 0. Antecede os últimos testes do worker/autorização e não é validação final.
+- Frontend: primeira execução completa teve 66 aprovados e 1 falho (espera da montagem assíncrona do dashboard). Montagem sincronizada com `act`, sem aumento de timeout ou remoção de asserção; caso isolado aprovado (30 outros filtrados). Execução seguinte: **67/67 aprovados**, 33,18s, exit 0. Os oito casos públicos usam timers falsos. `lint` aprovado. Build inicialmente detectou quatro usos de data `null` incompatíveis com o tipo do formatador; contrato ajustado, build seguinte aprovado em 12,05s com dois avisos preexistentes Rollup/Zod. Mudanças posteriores ainda exigem revalidação final.
+- Inventário estático atual: **203 integrações em 19 classes**, incluindo 18 novas de recebimento, ainda não executadas. Não há aprovação MySQL/migration 015 nesta etapa. A entrega integral, matriz final e publicação continuam pendentes.
+
 ## Revisão do PR #36 — pagamento e identidade do snapshot (2026-09-24)
 
 - Correção localizada: criação de PagamentoVistoria recebe exclusivamente `VistoriaId`, rejeitando campos desconhecidos com HTTP 400. O valor é exatamente `Precificacao.ValorFinal` persistido, sem consultar preço ativo, recalcular ou aceitar valor do navegador. Pagamentos já persistidos e a fórmula de Cashback permanecem intactos.

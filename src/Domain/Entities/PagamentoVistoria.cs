@@ -12,6 +12,7 @@ public sealed class PagamentoVistoria : BaseEntity
     public StatusPagamentoVistoria Status { get; private set; }
 
     public DateTime? PagoEm { get; private set; }
+    public Guid? EvidenciaRecebimentoId { get; private set; }
 
     private PagamentoVistoria()
     {
@@ -73,17 +74,23 @@ public sealed class PagamentoVistoria : BaseEntity
         };
     }
 
-    public void Confirmar()
+    internal void ConfirmarRecebimento(Guid evidenciaPersistidaId, DateTime horarioPix, DateTime atualizadoEm)
     {
+        if (evidenciaPersistidaId == Guid.Empty || horarioPix.Kind != DateTimeKind.Utc || atualizadoEm.Kind != DateTimeKind.Utc || horarioPix == default || atualizadoEm < horarioPix)
+            throw new DomainException("Evidência ou horário de recebimento inválido.");
         if (Status == StatusPagamentoVistoria.Confirmado)
-            return;
+        {
+            if (EvidenciaRecebimentoId == evidenciaPersistidaId && PagoEm == horarioPix) return;
+            throw new DomainException("Evidência de recebimento conflitante.");
+        }
 
         if (Status != StatusPagamentoVistoria.Pendente)
             throw new DomainException("Apenas pagamentos pendentes podem ser confirmados.");
 
         Status = StatusPagamentoVistoria.Confirmado;
-        PagoEm = DateTime.UtcNow;
-        AtualizarDataAlteracao();
+        PagoEm = horarioPix;
+        EvidenciaRecebimentoId = evidenciaPersistidaId;
+        UpdatedAt = atualizadoEm;
     }
 
     public void Cancelar()
