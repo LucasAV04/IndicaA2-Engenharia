@@ -82,7 +82,12 @@ public sealed class GlobalExceptionHandler(
         };
 
         var path = httpContext.Request.Path;
-        if (path.StartsWithSegments("/api/precos-vistoria") || path.StartsWithSegments("/api/tipos-planta") || path.StartsWithSegments("/api/vistorias") || path.StartsWithSegments("/api/pagamentos-vistoria"))
+        if (path.StartsWithSegments("/api/cobrancas-pix-vistoria") || path.StartsWithSegments("/api/public/cobranca-pix-vistoria") || path.StartsWithSegments("/api/webhooks/efi"))
+        {
+            detail = "Não foi possível concluir a operação de recebimento Pix.";
+            logger.LogWarning("Falha segura de recebimento Pix: {Tipo}; {Status}", exception.GetType().Name, status);
+        }
+        else if (path.StartsWithSegments("/api/precos-vistoria") || path.StartsWithSegments("/api/tipos-planta") || path.StartsWithSegments("/api/vistorias") || path.StartsWithSegments("/api/pagamentos-vistoria"))
         {
             if (exception is not (PrecificacaoException or VistoriaLegadaSemPrecificacaoException))
                 detail = status < 500 ? "Verifique os campos e o estado da configuração de precificação." : "Não foi possível concluir a operação.";

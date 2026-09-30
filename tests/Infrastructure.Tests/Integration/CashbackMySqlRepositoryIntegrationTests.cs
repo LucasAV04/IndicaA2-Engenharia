@@ -164,7 +164,7 @@ public sealed class CashbackMySqlRepositoryIntegrationTests(MySqlIntegrationFixt
         indicacao.VincularVistoria(vistoria.Id);
         await indicacoes.AdicionarAsync(indicacao, CancellationToken.None);
         var pagamento = IntegrationTestData.CriarPagamentoVistoria(vistoria.Id);
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
         await pagamentos.AdicionarAsync(pagamento, CancellationToken.None);
 
         return (repository, Cashback.Criar(indicacao.Id, pagamento.Id, usuario.Id, pagamento.Valor));

@@ -12,6 +12,7 @@ export type Registro = {
 export type Sessao = { accessToken: string; expiresAtUtc: string; usuarioId: string; nome: string; email: string; tipoUsuario: number }
 export type DadosPix = { id: string; usuarioId: string; tipoChavePix: number; chaveMascarada: string; createdAt: string; updatedAt: string }
 export type Dashboard = {
+  cobrancasPixVistoria?: Record<string, number>; cobrancasDivergentes?: number; eventosDivergentes?: number;
   tiposCadastrados: number; tiposComPrecoAtivo: number; tiposSemConfiguracao: number; ultimaVersaoPreco: number | null; ultimoTipoPreco: string | null;
   totalUsuarios: number; usuariosAtivos: number; receitaConfirmada: number;
   pagamentosPendentes: number; cashbackDisponivel: number; cashbackPago: number;

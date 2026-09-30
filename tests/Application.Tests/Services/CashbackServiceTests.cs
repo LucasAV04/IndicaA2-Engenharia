@@ -248,7 +248,7 @@ public sealed class CashbackServiceTests
     private static PagamentoVistoria CriarPagamentoConfirmado(decimal valor = 500m)
     {
         var pagamento = new PagamentoVistoria(Guid.NewGuid(), valor);
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
         return pagamento;
     }
 

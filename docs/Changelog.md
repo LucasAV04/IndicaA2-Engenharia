@@ -1,5 +1,57 @@
 # Changelog
 
+## 2026-09-30 — Ausência HTTP 400 e resolução atômica de cancelamento (PR #37)
+
+- GET/PATCH cobrança reconhecem `cobranca_nao_encontrada`; GET recebimento reconhece `pix_nao_encontrado`. Decisão exclusivamente pelo campo `nome`, sem propagar mensagem; limites de corpo e 404 defensivo preservados.
+- Remoção solicitada impede novo PUT em Preparada/Indeterminada. GET do mesmo txid com ausência autenticada conclui remoção e cancelamento atomicamente; PATCH continua usado para cobrança ativa. Ambiguidade não cancela nem cria nova identidade.
+- Cobertura adicionada do adapter e seis integrações de recuperação, inbox, cancelamento idempotente e rollback. Inventário validado de 226 integrações/19 classes. Resultados abaixo são históricos.
+- Build aprovado em 43,36s, 0 erros/4 warnings preexistentes; direcionados 165/165 (incluindo preflight 6/6); suíte rápida 791/791; frontend lint/build e 93/93 testes em 24,42s aprovados (dois avisos Zod/Rollup preservados).
+- MySQL oficial executado uma vez: **226/226**, 0 falhos/ignorados, 26s de testes/32,9s do comando, exit 0; migrations 001–015 na fixture descartável. Inventário de leitura: 0 bancos antes/depois, 0 novos remanescentes, 0 antigos removidos. Nenhuma limpeza manual. Todos os comandos de validação com exit 0, `git diff --check` sem erros.
+- Migration 015, criptografia e regras financeiras preservadas; nenhuma chamada Efí/OAuth/Pix real.
+
+## 2026-09-30 — Correção dos bloqueios da revisão do PR #37
+
+- Restaurado cancelamento sem cobrança quando recebimento está desabilitado, preservada proteção persistente para histórico Pix.
+- Polling público retoma após falhas transitórias com backoff e Retry-After, sem apagar dados anteriores ou expor mensagens sensíveis.
+- Respostas do provider classificadas; renovação OAuth limitada a uma vez após 401; bloqueios operacionais não são consultados a cada tick. Rejeição documentada da criação permite falha definitiva e reemissão explícita.
+- Consulta e2e tipada; ausência temporária não vira divergência. Indicadores de cobranças e eventos divergentes separados.
+- Validação: build aprovado (4 warnings preexistentes na primeira execução; recompilação final incremental 0 warnings/0 erros). Direcionados 197/198 inicialmente, único arranjo OAuth corrigido e aprovado isoladamente; preflight 6/6; suíte rápida final **760/760**, zero falhas/ignorados.
+- Frontend: ci/lint/build aprovados, **93/93 testes em 20,20s**; dois avisos preexistentes Zod/Rollup. MySQL oficial **220/220 em 19 classes**, zero falhas/ignorados, 29s de testes/37,1s de comando, exit 0. Seis novas integrações incluídas no total. Migrations 001–015 validadas pela fixture; 0 bancos descartáveis antes/depois, 0 remanescentes novos e 0 bancos antigos removidos.
+- Documentação operacional e matriz atualizadas. `git diff --check` sem erros. Sem alteração de migrations, leases, regra dos 20%, mTLS ou criptografia; zero Efí/OAuth/Pix real/dados de produção. Resultados anteriores abaixo são históricos, superados pelos resultados desta correção.
+
+## 2026-09-29 — Recebimento Pix de vistoria validado integralmente
+
+- Migration 015, cobrança idempotente com lease de cinco minutos, recuperação GET antes de PUT com mesmo txid, cancelamento/remoção coordenados e reemissão terminal. Inbox mTLS durável e consulta autenticada de e2e antes da confirmação atômica do pagamento; nenhuma confirmação manual. Criptografia independente AES-GCM e link público de hash/validade/rotação.
+- Painel com cobrança, cliente/vistoria, link, auditoria e divergência; página pública mínima com QR local (`qrcode.react` 4.2.0), polling sem sobreposição e token removido do fragmento. Limite retorna 429/no-store/Retry-After, testado sem SQL/provider ou vazamento em logs. Worker separado, sequencial e desabilitado por padrão.
+- Restore aprovado após permissão de leitura do NuGet.Config. Um erro incremental de compilação por Moq indevido foi corrigido com provider falso próprio; build final **0 erros/0 warnings**. Um warning preexistente de UsuarioService apareceu no build anterior, preservado. **258 direcionados**, incluindo seis preflight, e **744 rápidos**, todos aprovados, zero falhos/ignorados.
+- **214/214 MySQL em 19 classes**, 29 novos casos, zero falhos/ignorados; 25s de testes/32s do comando, exit 0, execução oficial única. Migrations **001–015** aplicadas no banco descartável. Cinco bancos antigos preservados; zero novos restantes e zero antigos removidos, verificados por leitura. Nenhuma remoção manual.
+- Frontend: npm ci/lint/build aprovados, **77/77 testes**, 21,18s, TZ America/Sao_Paulo. Dois avisos preexistentes Zod/Rollup e aviso informativo npm/esbuild. CI mantém backend/frontend/MySQL; corrigida contagem do prefixo no check de descarte. Resultados de CI serão confirmados após publicação draft.
+- Matriz de cobertura, contratos, configuração e substituição justificada de testes manuais documentados em Implementacoes.md. Zero Efí/OAuth/Pix real, dados financeiros de produção, alteração dos 20% ou migration histórica. Sem Ready for review/merge.
+
+Os registros abaixo são intermediários, superados pela validação final acima; contagens e pendências antigas permanecem apenas como histórico da implementação.
+
+## 2026-09-29 — Validação incremental da consulta pública
+
+- Cobertura ampliada de recuperação, concorrência e rollback; inventário atual de 214 integrações em 19 classes. MySQL agora configurado, mas execução desta ampliação ainda pendente. Listagem administrativa com relacionamento cliente/vistoria e link após geração completadas. CI corrige comprimento do prefixo na verificação de descarte, sem remover bancos históricos.
+
+- Build incremental aprovado, sem erros ou warnings. Primeira execução dos cinco testes HTTP públicos: quatro aprovados e um falho; o limite de requisições rejeitava com o padrão HTTP 503. Configurado explicitamente HTTP 429, preservando o limite e a ausência de consulta adicional ao serviço. Teste afetado recompilado e aprovado isoladamente: 1/1, zero falhos/ignorados.
+- Nenhuma execução MySQL, migration ou chamada Efí/OAuth/Pix real nesta etapa. Entrega completa ainda em implementação, sem publicação parcial.
+
+## 2026-09-28 — Continuação local de recebimento (ainda não publicada)
+
+- Preparação atômica de cobrança/auditoria/lease, coordenação de cancelamento, canonicalização temporal, confirmação verificada e divergência tardia reforçadas. Nenhuma mudança na fórmula de Cashback ou chamada real.
+- Cobertura mTLS/webhook (15), worker determinístico (7) e página pública (8) aprovada nos direcionados. Suíte rápida intermediária com 710 aprovados; alterações posteriores ainda exigem validação final.
+- Frontend completo: execução inicial 66/67, corrigida a sincronização do teste de dashboard; execução seguinte 67/67. Build corrigido para aceitar datas opcionais nulas; lint e build aprovados. Detalhes/limites e resultados intermediários preservados em Implementacoes.md.
+- Inventário MySQL ampliado para 203 casos em 19 classes, pendentes de execução; migration 015 ainda não declarada validada. README, exemplos de configuração e HTTP atualizados para remover confirmação manual e explicar TLS/token público.
+- Sem commit, push ou PR parcial; zero Efí/OAuth/Pix real e dados de produção.
+
+## 2026-09-25 — Recebimento Pix de vistoria (em implementação)
+
+- Iniciada a branch a partir do squash aprovado do PR #36. Escopo separado de envio de Cashback: cobrança idempotente, inbox mTLS, verificação financeira, link público e worker desabilitado por padrão.
+- Contratos oficiais consultados; zero chamada Efí/OAuth/Pix real ou migration executada. Entrega ainda incompleta e não publicada.
+- Validação incremental: build com 0 erros/1 warning preexistente e 49 testes direcionados aprovados, zero falhos/ignorados. Não representa a validação final; testes MySQL, HTTP/mTLS, worker e frontend ainda precisam ser completados. Detalhes e comandos em Implementacoes.md.
+- Horário de evento alinhado à precisão MySQL, ordem de locks iniciada pelo pagamento, corpo HTTP limitado e falha de persistência do webhook mantida explícita. Essas alterações posteriores ao build continuam pendentes de validação.
+
 ## 2026-09-24 — Revisão financeira do PR #36 validada localmente
 
 - Pagamento de vistoria deriva somente do snapshot histórico; DTO aceita apenas VistoriaId e rejeita valor manual. Legado sem snapshot falha fechado com resposta 409, sem regularização ou recálculo implícito.

@@ -13,6 +13,11 @@ export default function DashboardPage() {
 }
 function Resumo({ data: d }: { data: Dashboard }) {
   const cards: [string, string | number][] = [
+    ['Cobranças Pix ativas', d.cobrancasPixVistoria?.Ativa ?? 0],
+    ['Recebimentos em conferência', d.cobrancasPixVistoria?.ConfirmacaoPendente ?? 0],
+    ['Cobranças Pix expiradas', d.cobrancasPixVistoria?.Expirada ?? 0],
+    ['Cobranças divergentes', d.cobrancasDivergentes ?? 0],
+    ['Eventos divergentes', d.eventosDivergentes ?? 0],
     ['Tipos cadastrados', d.tiposCadastrados ?? 0], ['Tipos com preço ativo', d.tiposComPrecoAtivo ?? 0], ['Tipos sem configuração', d.tiposSemConfiguracao ?? 0],
     ['Usuários cadastrados', d.totalUsuarios], ['Usuários ativos', d.usuariosAtivos], ['Indicações pendentes', d.indicacoes.Pendente || 0],
     ['Vistorias agendadas', d.vistorias.Agendada || 0], ['Receita confirmada', money(d.receitaConfirmada)],

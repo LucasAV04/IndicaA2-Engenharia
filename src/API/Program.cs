@@ -14,6 +14,16 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (builder.Configuration.GetValue<bool>("RecebimentoPix:Habilitado"))
+{
+    var webhookCa = builder.Configuration["RecebimentoPix:WebhookCaPath"] ?? "";
+    builder.WebHost.ConfigureKestrel(kestrel => kestrel.ConfigureHttpsDefaults(https =>
+    {
+        https.ClientCertificateMode = Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.AllowCertificate;
+        https.ClientCertificateValidation = (certificate, _, _) => RecebimentoPixMtlsMiddleware.Confiavel(certificate, webhookCa);
+    }));
+}
+
 // O handler abaixo registra falhas de forma controlada. O middleware não deve
 // registrar antes dele a exceção bruta, que pode conter uma chave Pix inválida.
 builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware", LogLevel.None);
@@ -72,6 +82,26 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddRecebimentoPix(builder.Configuration);
+builder.Services.AddHostedService<RecebimentoPixVistoriaWorker>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) =>
+    {
+        context.HttpContext.Response.Headers.CacheControl = "no-store";
+        context.HttpContext.Response.Headers["Referrer-Policy"] = "no-referrer";
+        if (context.Lease.TryGetMetadata(System.Threading.RateLimiting.MetadataName.RetryAfter, out var retryAfter))
+            context.HttpContext.Response.Headers.RetryAfter =
+                Math.Ceiling(retryAfter.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return ValueTask.CompletedTask;
+    };
+    options.AddPolicy("payment-link", context =>
+    System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 var processamentoWorkerOptions = builder.Configuration
     .GetSection(PagamentoPixProcessamentoWorkerOptions.SectionName)
     .Get<PagamentoPixProcessamentoWorkerOptions>() ?? new PagamentoPixProcessamentoWorkerOptions();
@@ -102,6 +132,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
+app.UseMiddleware<RecebimentoPixMtlsMiddleware>();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

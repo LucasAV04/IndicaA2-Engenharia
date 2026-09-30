@@ -35,13 +35,22 @@ beforeEach(() => {
 })
 it('dashboard sem preços retorna zero sem consultar módulos independentes', async () => {
   errors['/api/precos-vistoria'] = 500
-  mount('/')
+  await act(async () => { mount('/') })
   const heading = await screen.findByRole('heading', { name: 'Tipos sem configuração' })
   expect(heading.parentElement).toHaveTextContent('0')
   expect(screen.getByText(/Nenhum preço publicado/)).toBeInTheDocument()
   expect(requests.map(r => r.path)).toEqual(['/api/admin/dashboard'])
 })
 afterEach(() => vi.unstubAllGlobals())
+it.each([[0, 0], [1, 0], [0, 1], [1, 1]])('dashboard separa %s cobranças de %s eventos divergentes', async (cobrancas, eventos) => {
+  data['/api/admin/dashboard'] = { ...dashboard, cobrancasDivergentes: cobrancas, eventosDivergentes: eventos }
+  mount('/')
+  const heading = await screen.findByRole('heading', { name: 'Cobranças divergentes' })
+  expect(heading.parentElement?.querySelector('strong')).toHaveTextContent(String(cobrancas))
+  expect(screen.getByRole('heading', { name: 'Eventos divergentes' }).parentElement?.querySelector('strong')).toHaveTextContent(String(eventos))
+  expect(screen.queryByRole('heading', { name: 'Recebimentos divergentes' })).not.toBeInTheDocument()
+  expect(requests.map(r => r.path)).toEqual(['/api/admin/dashboard'])
+})
 function mount(path = '/', authenticated = true) {
   if (authenticated) saveSession(session)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -221,13 +230,13 @@ describe('Fluxos administrativos via HTTP', () => {
   })
   it.each([
     ['/vistorias', { ...base, usuarioId: 'user-1', pacote: 0, areaM2: 50, tipoPlanta: 'Apartamento' }, 'Realizar', '/api/vistorias/registro-1/realizar'],
-    ['/pagamentos-vistoria', { ...base, valor: 120.50 }, 'Confirmar pagamento', '/api/pagamentos-vistoria/registro-1/confirmar'],
+    ['/pagamentos-vistoria', { ...base, valor: 120.50 }, 'Gerar cobrança Pix', '/api/cobrancas-pix-vistoria/por-pagamento/registro-1'],
     ['/cashbacks', { ...base, valor: 24.10, valorTotalPago: 120.50, percentual: 0.2, usuarioIndicadorId: 'user-1' }, 'Aprovar', '/api/cashbacks/registro-1/aprovar'],
   ])('%s executa transição permitida', async (path, row, button, target) => {
     data['/api' + path] = [row]; mount(path)
     await userEvent.click(await screen.findByRole('button', { name: button }))
     await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-    await waitFor(() => expect(requests.some(r => r.path === target && r.method === 'PATCH')).toBe(true))
+    await waitFor(() => expect(requests.some(r => r.path === target && r.method === (button === 'Gerar cobrança Pix' ? 'POST' : 'PATCH'))).toBe(true))
   })
   it('cria pagamento Pix por cashback disponível, sem chave ou envio', async () => {
     data['/api/cashbacks'] = [{ ...base, id: 'cashback-1', status: 1, valor: 20, usuarioIndicadorId: 'user-1' }]

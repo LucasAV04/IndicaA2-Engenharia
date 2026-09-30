@@ -153,28 +153,21 @@ public sealed class PagamentoVistoriaServiceTests
     }
 
     [Fact]
-    public async Task ConfirmarAsync_QuandoPendente_DeveAtualizarPagamento()
+    public void ConfirmacaoManualNaoPertenceAoContratoPublico()
     {
-        var pagamento = CriarPagamento();
-        var pagamentoRepository = CriarPagamentoRepository(pagamento);
-
-        await CriarService(pagamentoRepository, new Mock<IVistoriaRepository>()).ConfirmarAsync(pagamento.Id);
-
-        Assert.Equal(StatusPagamentoVistoria.Confirmado, pagamento.Status);
-        Assert.NotNull(pagamento.PagoEm);
-        pagamentoRepository.Verify(
-            repository => repository.AtualizarAsync(pagamento, It.IsAny<CancellationToken>()),
-            Times.Once);
+        Assert.Null(typeof(Application.Interfaces.Services.IPagamentoVistoriaService).GetMethod("ConfirmarAsync"));
+        Assert.Null(typeof(PagamentoVistoria).GetMethod("Confirmar"));
     }
 
     [Fact]
-    public async Task ConfirmarAsync_QuandoJaConfirmado_NaoDevePersistirNovamente()
+    public async Task LeituraDePagamentoConfirmadoNaoDevePersistirNovamente()
     {
         var pagamento = CriarPagamento();
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
         var pagamentoRepository = CriarPagamentoRepository(pagamento);
 
-        await CriarService(pagamentoRepository, new Mock<IVistoriaRepository>()).ConfirmarAsync(pagamento.Id);
+        var dto = await CriarService(pagamentoRepository, new Mock<IVistoriaRepository>()).ObterPorIdAsync(pagamento.Id);
+        Assert.Equal(pagamento.PagoEm, dto.PagoEm);
 
         pagamentoRepository.Verify(
             repository => repository.AtualizarAsync(It.IsAny<PagamentoVistoria>(), It.IsAny<CancellationToken>()),

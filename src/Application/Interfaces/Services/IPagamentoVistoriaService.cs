@@ -19,10 +19,6 @@ public interface IPagamentoVistoriaService
     Task<IReadOnlyCollection<PagamentoVistoriaResponseDto>> ObterTodosAsync(
         CancellationToken cancellationToken = default);
 
-    Task ConfirmarAsync(
-        Guid id,
-        CancellationToken cancellationToken = default);
-
     Task CancelarAsync(
         Guid id,
         CancellationToken cancellationToken = default);

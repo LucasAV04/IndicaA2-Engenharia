@@ -299,10 +299,34 @@ Authorization: Bearer {{AccessToken}}
 GET {{API_HostAddress}}/api/pagamentos-vistoria/por-vistoria/33333333-3333-3333-3333-333333333333
 Authorization: Bearer {{AccessToken}}
 
-### Confirma registro administrativo, não recebe Pix nem gera Cashback
-PATCH {{API_HostAddress}}/api/pagamentos-vistoria/66666666-6666-6666-6666-666666666666/confirmar
+### Gerar cobrança: requer módulo explicitamente habilitado; não executar contra provider real em testes
+POST {{API_HostAddress}}/api/cobrancas-pix-vistoria/por-pagamento/66666666-6666-6666-6666-666666666666
 Authorization: Bearer {{AccessToken}}
 
-###
+### Solicitar cancelamento: somente após remoção comprovada a transição financeira é concluída
 PATCH {{API_HostAddress}}/api/pagamentos-vistoria/66666666-6666-6666-6666-666666666666/cancelar
+Authorization: Bearer {{AccessToken}}
+
+### Cobranças administrativas; confirmação manual foi removida
+GET {{API_HostAddress}}/api/cobrancas-pix-vistoria
+Authorization: Bearer {{AccessToken}}
+
+### Auditoria mínima, sem payload ou segredo
+GET {{API_HostAddress}}/api/cobrancas-pix-vistoria/77777777-7777-7777-7777-777777777777/auditoria
+Authorization: Bearer {{AccessToken}}
+
+### Gera novo link e invalida o anterior; não compartilhar o token em logs
+POST {{API_HostAddress}}/api/cobrancas-pix-vistoria/77777777-7777-7777-7777-777777777777/link
+Authorization: Bearer {{AccessToken}}
+
+### Consulta pública: substitua o marcador somente privadamente; nunca use query string
+GET {{API_HostAddress}}/api/public/cobranca-pix-vistoria
+Authorization: PaymentLink INSIRA_TOKEN_PRIVADAMENTE
+
+### Cadastro explícito do webhook pela configuração externa; exige autorização separada para uso real
+PUT {{API_HostAddress}}/api/cobrancas-pix-vistoria/webhook
+Authorization: Bearer {{AccessToken}}
+
+### Estado da configuração externa; nenhuma URL ou chave arbitrária recebida do navegador
+GET {{API_HostAddress}}/api/cobrancas-pix-vistoria/webhook
 Authorization: Bearer {{AccessToken}}

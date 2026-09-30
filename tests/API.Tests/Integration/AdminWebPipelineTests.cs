@@ -29,6 +29,69 @@ namespace API.Tests.Integration;
 
 public sealed class AdminWebPipelineTests(ApiTestWebApplicationFactory factory) : IClassFixture<ApiTestWebApplicationFactory>
 {
+    [Theory]
+    [InlineData("GET", "")]
+    [InlineData("GET", "Usuario")]
+    [InlineData("POST", "")]
+    [InlineData("POST", "Usuario")]
+    public async Task CobrancaHabilitadaExigeAdministradorAntesDeResolverProvider(string method,string role)
+    {
+        using var app=factory.WithWebHostBuilder(b=>b.ConfigureTestServices(s=>
+        {
+            s.AddSingleton(new Application.Recebimentos.RecebimentoPixOptions { Habilitado=true });
+            s.AddScoped<Application.Recebimentos.ICobrancaPixVistoriaProvider>(_=>throw new InvalidOperationException("provider-proibido"));
+        }));
+        using var client=app.CreateHttpsClient();
+        if(role!="") client.DefaultRequestHeaders.Authorization=new("Bearer",Token(role));
+        var route=method=="GET" ? "/api/cobrancas-pix-vistoria" : $"/api/cobrancas-pix-vistoria/por-pagamento/{Guid.NewGuid()}";
+        using var response=await client.SendAsync(new HttpRequestMessage(new HttpMethod(method),route));
+        Assert.Equal(role=="" ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden,response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CancelamentoDesabilitadoNaoResolveProviderOuSegredos()
+    {
+        var service=new Mock<IPagamentoVistoriaService>(MockBehavior.Strict);
+        var id=Guid.NewGuid();
+        service.Setup(x=>x.CancelarAsync(id,It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        using var app=factory.WithWebHostBuilder(b=>b.ConfigureTestServices(s=>
+        {
+            s.AddScoped(_=>service.Object);
+            s.AddScoped<Application.Recebimentos.ICobrancaPixVistoriaService>(_=>throw new InvalidOperationException("servico-proibido"));
+            s.AddScoped<Application.Recebimentos.ICobrancaPixVistoriaProvider>(_=>throw new InvalidOperationException("provider-proibido"));
+            s.AddScoped<Infrastructure.Security.CobrancaPixProtector>(_=>throw new InvalidOperationException("protetor-proibido"));
+        }));
+        using var client=app.CreateHttpsClient();
+        client.DefaultRequestHeaders.Authorization=new("Bearer",Token("Administrador"));
+        using var response=await client.PatchAsync($"/api/pagamentos-vistoria/{id}/cancelar",null);
+        Assert.Equal(HttpStatusCode.NoContent,response.StatusCode);
+        service.Verify(x=>x.CancelarAsync(id,It.IsAny<CancellationToken>()),Times.Once);
+        Assert.DoesNotContain("servico-proibido",await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData(false,"Pagamento confirmado não pode ser cancelado.")]
+    [InlineData(false,"Pagamento com cobrança requer coordenação Pix.")]
+    [InlineData(true,"Pagamento confirmado não pode ser cancelado.")]
+    public async Task CancelamentoRejeitadoPermaneceErroDeDominioSemBypass(bool habilitado,string motivo)
+    {
+        var legado=new Mock<IPagamentoVistoriaService>(MockBehavior.Strict);
+        var coordenado=new Mock<Application.Recebimentos.ICobrancaPixVistoriaService>(MockBehavior.Strict);
+        var id=Guid.NewGuid();
+        legado.Setup(x=>x.CancelarAsync(id,It.IsAny<CancellationToken>())).ThrowsAsync(new DomainException(motivo));
+        coordenado.Setup(x=>x.CancelarPagamentoAsync(id,It.IsAny<CancellationToken>())).ThrowsAsync(new DomainException(motivo));
+        using var app=factory.WithWebHostBuilder(b=>b.ConfigureTestServices(s=>
+        {
+            s.AddScoped(_=>legado.Object); s.AddScoped(_=>coordenado.Object);
+            s.AddSingleton(new Application.Recebimentos.RecebimentoPixOptions { Habilitado=habilitado });
+        }));
+        using var client=app.CreateHttpsClient(); client.DefaultRequestHeaders.Authorization=new("Bearer",Token("Administrador"));
+        using var resposta=await client.PatchAsync($"/api/pagamentos-vistoria/{id}/cancelar",null);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity,resposta.StatusCode);
+        legado.Verify(x=>x.CancelarAsync(id,It.IsAny<CancellationToken>()),habilitado ? Times.Never() : Times.Once());
+        coordenado.Verify(x=>x.CancelarPagamentoAsync(id,It.IsAny<CancellationToken>()),habilitado ? Times.Once() : Times.Never());
+    }
+
     public static IEnumerable<object[]> Rotas()
     {
         var id = Guid.NewGuid();
@@ -36,7 +99,7 @@ public sealed class AdminWebPipelineTests(ApiTestWebApplicationFactory factory) 
             ("GET", "/api/usuarios"), ("POST", "/api/usuarios"), ("GET", $"/api/usuarios/{id}"), ("PUT", $"/api/usuarios/{id}"),
             ("GET", $"/api/usuarios/{id}/dados-pix"), ("PUT", $"/api/usuarios/{id}/dados-pix"), ("DELETE", $"/api/usuarios/{id}/dados-pix"),
             ("GET", "/api/pagamentos-vistoria"), ("POST", "/api/pagamentos-vistoria"), ("GET", $"/api/pagamentos-vistoria/{id}"),
-            ("GET", $"/api/pagamentos-vistoria/por-vistoria/{id}"), ("PATCH", $"/api/pagamentos-vistoria/{id}/confirmar"),
+            ("GET", $"/api/pagamentos-vistoria/por-vistoria/{id}"),
             ("PATCH", $"/api/pagamentos-vistoria/{id}/cancelar"), ("GET", "/api/pagamentos-pix"), ("GET", "/api/admin/dashboard")
         }) foreach (var role in new[] { "", "Usuario" }) yield return [method, route, role];
     }
@@ -132,20 +195,22 @@ public sealed class AdminWebPipelineTests(ApiTestWebApplicationFactory factory) 
     }
 
     [Fact]
-    public async Task PagamentoCriadoTemLocationETransicoes204()
+    public async Task PagamentoCriadoTemLocationSemConfirmacaoManualECancelamentoCoordenado()
     {
         var service = new Mock<IPagamentoVistoriaService>();
         var id = Guid.NewGuid();
         service.Setup(x => x.CriarAsync(It.IsAny<CreatePagamentoVistoriaDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PagamentoVistoriaResponseDto { Id = id });
-        using var app = factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddScoped(_ => service.Object)));
+        var recebimento = new Mock<Application.Recebimentos.ICobrancaPixVistoriaService>();
+        using var app = factory.WithWebHostBuilder(b => b.ConfigureTestServices(s => { s.AddScoped(_ => service.Object); s.AddScoped(_ => recebimento.Object); s.AddSingleton(new Application.Recebimentos.RecebimentoPixOptions { Habilitado=true }); }));
         using var client = app.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", Token("Administrador"));
         var response = await client.PostAsJsonAsync("/api/pagamentos-vistoria", new CreatePagamentoVistoriaDto());
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.EndsWith($"/api/pagamentos-vistoria/{id}", response.Headers.Location!.ToString());
-        foreach (var action in new[] { "confirmar", "cancelar" })
-            Assert.Equal(HttpStatusCode.NoContent, (await client.PatchAsync($"/api/pagamentos-vistoria/{id}/{action}", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.PatchAsync($"/api/pagamentos-vistoria/{id}/confirmar", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, (await client.PatchAsync($"/api/pagamentos-vistoria/{id}/cancelar", null)).StatusCode);
+        recebimento.Verify(s => s.CancelarPagamentoAsync(id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -172,20 +237,23 @@ public sealed class AdminWebPipelineTests(ApiTestWebApplicationFactory factory) 
         var users = new Mock<IUsuarioService>();
         var pix = new Mock<IDadosPixService>();
         var payments = new Mock<IPagamentoVistoriaService>();
+        var recebimento = new Mock<Application.Recebimentos.ICobrancaPixVistoriaService>();
         var dash = new Mock<IAdminDashboardStore>();
         await new UsuariosController(users.Object).ObterTodosAsync(token);
         await new UsuariosController(users.Object).AtualizarAsync(id, new UpdateUsuarioDto { Id = id }, token);
         await new DadosPixController(pix.Object).ObterAsync(id, token);
         await new DadosPixController(pix.Object).RemoverAsync(id, token);
-        await new PagamentosVistoriaController(payments.Object).ConfirmarAsync(id, token);
-        await new PagamentosVistoriaController(payments.Object).CancelarAsync(id, token);
+        await new PagamentosVistoriaController(payments.Object).ObterPorIdAsync(id, token);
+        using var recebimentoServices = new ServiceCollection().AddSingleton(recebimento.Object)
+            .AddSingleton(new Application.Recebimentos.RecebimentoPixOptions { Habilitado=true }).BuildServiceProvider();
+        await new PagamentosVistoriaController(payments.Object).CancelarAsync(id, recebimentoServices, token);
         await new AdminDashboardController(dash.Object).ObterAsync(token);
         users.Verify(x => x.ObterTodosAsync(token), Times.Once);
         users.Verify(x => x.AtualizarAsync(It.IsAny<UpdateUsuarioDto>(), token), Times.Once);
         pix.Verify(x => x.ObterPorUsuarioIdAsync(id, token), Times.Once);
         pix.Verify(x => x.RemoverAsync(id, token), Times.Once);
-        payments.Verify(x => x.ConfirmarAsync(id, token), Times.Once);
-        payments.Verify(x => x.CancelarAsync(id, token), Times.Once);
+        payments.Verify(x => x.ObterPorIdAsync(id, token), Times.Once);
+        recebimento.Verify(x => x.CancelarPagamentoAsync(id, token), Times.Once);
         dash.Verify(x => x.ObterAsync(token), Times.Once);
     }
 

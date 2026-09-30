@@ -53,7 +53,7 @@ public sealed class PagamentoVistoriaTests
         var updatedAtAnterior = pagamento.UpdatedAt;
         var antesDaConfirmacao = DateTime.UtcNow;
 
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
 
         Assert.Equal(StatusPagamentoVistoria.Confirmado, pagamento.Status);
         Assert.NotNull(pagamento.PagoEm);
@@ -66,11 +66,11 @@ public sealed class PagamentoVistoriaTests
     public void Confirmar_QuandoJaConfirmado_DeveSerIdempotente()
     {
         var pagamento = CriarPagamento();
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
         var pagoEm = pagamento.PagoEm;
         var updatedAt = pagamento.UpdatedAt;
 
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
 
         Assert.Equal(StatusPagamentoVistoria.Confirmado, pagamento.Status);
         Assert.Equal(pagoEm, pagamento.PagoEm);
@@ -107,12 +107,12 @@ public sealed class PagamentoVistoriaTests
     public void TransicoesFinais_DevemImpedirMudancaParaOutroEstado()
     {
         var confirmado = CriarPagamento();
-        confirmado.Confirmar();
+        confirmado.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), confirmado.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
         Assert.Throws<DomainException>(() => confirmado.Cancelar());
 
         var cancelado = CriarPagamento();
         cancelado.Cancelar();
-        Assert.Throws<DomainException>(() => cancelado.Confirmar());
+        Assert.Throws<DomainException>(() => cancelado.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), cancelado.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow));
     }
 
     [Fact]
@@ -120,7 +120,7 @@ public sealed class PagamentoVistoriaTests
     {
         var pagamento = new PagamentoVistoria(Guid.NewGuid(), 500m);
 
-        pagamento.Confirmar();
+        pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);
 
         Assert.Equal(500m, pagamento.Valor);
         Assert.Equal(StatusPagamentoVistoria.Confirmado, pagamento.Status);
