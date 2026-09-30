@@ -207,13 +207,19 @@ public sealed class CobrancaPixVistoriaMySqlIntegrationTests(MySqlIntegrationFix
     [MySqlIntegrationFact]
     public async Task CancelamentoLegadoNaoPodeContornarCobrancaPersistida()
     {
-        var pagamento=await Pagamento(); using var protector=Protector();
+        var pagamento=await Pagamento(); using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
         var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
         await store.PrepararAsync(pagamento.Id,3600,default);
         pagamento.Cancelar();
         var repository=new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory);
-        await Assert.ThrowsAsync<Domain.Exceptions.DomainException>(()=>repository.AtualizarAsync(pagamento,default));
-        Assert.Equal(StatusPagamentoVistoria.Pendente,(await repository.ObterPorIdAsync(pagamento.Id,default))!.Status);
+        foreach(var status in Enum.GetValues<StatusCobrancaPixVistoria>())
+        {
+            await dados.ExecutarAsync("UPDATE cobrancas_pix_vistoria SET status=@status",("@status",(int)status));
+            var antes=await dados.SnapshotAsync("SELECT * FROM cobrancas_pix_vistoria");
+            await Assert.ThrowsAsync<Domain.Exceptions.DomainException>(()=>repository.AtualizarAsync(pagamento,default));
+            Assert.Equal(StatusPagamentoVistoria.Pendente,(await repository.ObterPorIdAsync(pagamento.Id,default))!.Status);
+            Assert.Equal(antes,await dados.SnapshotAsync("SELECT * FROM cobrancas_pix_vistoria"));
+        }
     }
 
     [MySqlIntegrationFact]
@@ -308,7 +314,7 @@ public sealed class CobrancaPixVistoriaMySqlIntegrationTests(MySqlIntegrationFix
         await inbox.FinalizarAsync((await inbox.AdquirirAsync(id,default))!,evento,default);
         Assert.Equal(StatusPagamentoVistoria.Pendente,(await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(pagamento.Id,default))!.Status);
         Assert.Equal(StatusCobrancaPixVistoria.CriacaoEmProcessamento,(await store.ListarAsync(default)).Single(x=>x.Id==nova.Id).Status);
-        Assert.True((await store.IndicadoresAsync(default)).Divergencias>0);
+        Assert.True((await store.IndicadoresAsync(default)).EventosDivergentes>0);
     }
 
     [MySqlIntegrationFact]
@@ -441,7 +447,9 @@ public sealed class CobrancaPixVistoriaMySqlIntegrationTests(MySqlIntegrationFix
         id=Assert.Single(await store.EventosAsync(20,default));
         await inbox.FinalizarAsync((await inbox.AdquirirAsync(id,default))!,evento,default);
         Assert.Equal(StatusPagamentoVistoria.Cancelado,(await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(pagamento.Id,default))!.Status);
-        Assert.Equal(3,(await store.IndicadoresAsync(default)).Divergencias); // Duas inbox divergentes e uma cobrança sinalizada.
+        var indicadores=await store.IndicadoresAsync(default);
+        Assert.Equal(1,indicadores.CobrancasDivergentes);
+        Assert.Equal(2,indicadores.EventosDivergentes);
     }
 
     [MySqlIntegrationFact]
@@ -550,11 +558,136 @@ public sealed class CobrancaPixVistoriaMySqlIntegrationTests(MySqlIntegrationFix
         Assert.Equal(StatusPagamentoVistoria.Cancelado,(await repository.ObterPorIdAsync(pagamento.Id,default))!.Status);
         Assert.True(Assert.Single(await store.ListarAsync(default)).Divergencia);
     }
+    [MySqlIntegrationFact]
+    public async Task CancelamentoSemCobrancaPreservaFluxoLegadoECoordenadoIdempotentes()
+    {
+        var pagamento=await Pagamento();
+        var repository=new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory);
+        var service=new Application.Services.PagamentoVistoriaService(repository,new VistoriaMySqlRepository(fixture.ConnectionFactory));
+        await service.CancelarAsync(pagamento.Id,default);
+        await service.CancelarAsync(pagamento.Id,default);
+        Assert.Equal(StatusPagamentoVistoria.Cancelado,(await repository.ObterPorIdAsync(pagamento.Id,default))!.Status);
+        pagamento=await Pagamento(); using var protector=Protector();
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        await store.SolicitarCancelamentoAsync(pagamento.Id,default);
+        await store.SolicitarCancelamentoAsync(pagamento.Id,default);
+        Assert.Equal(StatusPagamentoVistoria.Cancelado,(await repository.ObterPorIdAsync(pagamento.Id,default))!.Status);
+        Assert.Empty(await store.ListarAsync(default));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task PagamentoConfirmadoRejeitaAmbosCancelamentosSemMutacao()
+    {
+        using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var (pagamento,_,evento)=await Ativar(store);
+        var inbox=new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory);
+        await inbox.PersistirAsync([evento],default);
+        var id=Assert.Single(await store.EventosAsync(20,default));
+        await inbox.FinalizarAsync((await inbox.AdquirirAsync(id,default))!,evento,default);
+        var antes=await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria");
+        var service=new Application.Services.PagamentoVistoriaService(new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory),new VistoriaMySqlRepository(fixture.ConnectionFactory));
+        await Assert.ThrowsAsync<Domain.Exceptions.DomainException>(()=>service.CancelarAsync(pagamento.Id,default));
+        await Assert.ThrowsAsync<Domain.Exceptions.DomainException>(()=>store.SolicitarCancelamentoAsync(pagamento.Id,default));
+        Assert.Equal(antes,await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria"));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task RejeicaoDefinitivaFinalizaAuditoriaSemPagamentoEPermiteReemissaoExplicita()
+    {
+        var pagamento=await Pagamento(); using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var p=(await store.PrepararAsync(pagamento.Id,3600,default)).Preparacao!;
+        var antes=await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria");
+        await store.FinalizarAsync(p,new(SituacaoCobrancaProvider.FalhaDefinitiva,"SEGREDO_FICTICIO"),default);
+        Assert.Equal(StatusCobrancaPixVistoria.FalhaDefinitiva,Assert.Single(await store.ListarAsync(default)).Status);
+        Assert.Equal("criacao-rejeitada",Assert.Single(await store.AuditoriaAsync(p.Id,default)).Codigo);
+        Assert.NotNull(Assert.Single(await store.AuditoriaAsync(p.Id,default)).FinishedAt);
+        Assert.Null(await store.AdquirirAsync(p.Id,default)); Assert.Empty(await store.CobrançasAsync(20,default));
+        Assert.Equal(antes,await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria"));
+        Assert.DoesNotContain("SEGREDO",await dados.SnapshotAsync("SELECT * FROM operacoes_cobranca_pix"));
+        var nova=(await store.PrepararAsync(pagamento.Id,3600,default)).Preparacao!;
+        Assert.NotEqual(p.Id,nova.Id); Assert.NotEqual(p.Txid,nova.Txid);
+        Assert.Equal(2,(await store.ListarAsync(default)).Count);
+        // Mesmo uma cobrança terminal impede cancelamento pelo caminho legado.
+        var service=new Application.Services.PagamentoVistoriaService(new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory),new VistoriaMySqlRepository(fixture.ConnectionFactory));
+        await Assert.ThrowsAsync<Domain.Exceptions.DomainException>(()=>service.CancelarAsync(pagamento.Id,default));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task BloqueioOperacionalNaoChamaProviderACadaTickNemReemite()
+    {
+        var pagamento=await Pagamento(); using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var provider=new ProviderFalso { Criar=(_,_,_)=>Task.FromResult(new ResultadoCobrancaProvider(SituacaoCobrancaProvider.BloqueioOperacional,"SEGREDO")) };
+        var processador=new RecebimentoPixProcessamentoService(store,new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory),provider,new RecebimentoPixOptions { Habilitado=true });
+        var p=(await store.PrepararAsync(pagamento.Id,3600,default)).Preparacao!;
+        await processador.ExecutarPreparacaoAsync(p,default);
+        await dados.ExecutarAsync("UPDATE cobrancas_pix_vistoria SET proxima_consulta_em=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 HOUR)");
+        for(var tick=0;tick<3;tick++)
+        { Assert.Empty(await store.CobrançasAsync(20,default)); await processador.ProcessarCobrancaAsync(p.Id,default); }
+        var geracao=await store.PrepararAsync(pagamento.Id,3600,default);
+        Assert.Equal(p.Id,geracao.Id); Assert.Null(geracao.Preparacao);
+        Assert.Equal(1,provider.Criacoes); Assert.Equal(0,provider.Consultas);
+        Assert.NotNull(Assert.Single(await store.AuditoriaAsync(p.Id,default)).FinishedAt);
+        Assert.Equal(StatusPagamentoVistoria.Pendente,(await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(pagamento.Id,default))!.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task E2eAusenteReagendaSemDivergenciaEBloqueioOperacionalInterrompeTicks()
+    {
+        using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var (pagamento,_,evento)=await Ativar(store);
+        var inbox=new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory);
+        await inbox.PersistirAsync([evento],default);
+        var id=Assert.Single(await store.EventosAsync(20,default));
+        var provider=new ProviderFalso { ResultadoReceber=_=>Task.FromResult(new ResultadoConsultaPix(SituacaoConsultaPix.AindaNaoDisponivel)) };
+        var processador=new RecebimentoPixProcessamentoService(store,inbox,provider,new RecebimentoPixOptions { Habilitado=true });
+        await processador.ProcessarEventoAsync(id,default);
+        Assert.Empty(await store.EventosAsync(20,default));
+        Assert.Equal(0,(await store.IndicadoresAsync(default)).EventosDivergentes);
+        Assert.Contains("recebimento-ausente",await dados.SnapshotAsync("SELECT * FROM recebimentos_pix_inbox"));
+        await dados.ExecutarAsync("UPDATE recebimentos_pix_inbox SET proxima_consulta_em=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 HOUR)");
+        Assert.Single(await store.EventosAsync(20,default));
+        provider.ResultadoReceber=_=>Task.FromResult(new ResultadoConsultaPix(SituacaoConsultaPix.BloqueioOperacional));
+        await processador.ProcessarEventoAsync(id,default);
+        await dados.ExecutarAsync("UPDATE recebimentos_pix_inbox SET proxima_consulta_em=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 HOUR)");
+        for(var tick=0;tick<3;tick++) { Assert.Empty(await store.EventosAsync(20,default)); await processador.ProcessarEventoAsync(id,default); }
+        Assert.Equal(2,provider.ConsultasRecebimento);
+        Assert.Equal(StatusPagamentoVistoria.Pendente,(await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(pagamento.Id,default))!.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task IndicadoresSeparamFontesNoDashboardENoEndpointSemProvider()
+    {
+        await fixture.LimparDadosAsync(); using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var dashboard=new AdminDashboardMySqlStore(fixture.ConnectionFactory);
+        async Task Verificar(long cobrancas,long eventos)
+        {
+            var admin=await dashboard.ObterAsync(); var indicador=await store.IndicadoresAsync(default);
+            Assert.Equal(cobrancas,admin.CobrancasDivergentes); Assert.Equal(eventos,admin.EventosDivergentes);
+            Assert.Equal(cobrancas,indicador.CobrancasDivergentes); Assert.Equal(eventos,indicador.EventosDivergentes);
+        }
+        await Verificar(0,0);
+        var (_,_,evento)=await Ativar(store);
+        await dados.ExecutarAsync("UPDATE cobrancas_pix_vistoria SET status=10");
+        await Verificar(1,0);
+        var inbox=new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory);
+        await inbox.PersistirAsync([evento],default);
+        await dados.ExecutarAsync("UPDATE recebimentos_pix_inbox SET status=3");
+        await Verificar(1,1); // Mesmo incidente, unidades distintas, nunca somadas.
+        await dados.ExecutarAsync("UPDATE cobrancas_pix_vistoria SET status=2");
+        await Verificar(0,1);
+    }
+
     private sealed class ProviderFalso : ICobrancaPixVistoriaProvider
     {
         public Func<string,decimal,int,Task<ResultadoCobrancaProvider>> Criar { get; set; }=(_,_,_)=>throw new InvalidOperationException("Criar não esperado.");
         public Func<string,Task<ResultadoCobrancaProvider>> Consultar { get; set; }=_=>throw new InvalidOperationException("Consultar não esperado.");
         public Func<string,Task<EventoPix?>> Receber { get; set; }=_=>throw new InvalidOperationException("Recebimento não esperado.");
+        public Func<string,Task<ResultadoConsultaPix>>? ResultadoReceber { get; set; }
         private int _criacoes, _consultas, _recebimentos;
         public int Criacoes=>Volatile.Read(ref _criacoes);
         public int Consultas=>Volatile.Read(ref _consultas);
@@ -563,8 +696,8 @@ public sealed class CobrancaPixVistoriaMySqlIntegrationTests(MySqlIntegrationFix
         { Interlocked.Increment(ref _criacoes); return Criar(txid,valor,prazo); }
         public Task<ResultadoCobrancaProvider> ConsultarAsync(string txid,CancellationToken ct)
         { Interlocked.Increment(ref _consultas); return Consultar(txid); }
-        public Task<EventoPix?> ConsultarRecebimentoAsync(string id,CancellationToken ct)
-        { Interlocked.Increment(ref _recebimentos); return Receber(id); }
+        public async Task<ResultadoConsultaPix> ConsultarRecebimentoAsync(string id,CancellationToken ct)
+        { Interlocked.Increment(ref _recebimentos); return ResultadoReceber is null ? await Receber(id) : await ResultadoReceber(id); }
         public Task<ResultadoCobrancaProvider> RemoverAsync(string txid,CancellationToken ct)=>throw new InvalidOperationException("Remoção não esperada.");
         public Task<bool> ConfigurarWebhookAsync(CancellationToken ct)=>throw new InvalidOperationException("Webhook não esperado.");
         public Task<bool> ConsultarWebhookAsync(CancellationToken ct)=>throw new InvalidOperationException("Webhook não esperado.");

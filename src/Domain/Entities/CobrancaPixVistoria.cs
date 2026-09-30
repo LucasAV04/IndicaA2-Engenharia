@@ -28,5 +28,5 @@ public sealed class CobrancaPixVistoria
     }
 
     public static bool PermiteReemissao(StatusCobrancaPixVistoria status) =>
-        status is StatusCobrancaPixVistoria.Expirada or StatusCobrancaPixVistoria.Removida;
+        status is StatusCobrancaPixVistoria.Expirada or StatusCobrancaPixVistoria.Removida or StatusCobrancaPixVistoria.FalhaDefinitiva;
 }

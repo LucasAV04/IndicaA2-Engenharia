@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-30 — Correção dos bloqueios da revisão do PR #37
+
+- Restaurado cancelamento sem cobrança quando recebimento está desabilitado, preservada proteção persistente para histórico Pix.
+- Polling público retoma após falhas transitórias com backoff e Retry-After, sem apagar dados anteriores ou expor mensagens sensíveis.
+- Respostas do provider classificadas; renovação OAuth limitada a uma vez após 401; bloqueios operacionais não são consultados a cada tick. Rejeição documentada da criação permite falha definitiva e reemissão explícita.
+- Consulta e2e tipada; ausência temporária não vira divergência. Indicadores de cobranças e eventos divergentes separados.
+- Validação: build aprovado (4 warnings preexistentes na primeira execução; recompilação final incremental 0 warnings/0 erros). Direcionados 197/198 inicialmente, único arranjo OAuth corrigido e aprovado isoladamente; preflight 6/6; suíte rápida final **760/760**, zero falhas/ignorados.
+- Frontend: ci/lint/build aprovados, **93/93 testes em 20,20s**; dois avisos preexistentes Zod/Rollup. MySQL oficial **220/220 em 19 classes**, zero falhas/ignorados, 29s de testes/37,1s de comando, exit 0. Seis novas integrações incluídas no total. Migrations 001–015 validadas pela fixture; 0 bancos descartáveis antes/depois, 0 remanescentes novos e 0 bancos antigos removidos.
+- Documentação operacional e matriz atualizadas. `git diff --check` sem erros. Sem alteração de migrations, leases, regra dos 20%, mTLS ou criptografia; zero Efí/OAuth/Pix real/dados de produção. Resultados anteriores abaixo são históricos, superados pelos resultados desta correção.
+
 ## 2026-09-29 — Recebimento Pix de vistoria validado integralmente
 
 - Migration 015, cobrança idempotente com lease de cinco minutos, recuperação GET antes de PUT com mesmo txid, cancelamento/remoção coordenados e reemissão terminal. Inbox mTLS durável e consulta autenticada de e2e antes da confirmação atômica do pagamento; nenhuma confirmação manual. Criptografia independente AES-GCM e link público de hash/validade/rotação.

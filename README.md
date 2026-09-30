@@ -27,6 +27,12 @@ Workers Pix continuam desabilitados por padrão. O módulo de recebimento usa co
 
 ## Recebimento de vistoria
 
+Com o recebimento desabilitado, pagamentos sem cobrança mantêm o cancelamento legado; qualquer histórico de cobrança impede contornar a coordenação Pix. Com o módulo habilitado, cobrança ativa exige remoção confirmada antes do cancelamento.
+
+A página pública retoma consultas após rede/timeout/5xx com backoff de 10 a 60 segundos e respeita `Retry-After` em 429 (segundos ou data HTTP). Preserva os dados anteriores, pausa em aba oculta e encerra para link inválido ou cobrança terminal. Tokens e corpos de erro não são exibidos nem logados.
+
+Rejeição de criação comprovada por código de validação documentado finaliza a cobrança como falha definitiva; a administração pode reemitir explicitamente após corrigir a configuração, com nova identidade e histórico preservado. Erros desconhecidos 400/422 e bloqueios 401 persistente/403 não comprovam ausência financeira: ficam auditáveis e fora da seleção automática. Não existe liberação automática desses bloqueios ao trocar credenciais; sua recuperação exige análise operacional e autorização específica. 401 permite apenas uma renovação de token por invocação e preserva txid. GET e2e 404 é ausência temporária, reagendada sem divergência automática. Dashboard separa cobranças divergentes de eventos divergentes.
+
 O módulo exige migration 015 e configuração privada explícita. `RecebimentoPix__Habilitado=false` e `RecebimentoPix__ProcessamentoWorker__Habilitado=false` são os padrões. Quando desabilitado, não carrega certificados, não resolve provider operacional nem inicia polling.
 
 Configuração habilitada: base Efí de homologação, credenciais/P12 externos, chave recebedora externa, CA cliente oficial externa, URL HTTPS do webhook e URL pública HTTPS. `INDICA2_COBRANCA_PIX_ENCRYPTION_KEY` deve conter Base64 de 32 bytes independentes da chave de Dados Pix. Consulte `.env.example` apenas como inventário; ele não é carregado automaticamente pelo .NET.

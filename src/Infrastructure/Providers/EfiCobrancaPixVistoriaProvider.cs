@@ -52,7 +52,22 @@ public sealed class EfiCobrancaPixVistoriaProvider : ICobrancaPixVistoriaProvide
             using var response = await EnviarAsync(method, "v2/cob/" + txid, scope, payload, ct);
             if (response.StatusCode == HttpStatusCode.NotFound && method == HttpMethod.Get)
                 return new(SituacaoCobrancaProvider.Ausente, "not-found");
-            if (!response.IsSuccessStatusCode) return new(SituacaoCobrancaProvider.Indeterminada, "http-" + (int)response.StatusCode);
+            if (!response.IsSuccessStatusCode)
+            {
+                var status=(int)response.StatusCode;
+                // Só a rejeição de validação documentada prova que o PUT não criou
+                // cobrança. Erro desconhecido/422 não é prova de ausência.
+                if (status==400 && method==HttpMethod.Put && await ValidacaoRejeitada(response.Content,ct))
+                    return new(SituacaoCobrancaProvider.FalhaDefinitiva,"criacao-rejeitada");
+                return new(status switch
+                {
+                    400 or 401 or 403 or 422 => SituacaoCobrancaProvider.BloqueioOperacional,
+                    409 => SituacaoCobrancaProvider.Conflito,
+                    429 => SituacaoCobrancaProvider.Limitada,
+                    >=500 => SituacaoCobrancaProvider.Indisponivel,
+                    _ => SituacaoCobrancaProvider.Indeterminada
+                }, "http-"+status);
+            }
             using var json = await LerJsonAsync(response.Content, ct);
             var root = json.RootElement;
             var state = Texto(root, "status") switch
@@ -80,22 +95,26 @@ public sealed class EfiCobrancaPixVistoriaProvider : ICobrancaPixVistoriaProvide
             }
             return new(state, state.ToString(), receivedTxid, valor, criada, prazo, revision, codigo, eventos);
         }
+        catch (BloqueioProviderException) { return new(SituacaoCobrancaProvider.BloqueioOperacional,"oauth-bloqueado"); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or KeyNotFoundException or OverflowException)
         { return new(SituacaoCobrancaProvider.Indeterminada, "unavailable"); }
     }
-    public async Task<EventoPix?> ConsultarRecebimentoAsync(string endToEndId, CancellationToken ct)
+    public async Task<ResultadoConsultaPix> ConsultarRecebimentoAsync(string endToEndId, CancellationToken ct)
     {
         if (!RecebimentoPixValidacao.E2eValido(endToEndId)) throw new ArgumentException("Identificador de recebimento inválido.");
         try
         {
             using var response = await EnviarAsync(HttpMethod.Get, "v2/pix/" + endToEndId, "pix.read", null, ct);
-            if (!response.IsSuccessStatusCode) return null;
+            if (response.StatusCode==HttpStatusCode.NotFound) return new(SituacaoConsultaPix.AindaNaoDisponivel);
+            if ((int)response.StatusCode is 400 or 401 or 403 or 422) return new(SituacaoConsultaPix.BloqueioOperacional);
+            if (!response.IsSuccessStatusCode) return new(SituacaoConsultaPix.Indeterminado);
             using var json = await LerJsonAsync(response.Content, ct);
             return Evento(json.RootElement);
         }
+        catch (BloqueioProviderException) { return new(SituacaoConsultaPix.BloqueioOperacional); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or KeyNotFoundException or OverflowException) { return null; }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or JsonException or FormatException or InvalidOperationException or KeyNotFoundException or OverflowException) { return new(SituacaoConsultaPix.Indeterminado); }
     }
     public async Task<bool> ConfigurarWebhookAsync(CancellationToken ct)
     {
@@ -118,12 +137,13 @@ public sealed class EfiCobrancaPixVistoriaProvider : ICobrancaPixVistoriaProvide
     private async Task<HttpResponseMessage> EnviarAsync(HttpMethod method, string path, string scope, object? payload, CancellationToken ct)
     {
         _options.ExigirHabilitado();
-        var token = await _cache.ObterAsync(scope, async cancellation =>
+        async Task<string> Token() => await _cache.ObterAsync(scope, async cancellation =>
         {
             using var oauth = new HttpRequestMessage(HttpMethod.Post, new Uri(_base, "oauth/token"));
             oauth.Headers.Authorization = new("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(_efi.ClientId + ":" + _efi.ClientSecret)));
             oauth.Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["grant_type"] = "client_credentials", ["scope"] = scope });
             using var r = await _http.SendAsync(oauth, HttpCompletionOption.ResponseHeadersRead, cancellation);
+            if ((int)r.StatusCode is 400 or 401 or 403 or 422) throw new BloqueioProviderException();
             if (!r.IsSuccessStatusCode) throw new HttpRequestException("OAuth indisponível.");
             using var json = await LerJsonAsync(r.Content, cancellation);
             var value = Texto(json.RootElement, "access_token");
@@ -131,10 +151,31 @@ public sealed class EfiCobrancaPixVistoriaProvider : ICobrancaPixVistoriaProvide
             if (value.Length is < 1 or > 16384 || seconds is < 1 or > 86400) throw new JsonException();
             return new EfiPixAccessToken(value, seconds);
         }, ct);
-        using var request = new HttpRequestMessage(method, new Uri(_base, path));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        if (payload is not null) request.Content = JsonContent.Create(payload);
-        return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        async Task<HttpResponseMessage> Enviar(string token)
+        {
+            using var request = new HttpRequestMessage(method, new Uri(_base, path));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (payload is not null) request.Content = JsonContent.Create(payload);
+            return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        }
+        var token=await Token();
+        var response=await Enviar(token);
+        if(response.StatusCode!=HttpStatusCode.Unauthorized) return response;
+        response.Dispose(); _cache.Invalidar(scope,token);
+        // Uma única renovação, mesma rota/txid/payload. 401 repetido bloqueia.
+        token=await Token(); response=await Enviar(token);
+        if(response.StatusCode==HttpStatusCode.Unauthorized) _cache.Invalidar(scope,token);
+        return response;
+    }
+    private sealed class BloqueioProviderException : Exception;
+    private static async Task<bool> ValidacaoRejeitada(HttpContent content,CancellationToken ct)
+    {
+        try
+        {
+            using var json=await LerJsonAsync(content,ct);
+            return Texto(json.RootElement,"nome") is "valor_invalido" or "chave_invalida" or "documento_bloqueado";
+        }
+        catch(Exception e) when(e is JsonException or InvalidOperationException or KeyNotFoundException) { return false; }
     }
     internal static async Task<JsonDocument> LerJsonAsync(HttpContent content, CancellationToken ct)
     {

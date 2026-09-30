@@ -20,6 +20,7 @@ public sealed class CobrancaPixVistoriaTests
     public void PrazoInvalido(int prazo) => Assert.Throws<DomainException>(()=>new CobrancaPixVistoria(Guid.NewGuid(),1,prazo,Agora));
     [Theory] [InlineData(StatusCobrancaPixVistoria.Expirada,true)] [InlineData(StatusCobrancaPixVistoria.Removida,true)]
     [InlineData(StatusCobrancaPixVistoria.Ativa,false)] [InlineData(StatusCobrancaPixVistoria.Indeterminada,false)]
+    [InlineData(StatusCobrancaPixVistoria.FalhaDefinitiva,true)]
     [InlineData(StatusCobrancaPixVistoria.Confirmada,false)] [InlineData(StatusCobrancaPixVistoria.DivergenciaFinanceira,false)]
     public void ReemissaoExigeTerminalComprovado(StatusCobrancaPixVistoria status,bool permitido) => Assert.Equal(permitido,CobrancaPixVistoria.PermiteReemissao(status));
     [Fact] public void ConfirmacaoUsaHorarioProviderEEvidenciaIdempotente()

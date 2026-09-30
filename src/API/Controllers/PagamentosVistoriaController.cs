@@ -37,7 +37,10 @@ public sealed class PagamentosVistoriaController(IPagamentoVistoriaService servi
         // Não resolve criptografia/mTLS quando o módulo está desabilitado.
         // A autorização administrativa já foi avaliada antes desta ação.
         if (!services.GetRequiredService<Application.Recebimentos.RecebimentoPixOptions>().Habilitado)
-            return Conflict(new ProblemDetails { Status=409, Title="Recebimento Pix desabilitado." });
+        {
+            await service.CancelarAsync(id, cancellationToken);
+            return NoContent();
+        }
         var recebimento=services.GetRequiredService<Application.Recebimentos.ICobrancaPixVistoriaService>();
         await recebimento.CancelarPagamentoAsync(id, cancellationToken);
         return Accepted();

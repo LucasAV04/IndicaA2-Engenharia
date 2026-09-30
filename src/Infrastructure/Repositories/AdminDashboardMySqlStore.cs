@@ -57,7 +57,7 @@ public sealed class AdminDashboardMySqlStore(MySqlConnectionFactory factory) : I
             result = new()
             {
                 TotalUsuarios = reader.GetInt64(0), UsuariosAtivos = reader.GetInt64(1),
-                CobrancasPixVistoria = cobrancas, RecebimentosDivergentes = reader.GetInt64(13),
+                CobrancasPixVistoria = cobrancas, CobrancasDivergentes = cobrancas.GetValueOrDefault("DivergenciaFinanceira"), EventosDivergentes = reader.GetInt64(13),
                 TiposCadastrados = reader.GetInt64(9), TiposComPrecoAtivo = reader.GetInt64(10),
                 TiposSemConfiguracao = reader.GetInt64(9) - reader.GetInt64(10),
                 UltimaVersaoPreco = reader.IsDBNull(11) ? null : reader.GetInt32(11),

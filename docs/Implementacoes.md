@@ -1,6 +1,36 @@
 # Implementações
 
+## PR #37 — correções da revisão (2026-09-30)
+
+- Cancelamento com recebimento desabilitado usa o serviço anterior sem resolver provider/protetor/certificado; o `NOT EXISTS` persistente continua impedindo cancelamento direto com histórico de cobrança. Habilitado continua coordenando remoção confirmada.
+- Polling público: uma requisição por vez, timeout de 15s, intervalo mínimo de 10s e backoff de 10/20/40/60s para rede e 5xx. `Retry-After` delta ou data HTTP é limite inferior e pode superar o teto do backoff local. Aba oculta pausa consultas; desmontagem cancela. Dados anteriores permanecem durante indisponibilidade; 404 e estados terminais encerram polling, sem expor corpo/token.
+- Classificação persistida somente por códigos técnicos controlados: GET cobrança 404 significa ausência; 409 exige GET posterior do mesmo txid; 429/5xx são transitórios; timeout/transporte/JSON/status desconhecido são indeterminados. 401 invalida somente o token rejeitado daquele escopo e permite uma única renovação na mesma invocação/identidade.
+- A [documentação oficial de cobrança imediata](https://dev.efipay.com.br/docs/api-pix/cobrancas-imediatas/) documenta rejeições 400 de criação `valor_invalido`, `chave_invalida`, `documento_bloqueado`. Somente essas rejeições conhecidas do PUT tornam `FalhaDefinitiva` alcançável. 400 desconhecido e 422 não comprovam ausência: bloqueio operacional conservador, como 401 persistente/403, sem nova aquisição ou seleção automática. Nenhuma mensagem arbitrária do provider é armazenada.
+- Falha definitiva finaliza auditoria/lease sem modificar pagamento e permite reemissão administrativa explícita com nova identidade, preservando histórico. Bloqueio operacional permanece auditável, sem reemissão automática; correção de credencial não libera silenciosamente o registro nem presume ausência financeira.
+- Consulta e2e usa resultado tipado: confirmado, ainda não disponível, bloqueio operacional ou indeterminado. 404 mantém inbox aberta com consulta posterior em 30s, sem divergência imediata; bloqueio operacional interrompe seleção e aquisição, sem liquidar pagamento.
+- Dashboard e endpoint de indicadores expõem `CobrancasDivergentes` e `EventosDivergentes` separadamente, sem soma ambígua de incidentes relacionados. Migration 015, mTLS, AES-GCM, leases, confirmação transacional, preços e Cashback permanecem preservados.
+- Validação concluída nesta correção: build inicial aprovado com 4 warnings preexistentes de nulabilidade (`Usuario`/`UsuarioService`); recompilação final aprovada em 24,72s, 0 erros/0 warnings incrementais. Não foram corrigidos warnings fora do escopo.
+- Direcionados sem MySQL: 198 casos (16 Domain, 31 Application, 68 Infrastructure e 83 API), 197 aprovados e uma falha de arranjo no novo teste OAuth por ausência de `CertificatePath` fictício. Corrigido somente o arranjo; teste isolado recompilado e aprovado (1/1). Os seis testes de preflight passaram na seleção. Toda essa cobertura voltou a passar na suíte rápida final.
+- Suíte rápida final: **760 aprovados, 0 falhos, 0 ignorados** (170 Domain, 208 Application, 131 Infrastructure, 251 API), exit 0; durações por projeto 171ms/1s/4s/8s. Filtro exclui MySQL, sandbox Efí e diagnóstico TLS externo.
+- Frontend: `npm ci`, lint e build aprovados; **93/93 testes**, zero falhas, 20,20s; Vite 4,27s. Preservados os dois avisos Zod/Rollup e o informativo esbuild/npm; zero vulnerabilidades no inventário npm (259 pacotes).
+- MySQL oficial: **220/220 aprovados em 19 classes**, zero falhas/ignorados; 29s de testes e 37,1s do comando, exit 0. Variável de usuário carregada privadamente, destino local sem Database; script oficial com preflight e migrations 001–015 na fixture descartável. Inventário somente leitura: 0 bancos `indicaa2_test_*` antes, 0 depois, 0 novos remanescentes e 0 antigos removidos. Nenhuma limpeza manual. As seis integrações novas pertencem aos 220, não devem ser somadas novamente.
+- Comandos: `dotnet build IndicaA2.slnx --no-restore`; seleção direcionada com `Category!=MySqlIntegration` e classes de cancelamento/cobrança/provider/recebimento/API/DI/preflight; teste isolado `UnauthorizedInvalidaSomenteEscopoRejeitadoRenovaUmaVezEMantemTxid`; suíte rápida oficial `Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests`; `npm ci`, `npm run lint`, `npm run test -- --run`, `npm run build` com TZ America/Sao_Paulo; `pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql`. Nenhum teste externo Efí executado.
+- `git diff --check` sem erros. Migration 015 e demais migrations sem alterações. Nenhuma chamada Efí/OAuth/Pix real ou dado de produção; apenas HTTP simulado e MySQL descartável. CI do novo commit será verificado após publicação e registrado no PR, sem antecipar aprovação.
+
+| Correção | Cobertura identificável |
+| --- | --- |
+| Cancelamento desabilitado sem dependências operacionais | HTTP `CancelamentoDesabilitadoNaoResolveProviderOuSegredos`; MySQL `CancelamentoSemCobrancaPreservaFluxoLegadoECoordenadoIdempotentes` |
+| Histórico em todos os estados bloqueia cancelamento legado | `CancelamentoLegadoNaoPodeContornarCobrancaPersistida`; HTTP `CancelamentoRejeitadoPermaneceErroDeDominioSemBypass` |
+| Confirmado rejeitado e cobrança ativa aguarda remoção | `PagamentoConfirmadoRejeitaAmbosCancelamentosSemMutacao`, `CancelamentoEsperaRemocaoConfirmadaPeloProvider` |
+| Falha definitiva, lease/auditoria, nova identidade explícita | `RejeicaoDefinitivaFinalizaAuditoriaSemPagamentoEPermiteReemissaoExplicita`; Domain `ReemissaoExigeTerminalComprovado` |
+| Bloqueios permanentes não chamam a cada tick | `BloqueioOperacionalNaoChamaProviderACadaTickNemReemite`, `E2eAusenteReagendaSemDivergenciaEBloqueioOperacionalInterrompeTicks` |
+| HTTP completo, JSON, timeout/transporte, cache 401 | `ErroHttpClassificadoSemConfirmacaoOuRepeticaoIlimitada`, `RejeicaoDocumentadaDeCriacaoEhDefinitivaSemRepeticao`, `ConsultaE2eDistingueAusenciaBloqueioEIndeterminacao`, `UnauthorizedInvalidaSomenteEscopoRejeitadoRenovaUmaVezEMantemTxid`, demais testes preservados de `EfiCobrancaPixVistoriaProviderTests` |
+| Fontes de divergência independentes, vazio e sem provider | `IndicadoresSeparamFontesNoDashboardENoEndpointSemProvider`; `App.test.tsx` (quatro combinações) |
+| Polling 429 delta/data/ausente, rede/503, timeout, limite, terminais, aba oculta e unmount | `Pagar.test.tsx`: fake timers e sinais; teste anterior que exigia parada após 500 substituído por backoff limitado com sanitização, mantendo as demais asserções |
+
 ## Recebimento Pix de vistoria — entrega vertical validada localmente (2026-09-29)
+
+Registro histórico da entrega anterior (`bd19d1b`): resultados e regras abaixo foram posteriormente complementados pela correção de revisão acima, incluindo falha definitiva/reemissão, cancelamento desabilitado, polling e indicadores separados.
 
 Esta seção supera as pendências e contagens intermediárias abaixo, preservadas como histórico. Base `cc9c6f79053fde6b3a73bd9988d424aef0c35405`; branch `feature/recebimento-pix-vistoria`. Publicação somente como draft, sem liberação para produção. CI será confirmado no PR, sem antecipar aprovação.
 

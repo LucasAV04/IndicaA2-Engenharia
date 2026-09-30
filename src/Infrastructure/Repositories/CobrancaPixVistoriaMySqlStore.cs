@@ -60,7 +60,7 @@ public sealed partial class CobrancaPixVistoriaMySqlStore(MySqlConnectionFactory
         await using var t = await c.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         await BloquearPagamentoDaCobranca(c, t, id, ct);
         var row = await Ler(c, t, id, ct);
-        if (row is null || row.Status is 5 or 6 or 8 or 9 or 10) return null;
+        if (row is null || row.Status is 5 or 6 or 8 or 9 or 10 || row.Codigo=="bloqueio-operacional") return null;
         if (row.LeaseExpira > await Agora(c, t, ct)) return null;
         // Após crash, nunca repete PUT diretamente: primeiro consulta o mesmo txid.
         var operacao = row.Status == 0 ? OperacaoCobranca.Criar
@@ -96,7 +96,13 @@ public sealed partial class CobrancaPixVistoriaMySqlStore(MySqlConnectionFactory
             && result.CriadaEm is { Kind: DateTimeKind.Utc } && result.CriadaEm <= agora
             && result.ExpiracaoSegundos == r.Prazo && result.Revisao is >= 0
             && (r.ProviderCriadoEm is null || r.ProviderCriadoEm == result.CriadaEm);
-        if (result.Situacao == SituacaoCobrancaProvider.Ausente && p.Operacao == OperacaoCobranca.Consultar)
+        if (result.Situacao==SituacaoCobrancaProvider.FalhaDefinitiva && p.Operacao==OperacaoCobranca.Criar)
+        { status=9; codigo="criacao-rejeitada"; }
+        else if (result.Situacao==SituacaoCobrancaProvider.BloqueioOperacional)
+        { codigo="bloqueio-operacional"; }
+        else if (result.Situacao is SituacaoCobrancaProvider.Limitada or SituacaoCobrancaProvider.Indisponivel or SituacaoCobrancaProvider.Conflito)
+        { codigo=result.Situacao switch { SituacaoCobrancaProvider.Limitada=>"limite-transitorio", SituacaoCobrancaProvider.Conflito=>"conflito-consultar", _=>"indisponivel" }; }
+        else if (result.Situacao == SituacaoCobrancaProvider.Ausente && p.Operacao == OperacaoCobranca.Consultar)
         {
             // A ausência permite nova invocação PUT apenas com esta identidade persistida.
             status = r.Remocao ? 7 : 0; codigo = "ausente";
@@ -158,11 +164,11 @@ public sealed partial class CobrancaPixVistoriaMySqlStore(MySqlConnectionFactory
     internal static async Task<DateTime> Agora(MySqlConnection c, MySqlTransaction t, CancellationToken ct)
     { using var cmd = Comando(c, t, "SELECT UTC_TIMESTAMP(6)"); return DateTime.SpecifyKind((DateTime)(await cmd.ExecuteScalarAsync(ct))!, DateTimeKind.Utc); }
     internal static DateTime? Data(MySqlDataReader r, string nome) => r.IsDBNull(r.GetOrdinal(nome)) ? null : DateTime.SpecifyKind(r.GetDateTime(nome), DateTimeKind.Utc);
-    private sealed record Linha(Guid Id, Guid PagamentoId, string Txid, decimal Valor, int Prazo, int Status, Guid? LeaseId, DateTime? LeaseExpira, bool Remocao, DateTime? ProviderCriadoEm);
+    private sealed record Linha(Guid Id, Guid PagamentoId, string Txid, decimal Valor, int Prazo, int Status, Guid? LeaseId, DateTime? LeaseExpira, bool Remocao, DateTime? ProviderCriadoEm,string? Codigo);
     private static async Task<Linha?> Ler(MySqlConnection c, MySqlTransaction t, Guid id, CancellationToken ct)
     {
         using var cmd = Comando(c, t, "SELECT * FROM cobrancas_pix_vistoria WHERE id=@id FOR UPDATE", ("id", id));
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        return await r.ReadAsync(ct) ? new(id, r.ObterGuid("pagamento_vistoria_id"), r.GetString("txid"), r.GetDecimal("valor"), r.GetInt32("expiracao_segundos"), r.GetInt32("status"), r.ObterGuidOpcional("lease_id"), Data(r,"lease_expira_em"), r.GetBoolean("remocao_solicitada"), Data(r,"provider_criado_em")) : null;
+        return await r.ReadAsync(ct) ? new(id, r.ObterGuid("pagamento_vistoria_id"), r.GetString("txid"), r.GetDecimal("valor"), r.GetInt32("expiracao_segundos"), r.GetInt32("status"), r.ObterGuidOpcional("lease_id"), Data(r,"lease_expira_em"), r.GetBoolean("remocao_solicitada"), Data(r,"provider_criado_em"),r.IsDBNull(r.GetOrdinal("codigo"))?null:r.GetString("codigo")) : null;
     }
 }

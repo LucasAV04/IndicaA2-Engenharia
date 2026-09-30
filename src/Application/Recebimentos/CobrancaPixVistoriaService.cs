@@ -71,7 +71,7 @@ public sealed class RecebimentoPixProcessamentoService(ICobrancaPixVistoriaStore
         options.ExigirHabilitado();
         var p = await inbox.AdquirirAsync(id, ct);
         if (p is null) return;
-        EventoPix? result;
+        ResultadoConsultaPix result;
         try { result = await provider.ConsultarRecebimentoAsync(p.Evento.EndToEndId, ct); }
         catch
         {

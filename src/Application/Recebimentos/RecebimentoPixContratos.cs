@@ -2,7 +2,14 @@ using Domain.Enums;
 
 namespace Application.Recebimentos;
 
-public enum SituacaoCobrancaProvider { Indeterminada, Ausente, Ativa, Concluida, Removida }
+public enum SituacaoCobrancaProvider { Indeterminada, Ausente, Ativa, Concluida, Removida, FalhaDefinitiva, BloqueioOperacional, Limitada, Indisponivel, Conflito }
+public enum SituacaoConsultaPix { Confirmado, AindaNaoDisponivel, BloqueioOperacional, Indeterminado }
+public readonly record struct ResultadoConsultaPix(SituacaoConsultaPix Situacao, EventoPix? Evento = null)
+{
+    public override string ToString() => $"ResultadoConsultaPix({Situacao})";
+    public static implicit operator ResultadoConsultaPix(EventoPix? evento) =>
+        evento is null ? new(SituacaoConsultaPix.Indeterminado) : new(SituacaoConsultaPix.Confirmado, evento);
+}
 public enum OperacaoCobranca { Criar, Consultar, Remover }
 
 // Tipos internos não são contratos públicos. ToString não expõe códigos nem tokens.
@@ -42,14 +49,14 @@ public sealed record LinkPagamento(string Link, DateTime ExpiraEm)
     public override string ToString() => "LinkPagamento";
 }
 public sealed record AuditoriaCobranca(Guid Id, int Tipo, string? Codigo, DateTime StartedAt, DateTime? FinishedAt);
-public sealed record IndicadoresRecebimento(long Ativas, long ConfirmacoesPendentes, long Confirmadas, long Expiradas, long Divergencias);
+public sealed record IndicadoresRecebimento(long Ativas, long ConfirmacoesPendentes, long Confirmadas, long Expiradas, long CobrancasDivergentes, long EventosDivergentes);
 
 public interface ICobrancaPixVistoriaProvider
 {
     Task<ResultadoCobrancaProvider> CriarAsync(string txid, decimal valor, int expiracaoSegundos, CancellationToken ct);
     Task<ResultadoCobrancaProvider> ConsultarAsync(string txid, CancellationToken ct);
     Task<ResultadoCobrancaProvider> RemoverAsync(string txid, CancellationToken ct);
-    Task<EventoPix?> ConsultarRecebimentoAsync(string endToEndId, CancellationToken ct);
+    Task<ResultadoConsultaPix> ConsultarRecebimentoAsync(string endToEndId, CancellationToken ct);
     Task<bool> ConfigurarWebhookAsync(CancellationToken ct);
     Task<bool> ConsultarWebhookAsync(CancellationToken ct);
 }
@@ -69,7 +76,7 @@ public interface IRecebimentoPixWebhookStore
 {
     Task PersistirAsync(IReadOnlyList<EventoPix> eventos, CancellationToken ct);
     Task<PreparacaoRecebimento?> AdquirirAsync(Guid id, CancellationToken ct);
-    Task FinalizarAsync(PreparacaoRecebimento preparacao, EventoPix? confirmado, CancellationToken ct);
+    Task FinalizarAsync(PreparacaoRecebimento preparacao, ResultadoConsultaPix resultado, CancellationToken ct);
 }
 public interface IRecebimentoPixCandidatoStore
 {

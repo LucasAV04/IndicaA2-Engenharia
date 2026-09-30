@@ -58,21 +58,31 @@ public sealed class EfiCobrancaPixVistoriaProviderTests
         var evento = JsonSerializer.Serialize(new { endToEndId = E2e, txid = Txid, valor = "12.34", horario = "2026-09-25T12:00:00Z", pagador = new { nome = "SEGREDO_FICTICIO" } });
         using var handler = new FakeHttp(Json(evento)); using var http = new HttpClient(handler);
         var result = await Provider(http).ConsultarRecebimentoAsync(E2e, default);
-        Assert.NotNull(result); Assert.Equal(E2e, result.EndToEndId);
+        Assert.Equal(SituacaoConsultaPix.Confirmado,result.Situacao); Assert.Equal(E2e, result.Evento!.EndToEndId);
         Assert.Equal("pix.read", handler.Scopes.Single());
         Assert.Equal("/v2/pix/" + E2e, Assert.Single(handler.Operacoes).Path);
         Assert.DoesNotContain("SEGREDO_FICTICIO", result.ToString());
     }
 
     [Theory]
-    [InlineData(400)] [InlineData(401)] [InlineData(403)] [InlineData(404)] [InlineData(409)] [InlineData(422)] [InlineData(429)] [InlineData(500)] [InlineData(503)]
-    public async Task ErroHttpNuncaViraConfirmacaoNemRetry(int status)
+    [InlineData(400,SituacaoCobrancaProvider.BloqueioOperacional)]
+    [InlineData(401,SituacaoCobrancaProvider.BloqueioOperacional)]
+    [InlineData(403,SituacaoCobrancaProvider.BloqueioOperacional)]
+    [InlineData(404,SituacaoCobrancaProvider.Indeterminada)]
+    [InlineData(409,SituacaoCobrancaProvider.Conflito)]
+    [InlineData(422,SituacaoCobrancaProvider.BloqueioOperacional)]
+    [InlineData(429,SituacaoCobrancaProvider.Limitada)]
+    [InlineData(500,SituacaoCobrancaProvider.Indisponivel)]
+    [InlineData(503,SituacaoCobrancaProvider.Indisponivel)]
+    public async Task ErroHttpClassificadoSemConfirmacaoOuRepeticaoIlimitada(int status,SituacaoCobrancaProvider esperado)
     {
         using var handler = new FakeHttp(new HttpResponseMessage((HttpStatusCode)status) { Content = new StringContent("SEGREDO_FICTICIO") });
         using var http = new HttpClient(handler);
         var result = await Provider(http).CriarAsync(Txid, 12.34m, 3600, default);
-        Assert.Equal(SituacaoCobrancaProvider.Indeterminada, result.Situacao);
-        Assert.Single(handler.Operacoes); Assert.DoesNotContain("SEGREDO_FICTICIO", result.ToString());
+        Assert.Equal(esperado, result.Situacao);
+        Assert.Equal(status==401 ? 2 : 1,handler.Operacoes.Count);
+        Assert.Single(handler.Operacoes.Select(x=>x.Path).Distinct());
+        Assert.DoesNotContain("SEGREDO_FICTICIO", result.ToString());
     }
 
     [Fact]
@@ -146,11 +156,88 @@ public sealed class EfiCobrancaPixVistoriaProviderTests
         Assert.Equal(1,handler.Chamadas);
     }
 
+    [Theory]
+    [InlineData("valor_invalido")]
+    [InlineData("chave_invalida")]
+    [InlineData("documento_bloqueado")]
+    public async Task RejeicaoDocumentadaDeCriacaoEhDefinitivaSemRepeticao(string nome)
+    {
+        using var handler=new FakeHttp(new(HttpStatusCode.BadRequest) { Content=new StringContent(JsonSerializer.Serialize(new { nome, mensagem="SEGREDO_FICTICIO" })) });
+        using var http=new HttpClient(handler);
+        var resultado=await Provider(http).CriarAsync(Txid,12.34m,3600,default);
+        Assert.Equal(SituacaoCobrancaProvider.FalhaDefinitiva,resultado.Situacao);
+        Assert.Equal("criacao-rejeitada",resultado.Codigo);
+        Assert.Single(handler.Operacoes);
+        Assert.DoesNotContain("SEGREDO",resultado.ToString());
+    }
+
+    [Theory]
+    [InlineData(404,SituacaoConsultaPix.AindaNaoDisponivel)]
+    [InlineData(400,SituacaoConsultaPix.BloqueioOperacional)]
+    [InlineData(401,SituacaoConsultaPix.BloqueioOperacional)]
+    [InlineData(403,SituacaoConsultaPix.BloqueioOperacional)]
+    [InlineData(422,SituacaoConsultaPix.BloqueioOperacional)]
+    [InlineData(429,SituacaoConsultaPix.Indeterminado)]
+    [InlineData(503,SituacaoConsultaPix.Indeterminado)]
+    public async Task ConsultaE2eDistingueAusenciaBloqueioEIndeterminacao(int status,SituacaoConsultaPix esperado)
+    {
+        using var handler=new FakeHttp(new((HttpStatusCode)status) { Content=new StringContent("SEGREDO_FICTICIO") });
+        using var http=new HttpClient(handler);
+        var resultado=await Provider(http).ConsultarRecebimentoAsync(E2e,default);
+        Assert.Equal(esperado,resultado.Situacao); Assert.Null(resultado.Evento);
+        Assert.DoesNotContain("SEGREDO",resultado.ToString());
+    }
+
+    [Fact]
+    public async Task UnauthorizedInvalidaSomenteEscopoRejeitadoRenovaUmaVezEMantemTxid()
+    {
+        var clock=new Clock(); var cache=new EfiPixAccessTokenCache(clock);
+        await cache.ObterAsync("cob.write",_=>Task.FromResult(new EfiPixAccessToken("antigo",3600)),default);
+        await cache.ObterAsync("cob.read",_=>Task.FromResult(new EfiPixAccessToken("leitura",3600)),default);
+        using var handler=new AuthHandler(); using var http=new HttpClient(handler);
+        var provider=new EfiCobrancaPixVistoriaProvider(http,
+            new EfiPixOptions { Environment="Sandbox",BaseUrl="https://pix-h.api.efipay.com.br",ClientId="ficticio",ClientSecret="ficticio",CertificatePath="nao-carregado.p12" },
+            new RecebimentoPixOptions { Habilitado=true,ChaveRecebedora=Chave },clock,cache);
+        Assert.Equal(SituacaoCobrancaProvider.Ativa,(await provider.CriarAsync(Txid,12.34m,3600,default)).Situacao);
+        Assert.Equal(1,handler.Autenticacoes);
+        Assert.Equal(new[]{"antigo","novo"},handler.Tokens);
+        Assert.All(handler.Paths,path=>Assert.Equal("/v2/cob/"+Txid,path));
+        Assert.Equal(handler.Bodies[0],handler.Bodies[1]);
+        Assert.Equal("leitura",await cache.ObterAsync("cob.read",_=>throw new InvalidOperationException("Nao renovar outro escopo"),default));
+        await provider.CriarAsync(Txid,12.34m,3600,default);
+        Assert.Equal(1,handler.Autenticacoes); // Token novo foi armazenado.
+    }
+    private sealed class AuthHandler : HttpMessageHandler
+    {
+        public int Autenticacoes;
+        public List<string?> Tokens { get; }=[];
+        public List<string> Paths { get; }=[];
+        public List<string> Bodies { get; }=[];
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
+        {
+            if(request.RequestUri!.AbsolutePath=="/oauth/token")
+            { Autenticacoes++; return Json("{\"access_token\":\"novo\",\"expires_in\":3600}"); }
+            Tokens.Add(request.Headers.Authorization!.Parameter); Paths.Add(request.RequestUri.AbsolutePath);
+            Bodies.Add(await request.Content!.ReadAsStringAsync(ct));
+            return Tokens[^1]=="antigo" ? new(HttpStatusCode.Unauthorized) : Json(Cobranca());
+        }
+    }
+
+    [Fact]
+    public async Task FalhaDeRedeEhIndeterminadaSemExporExcecao()
+    {
+        using var handler=new TransporteFalho { Rede=true }; using var http=new HttpClient(handler);
+        var resultado=await Provider(http).ConsultarAsync(Txid,default);
+        Assert.Equal(SituacaoCobrancaProvider.Indeterminada,resultado.Situacao);
+        Assert.DoesNotContain("SEGREDO",resultado.ToString()); Assert.Equal(1,handler.Chamadas);
+    }
+
     private sealed class TransporteFalho : HttpMessageHandler
     {
+        public bool Rede { get; init; }
         public int Chamadas { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
-        { Chamadas++; throw new TaskCanceledException("SEGREDO_FICTICIO"); }
+        { Chamadas++; if(Rede) throw new HttpRequestException("SEGREDO_FICTICIO"); throw new TaskCanceledException("SEGREDO_FICTICIO"); }
     }
 
     private static EfiCobrancaPixVistoriaProvider Provider(HttpClient http) => new(http,
@@ -177,7 +264,7 @@ public sealed class EfiCobrancaPixVistoriaProviderTests
             }
             Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
             Operacoes.Add((request.Method, request.RequestUri.AbsolutePath, body));
-            return response;
+            return new HttpResponseMessage(response.StatusCode) { Content=new StringContent(await response.Content.ReadAsStringAsync(cancellationToken)) };
         }
     }
 }

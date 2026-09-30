@@ -52,6 +52,13 @@ internal sealed class EfiPixAccessTokenCache
         token = string.Empty;
         return false;
     }
+
+    internal void Invalidar(string scope, string tokenRejeitado)
+    {
+        if (_tokensPorEscopo.TryGetValue(scope, out var entry) && entry.Value == tokenRejeitado)
+            ((ICollection<KeyValuePair<string,EfiPixAccessTokenEntry>>)_tokensPorEscopo)
+                .Remove(new(scope,entry));
+    }
 }
 
 internal sealed record EfiPixAccessToken(string Value, int ExpiresInSeconds);

@@ -51,16 +51,45 @@ public sealed class AdminWebPipelineTests(ApiTestWebApplicationFactory factory) 
     [Fact]
     public async Task CancelamentoDesabilitadoNaoResolveProviderOuSegredos()
     {
+        var service=new Mock<IPagamentoVistoriaService>(MockBehavior.Strict);
+        var id=Guid.NewGuid();
+        service.Setup(x=>x.CancelarAsync(id,It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         using var app=factory.WithWebHostBuilder(b=>b.ConfigureTestServices(s=>
         {
-            s.AddScoped<IPagamentoVistoriaService>(_=>Mock.Of<IPagamentoVistoriaService>());
+            s.AddScoped(_=>service.Object);
             s.AddScoped<Application.Recebimentos.ICobrancaPixVistoriaService>(_=>throw new InvalidOperationException("servico-proibido"));
+            s.AddScoped<Application.Recebimentos.ICobrancaPixVistoriaProvider>(_=>throw new InvalidOperationException("provider-proibido"));
+            s.AddScoped<Infrastructure.Security.CobrancaPixProtector>(_=>throw new InvalidOperationException("protetor-proibido"));
         }));
         using var client=app.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization=new("Bearer",Token("Administrador"));
-        using var response=await client.PatchAsync($"/api/pagamentos-vistoria/{Guid.NewGuid()}/cancelar",null);
-        Assert.Equal(HttpStatusCode.Conflict,response.StatusCode);
+        using var response=await client.PatchAsync($"/api/pagamentos-vistoria/{id}/cancelar",null);
+        Assert.Equal(HttpStatusCode.NoContent,response.StatusCode);
+        service.Verify(x=>x.CancelarAsync(id,It.IsAny<CancellationToken>()),Times.Once);
         Assert.DoesNotContain("servico-proibido",await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData(false,"Pagamento confirmado não pode ser cancelado.")]
+    [InlineData(false,"Pagamento com cobrança requer coordenação Pix.")]
+    [InlineData(true,"Pagamento confirmado não pode ser cancelado.")]
+    public async Task CancelamentoRejeitadoPermaneceErroDeDominioSemBypass(bool habilitado,string motivo)
+    {
+        var legado=new Mock<IPagamentoVistoriaService>(MockBehavior.Strict);
+        var coordenado=new Mock<Application.Recebimentos.ICobrancaPixVistoriaService>(MockBehavior.Strict);
+        var id=Guid.NewGuid();
+        legado.Setup(x=>x.CancelarAsync(id,It.IsAny<CancellationToken>())).ThrowsAsync(new DomainException(motivo));
+        coordenado.Setup(x=>x.CancelarPagamentoAsync(id,It.IsAny<CancellationToken>())).ThrowsAsync(new DomainException(motivo));
+        using var app=factory.WithWebHostBuilder(b=>b.ConfigureTestServices(s=>
+        {
+            s.AddScoped(_=>legado.Object); s.AddScoped(_=>coordenado.Object);
+            s.AddSingleton(new Application.Recebimentos.RecebimentoPixOptions { Habilitado=habilitado });
+        }));
+        using var client=app.CreateHttpsClient(); client.DefaultRequestHeaders.Authorization=new("Bearer",Token("Administrador"));
+        using var resposta=await client.PatchAsync($"/api/pagamentos-vistoria/{id}/cancelar",null);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity,resposta.StatusCode);
+        legado.Verify(x=>x.CancelarAsync(id,It.IsAny<CancellationToken>()),habilitado ? Times.Never() : Times.Once());
+        coordenado.Verify(x=>x.CancelarPagamentoAsync(id,It.IsAny<CancellationToken>()),habilitado ? Times.Once() : Times.Never());
     }
 
     public static IEnumerable<object[]> Rotas()

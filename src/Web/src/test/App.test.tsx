@@ -42,6 +42,15 @@ it('dashboard sem preços retorna zero sem consultar módulos independentes', as
   expect(requests.map(r => r.path)).toEqual(['/api/admin/dashboard'])
 })
 afterEach(() => vi.unstubAllGlobals())
+it.each([[0, 0], [1, 0], [0, 1], [1, 1]])('dashboard separa %s cobranças de %s eventos divergentes', async (cobrancas, eventos) => {
+  data['/api/admin/dashboard'] = { ...dashboard, cobrancasDivergentes: cobrancas, eventosDivergentes: eventos }
+  mount('/')
+  const heading = await screen.findByRole('heading', { name: 'Cobranças divergentes' })
+  expect(heading.parentElement?.querySelector('strong')).toHaveTextContent(String(cobrancas))
+  expect(screen.getByRole('heading', { name: 'Eventos divergentes' }).parentElement?.querySelector('strong')).toHaveTextContent(String(eventos))
+  expect(screen.queryByRole('heading', { name: 'Recebimentos divergentes' })).not.toBeInTheDocument()
+  expect(requests.map(r => r.path)).toEqual(['/api/admin/dashboard'])
+})
 function mount(path = '/', authenticated = true) {
   if (authenticated) saveSession(session)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })

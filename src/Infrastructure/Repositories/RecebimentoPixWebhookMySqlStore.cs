@@ -39,15 +39,17 @@ public sealed class RecebimentoPixWebhookMySqlStore(MySqlConnectionFactory facto
         var agora = await Agora(c,t,ct);
         await using (var r = await cmd.ExecuteReaderAsync(ct))
         {
-            if (!await r.ReadAsync(ct) || r.GetInt32("status") is 2 or 3 || Data(r,"lease_expira_em")>agora) return null;
+            if (!await r.ReadAsync(ct) || r.GetInt32("status") is 2 or 3 || Data(r,"lease_expira_em")>agora
+                || (!r.IsDBNull(r.GetOrdinal("codigo")) && r.GetString("codigo")=="bloqueio-operacional")) return null;
             e = new(r.GetString("end_to_end_id"),r.GetString("txid"),r.GetDecimal("valor"),Data(r,"horario")!.Value);
         }
         var token = Guid.NewGuid();
         using var update = Comando(c,t,"UPDATE recebimentos_pix_inbox SET status=1,lease_id=@token,lease_expira_em=DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 5 MINUTE),updated_at=UTC_TIMESTAMP(6) WHERE id=@id",("token",token),("id",id));
         await update.ExecuteNonQueryAsync(ct); await t.CommitAsync(ct); return new(id,token,e);
     }
-    public async Task FinalizarAsync(PreparacaoRecebimento p, EventoPix? confirmado, CancellationToken ct)
+    public async Task FinalizarAsync(PreparacaoRecebimento p, ResultadoConsultaPix resultado, CancellationToken ct)
     {
+        var confirmado = resultado.Situacao == SituacaoConsultaPix.Confirmado ? resultado.Evento : null;
         if (confirmado is not null) confirmado = RecebimentoPixValidacao.Canonicalizar(confirmado);
         await using var c = factory.Create(); await c.OpenAsync(ct); await using var t = await c.BeginTransactionAsync(ct);
         using (var identidade = Comando(c,t,"SELECT id FROM cobrancas_pix_vistoria WHERE txid=@txid",("txid",p.Evento.Txid)))
@@ -65,7 +67,13 @@ public sealed class RecebimentoPixWebhookMySqlStore(MySqlConnectionFactory facto
             if (r.GetString("txid")!=p.Evento.Txid || r.GetString("end_to_end_id")!=p.Evento.EndToEndId || r.GetDecimal("valor")!=p.Evento.Valor || Data(r,"horario")!=p.Evento.Horario)
                 throw new InvalidOperationException("Inbox incompatível com preparação.");
         }
-        var status = confirmado is null ? 0 : 3; var codigo = confirmado is null ? "consulta-indeterminada" : "evidencia-divergente";
+        var status = confirmado is null ? 0 : 3;
+        var codigo = resultado.Situacao switch
+        {
+            SituacaoConsultaPix.AindaNaoDisponivel => "recebimento-ausente",
+            SituacaoConsultaPix.BloqueioOperacional => "bloqueio-operacional",
+            _ => confirmado is null ? "consulta-indeterminada" : "evidencia-divergente"
+        };
         if (confirmado is not null)
         {
             using var cob = Comando(c,t,"SELECT * FROM cobrancas_pix_vistoria WHERE txid=@txid FOR UPDATE",("txid",p.Evento.Txid));

@@ -36,9 +36,9 @@ public sealed partial class CobrancaPixVistoriaMySqlStore
     public async Task<IndicadoresRecebimento> IndicadoresAsync(CancellationToken ct)
     {
         await using var c = factory.Create(); await c.OpenAsync(ct);
-        using var cmd = Comando(c, null, "SELECT COALESCE(SUM(status=2),0),COALESCE(SUM(status=4),0),COALESCE(SUM(status=5),0),COALESCE(SUM(status=6),0),COALESCE(SUM(status=10),0)+(SELECT COUNT(*) FROM recebimentos_pix_inbox WHERE status=3) FROM cobrancas_pix_vistoria");
+        using var cmd = Comando(c, null, "SELECT COALESCE(SUM(status=2),0),COALESCE(SUM(status=4),0),COALESCE(SUM(status=5),0),COALESCE(SUM(status=6),0),COALESCE(SUM(status=10),0),(SELECT COUNT(*) FROM recebimentos_pix_inbox WHERE status=3) FROM cobrancas_pix_vistoria");
         await using var r = await cmd.ExecuteReaderAsync(ct); await r.ReadAsync(ct);
-        return new(r.GetInt64(0),r.GetInt64(1),r.GetInt64(2),r.GetInt64(3),r.GetInt64(4));
+        return new(r.GetInt64(0),r.GetInt64(1),r.GetInt64(2),r.GetInt64(3),r.GetInt64(4),r.GetInt64(5));
     }
     public async Task RotacionarLinkAsync(Guid id, byte[] hash, DateTime expiraEm, CancellationToken ct)
     {
@@ -99,8 +99,8 @@ public sealed partial class CobrancaPixVistoriaMySqlStore
         if (limite is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(limite));
         await using var c = factory.Create(); await c.OpenAsync(ct);
         var sql = inbox
-            ? "SELECT id FROM recebimentos_pix_inbox WHERE status IN (0,1) AND proxima_consulta_em<=UTC_TIMESTAMP(6) AND (lease_id IS NULL OR lease_expira_em<=UTC_TIMESTAMP(6)) ORDER BY proxima_consulta_em,id LIMIT @limite"
-            : "SELECT id FROM cobrancas_pix_vistoria WHERE status IN (0,1,2,3,4,7) AND proxima_consulta_em<=UTC_TIMESTAMP(6) AND (lease_id IS NULL OR lease_expira_em<=UTC_TIMESTAMP(6)) ORDER BY proxima_consulta_em,id LIMIT @limite";
+            ? "SELECT id FROM recebimentos_pix_inbox WHERE status IN (0,1) AND COALESCE(codigo,'')<>'bloqueio-operacional' AND proxima_consulta_em<=UTC_TIMESTAMP(6) AND (lease_id IS NULL OR lease_expira_em<=UTC_TIMESTAMP(6)) ORDER BY proxima_consulta_em,id LIMIT @limite"
+            : "SELECT id FROM cobrancas_pix_vistoria WHERE status IN (0,1,2,3,4,7) AND COALESCE(codigo,'')<>'bloqueio-operacional' AND proxima_consulta_em<=UTC_TIMESTAMP(6) AND (lease_id IS NULL OR lease_expira_em<=UTC_TIMESTAMP(6)) ORDER BY proxima_consulta_em,id LIMIT @limite";
         using var cmd = Comando(c,null,sql,("limite",limite)); await using var r = await cmd.ExecuteReaderAsync(ct);
         var ids = new List<Guid>(); while (await r.ReadAsync(ct)) ids.Add(r.ObterGuid("id")); return ids;
     }
