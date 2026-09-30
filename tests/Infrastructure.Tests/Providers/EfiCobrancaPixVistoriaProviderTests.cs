@@ -85,11 +85,77 @@ public sealed class EfiCobrancaPixVistoriaProviderTests
         Assert.DoesNotContain("SEGREDO_FICTICIO", result.ToString());
     }
 
-    [Fact]
-    public async Task ApenasGet404ComprovaAusencia()
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task GetEPatch404ContinuamAceitosDefensivamente(bool remover)
     {
         using var handler = new FakeHttp(new HttpResponseMessage(HttpStatusCode.NotFound)); using var http = new HttpClient(handler);
-        Assert.Equal(SituacaoCobrancaProvider.Ausente, (await Provider(http).ConsultarAsync(Txid, default)).Situacao);
+        var provider=Provider(http);
+        Assert.Equal(SituacaoCobrancaProvider.Ausente, (remover ? await provider.RemoverAsync(Txid,default) : await provider.ConsultarAsync(Txid, default)).Situacao);
+        Assert.Single(handler.Operacoes);
+    }
+
+    [Theory]
+    [InlineData("GET", "cobranca_nao_encontrada", SituacaoCobrancaProvider.Ausente)]
+    [InlineData("PATCH", "cobranca_nao_encontrada", SituacaoCobrancaProvider.Ausente)]
+    [InlineData("PUT", "cobranca_nao_encontrada", SituacaoCobrancaProvider.BloqueioOperacional)]
+    [InlineData("GET", "pix_nao_encontrado", SituacaoCobrancaProvider.BloqueioOperacional)]
+    [InlineData("PATCH", "valor_invalido", SituacaoCobrancaProvider.BloqueioOperacional)]
+    public async Task Http400DecideSomentePorNomeDocumentadoDaOperacao(string metodo,string nome,SituacaoCobrancaProvider esperado)
+    {
+        using var handler=new FakeHttp(new(HttpStatusCode.BadRequest) { Content=new StringContent(JsonSerializer.Serialize(new { nome, mensagem="SEGREDO_FICTICIO" })) });
+        using var http=new HttpClient(handler); var provider=Provider(http);
+        var result=metodo switch
+        {
+            "GET"=>await provider.ConsultarAsync(Txid,default),
+            "PATCH"=>await provider.RemoverAsync(Txid,default),
+            _=>await provider.CriarAsync(Txid,12.34m,3600,default)
+        };
+        Assert.Equal(esperado,result.Situacao);
+        Assert.DoesNotContain("SEGREDO",JsonSerializer.Serialize(result));
+        Assert.Equal(metodo,Assert.Single(handler.Operacoes).Method.Method);
+    }
+
+    [Fact]
+    public async Task PixNaoEncontradoHttp400PermaneceDisponivelParaConsultaPosterior()
+    {
+        using var handler=new FakeHttp(new(HttpStatusCode.BadRequest) { Content=new StringContent("{\"nome\":\"pix_nao_encontrado\",\"mensagem\":\"SEGREDO_FICTICIO\"}") });
+        using var http=new HttpClient(handler);
+        var result=await Provider(http).ConsultarRecebimentoAsync(E2e,default);
+        Assert.Equal(SituacaoConsultaPix.AindaNaoDisponivel,result.Situacao); Assert.Null(result.Evento);
+        Assert.DoesNotContain("SEGREDO",JsonSerializer.Serialize(result)); Assert.Single(handler.Operacoes);
+    }
+
+    public static IEnumerable<object[]> Erros400Invalidos()
+    {
+        foreach(var body in new[]
+        {
+            "{\"nome\":\"desconhecido\",\"mensagem\":\"cobranca_nao_encontrada pix_nao_encontrado SEGREDO_FICTICIO\"}",
+            "{SEGREDO_FICTICIO", "{\"nome\":123,\"mensagem\":\"SEGREDO_FICTICIO\"}",
+            "{\"nome\":\"desconhecido\",\"nome\":\"cobranca_nao_encontrada\"}",
+            "{\"nome\":\"cobranca_nao_encontrada\",\"mensagem\":\""+new string('x',65536)+"SEGREDO_FICTICIO\"}",
+            "{\"nome\":\"pix_nao_encontrado\",\"mensagem\":"+new string('[',17)+"0"+new string(']',17)+"}"
+        }) foreach(var operacao in new[]{"GET","PATCH","PUT","PIX"}) yield return [operacao,body];
+    }
+
+    [Theory]
+    [MemberData(nameof(Erros400Invalidos))]
+    public async Task Http400InvalidoOuDesconhecidoNaoAutorizaAusenciaNemExpoeCorpo(string operacao,string body)
+    {
+        using var handler=new FakeHttp(new(HttpStatusCode.BadRequest) { Content=new StringContent(body) });
+        using var http=new HttpClient(handler); var provider=Provider(http);
+        if(operacao=="PIX")
+        {
+            var result=await provider.ConsultarRecebimentoAsync(E2e,default);
+            Assert.Equal(SituacaoConsultaPix.BloqueioOperacional,result.Situacao); Assert.Null(result.Evento);
+            Assert.DoesNotContain("SEGREDO",JsonSerializer.Serialize(result));
+        }
+        else
+        {
+            var result=operacao switch { "GET"=>await provider.ConsultarAsync(Txid,default), "PATCH"=>await provider.RemoverAsync(Txid,default), _=>await provider.CriarAsync(Txid,12.34m,3600,default) };
+            Assert.Equal(SituacaoCobrancaProvider.BloqueioOperacional,result.Situacao);
+            Assert.DoesNotContain("SEGREDO",JsonSerializer.Serialize(result));
+        }
         Assert.Single(handler.Operacoes);
     }
 

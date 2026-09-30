@@ -1,5 +1,36 @@
 # Implementações
 
+## PR #37 — ausência estruturada e cancelamento seguro (2026-09-30)
+
+- A classificação anterior tratava ausência documentada em HTTP 400 como bloqueio permanente. GET/PATCH `/v2/cob/:txid` com `nome=cobranca_nao_encontrada` agora retorna ausência; GET `/v2/pix/:e2eId` com `nome=pix_nao_encontrado` mantém a inbox pendente. HTTP 404 continua aceito defensivamente. Referências: [cobranças imediatas](https://dev.efipay.com.br/docs/api-pix/cobrancas-imediatas/) e [gestão de Pix](https://dev.efipay.com.br/docs/api-pix/gestao-de-pix/).
+- Apenas `nome` estruturado decide a classificação; mensagem/corpo não são propagados. Nome duplicado, JSON inválido, excesso de 64 KiB/profundidade 16 e códigos desconhecidos falham fechados. Timeout de leitura e renovação única após 401 preservados; rejeições conhecidas do PUT continuam distintas de ausência.
+- Com remoção solicitada, Preparada/Indeterminada consulta o mesmo txid, nunca executa novo PUT. Ausência autenticada finaliza a mesma cobrança como Removida e cancela o pagamento na mesma transação. Ativa usa PATCH; ambiguidade continua consultável e confirmação impede cancelamento. Sem remoção solicitada, ausência permite PUT apenas em ciclo posterior, na mesma identidade.
+- Seis integrações adicionadas: recuperação PUT/GET/PUT, inbox ausente seguida de confirmação única, cancelamento indeterminado idempotente, Preparada sem novo PUT, PATCH ausente e rollback integral do cancelamento. Inventário real validado: **226 casos em 19 classes**.
+- Testes do adapter cobrem os códigos por operação, 404 defensivo, erro desconhecido, JSON inválido, nome duplicado, tamanho/profundidade e segredo fictício em mensagem, sempre sem repetição HTTP indevida. Nenhuma migration ou contrato financeiro alterado.
+
+### Validação desta correção
+
+- `dotnet build IndicaA2.slnx`: aprovado em 43,36s, 0 erros e 4 warnings preexistentes de nulabilidade em Usuario/UsuarioService.
+- Direcionados: **165/165**, 0 falhos/ignorados (16 Domain, 31 Application, 79 Infrastructure, 39 API), incluindo os seis testes de preflight. Comando: `dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&(FullyQualifiedName~Cobranca|FullyQualifiedName~RecebimentoPix|FullyQualifiedName~PagamentoVistoriaServiceTests|FullyQualifiedName~MySqlIntegrationPreflightTests)" --logger "console;verbosity=minimal"`.
+- Suíte rápida oficial: **791/791**, 0 falhos/ignorados (170 Domain, 208 Application, 162 Infrastructure, 251 API), exit 0; durações por projeto 338ms/920ms/5s/10s. Comando: `dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"`.
+- Frontend: `npm run lint`, `npm test -- --run` e `npm run build` aprovados, TZ America/Sao_Paulo; **93/93 em 24,42s**, Vite 7,09s, preservados dois avisos de anotação Zod/Rollup. Executados pelo runtime Node existente com npm 11; nenhum arquivo de dependência alterado.
+- MySQL: script oficial `pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql`, uma execução, **226/226**, 0 falhos/ignorados, 26s de testes/32,9s do comando, exit 0. Conexão privada local sem Database; preflight único e migrations 001–015 no banco descartável. Inventário somente leitura: 0 bancos antes/depois, 0 novos remanescentes e 0 antigos removidos. Sem limpeza manual.
+- Todos os comandos de validação concluíram com exit 0; `git diff --check` sem erros. Zero Efí/OAuth/Pix real ou dados de produção; HTTP do adapter exclusivamente simulado. CI do novo commit será registrado no PR após publicação, sem antecipar resultado.
+
+| Garantia nova | Método |
+| --- | --- |
+| HTTP 400 por código e operação, sem mensagem sensível | `Http400DecideSomentePorNomeDocumentadoDaOperacao`, `PixNaoEncontradoHttp400PermaneceDisponivelParaConsultaPosterior` |
+| Corpo inválido/excessivo/profundo/desconhecido falha fechado | `Http400InvalidoOuDesconhecidoNaoAutorizaAusenciaNemExpoeCorpo` (24 casos) |
+| 404 defensivo GET/PATCH | `GetEPatch404ContinuamAceitosDefensivamente` substitui a expectativa restrita a GET, preservando ausência e chamada única |
+| Recuperação HTTP real simulado, mesma identidade e ciclo posterior | `Http400AusenciaRecuperaCriacaoNoMesmoTxidSomenteNoCicloPosterior` |
+| Inbox ausente seguida de confirmação idempotente | `Http400PixAusenteReagendaInboxEProximoCicloConfirmaUmaVez` |
+| Cancelamento indeterminado sem novo PUT, atômico e idempotente | `CancelamentoDeCriacaoIndeterminadaConsultaAusenciaECancelaAtomicamenteSemNovoPut` |
+| Preparada com remoção não cria cobrança | `CancelamentoDePreparadaImpedePutMesmoAposAusenciaAnterior` |
+| PATCH ausente cancela a mesma cobrança | `PatchComAusenciaDocumentadaConcluiCancelamentoDaMesmaCobranca` |
+| Falha de persistência reverte cancelamento/auditoria/lease | `CancelamentoPorAusenciaRevertePagamentoCobrancaAuditoriaELeaseSePersistenciaFalhar` |
+
+Os resultados da seção seguinte pertencem ao HEAD anterior; não representam a validação desta ampliação.
+
 ## PR #37 — correções da revisão (2026-09-30)
 
 - Cancelamento com recebimento desabilitado usa o serviço anterior sem resolver provider/protetor/certificado; o `NOT EXISTS` persistente continua impedindo cancelamento direto com histórico de cobrança. Habilitado continua coordenando remoção confirmada.
@@ -40,7 +71,7 @@ Esta seção supera as pendências e contagens intermediárias abaixo, preservad
 - Migration **015** cria `cobrancas_pix_vistoria`, `operacoes_cobranca_pix` e `recebimentos_pix_inbox`: FKs restritivas, DECIMAL(12,2), DATETIME(6), unicidades de txid/e2e/hash/link, checks e coluna gerada única por pagamento não terminal. Sem seed, trigger, procedure ou privilégio global. A fixture aplica 001–015 e remove apenas seu banco.
 - Estados: Preparada, CriacaoEmProcessamento, Ativa, Indeterminada, ConfirmacaoPendente, Confirmada, Expirada, RemocaoPendente, Removida, FalhaDefinitiva e DivergenciaFinanceira. Respostas desconhecidas permanecem indeterminadas; não são convertidas arbitrariamente em falha financeira definitiva.
 - Preparação bloqueia pagamento pendente, copia valor, cria txid GUID N, auditoria e lease em uma transação. Chamadas repetidas devolvem a cobrança existente. Provider sempre fora da transação; finalização exige token vigente e auditoria compatível. Lease: cinco minutos pelo relógio MySQL. Após crash/timeout, GET da mesma identidade vem antes de qualquer novo PUT; ausência comprovada permite PUT somente numa invocação posterior, nunca loop imediato.
-- Remoção é solicitada e reconciliada. Resposta indeterminada não cancela pagamento. Reemissão explícita só após expiração/remoção comprovada e pagamento pendente; identidade antiga é conservada. Ausência de cobrança após pedido incerto de remoção permanece pendente de conciliação, sem presumir cancelamento externo. Recebimento tardio é divergência, nunca devolução automática; uma cobrança terminal já substituída não é reativada e a divergência é exposta no registro, na inbox/auditoria e nos indicadores.
+- Remoção é solicitada e reconciliada. Resposta indeterminada não cancela pagamento. Reemissão explícita só após expiração/remoção comprovada e pagamento pendente; identidade antiga é conservada. A regra intermediária que mantinha ausência autenticada indefinidamente em conciliação foi superada: ausência comprovada após pedido de remoção cancela atomicamente cobrança/pagamento, conforme a correção acima. Recebimento tardio é divergência, nunca devolução automática; uma cobrança terminal já substituída não é reativada e a divergência é exposta no registro, na inbox/auditoria e nos indicadores.
 - Webhook é sinal, não evidência financeira. Validação mTLS ocorre antes da leitura do corpo; limite 64 KiB/100 itens, campos mínimos e hash canonicalizado em microssegundos. HTTP 200 somente após commit; duplicata é idempotente. Não se persiste JSON ou dados do pagador. GET `/v2/pix/:e2eId` falso nos testes confirma identidade, valor e horário antes da transação cobrança/pagamento/inbox/auditoria. `PagoEm` vem da evidência autenticada. E2e já usado, txid desconhecido, valor divergente ou pagamento cancelado não confirmam.
 - Ordem de locks financeiros: pagamento, depois inbox/cobrança relacionados, compatível com cancelamento/geração. Um claim de inbox isolado não mantém transação durante HTTP. Finalização após resposta/exceção/cancelamento usa `CancellationToken.None`; falha de persistência permanece explícita. Nenhum recebimento cria Cashback ou PagamentoPix automaticamente.
 - Criptografia AES-256-GCM versionada usa chave independente `INDICA2_COBRANCA_PIX_ENCRYPTION_KEY`, nonce/tag e AAD `CobrancaPix:v1|id`. Material usa a primitiva existente com descarte seguro; Dados Pix não muda. Link aleatório de 256 bits, hash SHA-256, validade 24h, rotação invalida anterior. Texto puro do token somente na resposta de geração/rotação e memória transitória do navegador.

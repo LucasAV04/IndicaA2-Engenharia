@@ -50,14 +50,17 @@ public sealed class EfiCobrancaPixVistoriaProvider : ICobrancaPixVistoriaProvide
         try
         {
             using var response = await EnviarAsync(method, "v2/cob/" + txid, scope, payload, ct);
-            if (response.StatusCode == HttpStatusCode.NotFound && method == HttpMethod.Get)
+            if (response.StatusCode == HttpStatusCode.NotFound && (method == HttpMethod.Get || method == HttpMethod.Patch))
                 return new(SituacaoCobrancaProvider.Ausente, "not-found");
             if (!response.IsSuccessStatusCode)
             {
                 var status=(int)response.StatusCode;
                 // Só a rejeição de validação documentada prova que o PUT não criou
                 // cobrança. Erro desconhecido/422 não é prova de ausência.
-                if (status==400 && method==HttpMethod.Put && await ValidacaoRejeitada(response.Content,ct))
+                var nome = status==400 ? await NomeErroAsync(response.Content,ct) : null;
+                if (nome=="cobranca_nao_encontrada" && (method==HttpMethod.Get || method==HttpMethod.Patch))
+                    return new(SituacaoCobrancaProvider.Ausente,"cobranca-ausente");
+                if (method==HttpMethod.Put && nome is "valor_invalido" or "chave_invalida" or "documento_bloqueado")
                     return new(SituacaoCobrancaProvider.FalhaDefinitiva,"criacao-rejeitada");
                 return new(status switch
                 {
@@ -107,6 +110,8 @@ public sealed class EfiCobrancaPixVistoriaProvider : ICobrancaPixVistoriaProvide
         {
             using var response = await EnviarAsync(HttpMethod.Get, "v2/pix/" + endToEndId, "pix.read", null, ct);
             if (response.StatusCode==HttpStatusCode.NotFound) return new(SituacaoConsultaPix.AindaNaoDisponivel);
+            if (response.StatusCode==HttpStatusCode.BadRequest && await NomeErroAsync(response.Content,ct)=="pix_nao_encontrado")
+                return new(SituacaoConsultaPix.AindaNaoDisponivel);
             if ((int)response.StatusCode is 400 or 401 or 403 or 422) return new(SituacaoConsultaPix.BloqueioOperacional);
             if (!response.IsSuccessStatusCode) return new(SituacaoConsultaPix.Indeterminado);
             using var json = await LerJsonAsync(response.Content, ct);
@@ -168,14 +173,17 @@ public sealed class EfiCobrancaPixVistoriaProvider : ICobrancaPixVistoriaProvide
         return response;
     }
     private sealed class BloqueioProviderException : Exception;
-    private static async Task<bool> ValidacaoRejeitada(HttpContent content,CancellationToken ct)
+    private static async Task<string?> NomeErroAsync(HttpContent content,CancellationToken ct)
     {
         try
         {
             using var json=await LerJsonAsync(content,ct);
-            return Texto(json.RootElement,"nome") is "valor_invalido" or "chave_invalida" or "documento_bloqueado";
+            // Somente nome participa da decisão. Duplicidade também é ambígua.
+            if (json.RootElement.ValueKind!=JsonValueKind.Object
+                || json.RootElement.EnumerateObject().Count(p=>p.NameEquals("nome"))!=1) return null;
+            return Texto(json.RootElement,"nome");
         }
-        catch(Exception e) when(e is JsonException or InvalidOperationException or KeyNotFoundException) { return false; }
+        catch(Exception e) when(e is JsonException or InvalidOperationException or KeyNotFoundException) { return null; }
     }
     internal static async Task<JsonDocument> LerJsonAsync(HttpContent content, CancellationToken ct)
     {

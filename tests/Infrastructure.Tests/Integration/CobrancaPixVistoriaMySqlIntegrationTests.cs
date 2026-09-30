@@ -3,6 +3,10 @@ using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Repositories;
 using Infrastructure.Security;
+using Infrastructure.Providers;
+using System.Globalization;
+using System.Net;
+using System.Text.Json;
 using Xunit;
 
 namespace Infrastructure.Tests.Integration;
@@ -680,6 +684,158 @@ public sealed class CobrancaPixVistoriaMySqlIntegrationTests(MySqlIntegrationFix
         await Verificar(1,1); // Mesmo incidente, unidades distintas, nunca somadas.
         await dados.ExecutarAsync("UPDATE cobrancas_pix_vistoria SET status=2");
         await Verificar(0,1);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task Http400AusenciaRecuperaCriacaoNoMesmoTxidSomenteNoCicloPosterior()
+    {
+        var pagamento=await Pagamento(); using var protector=Protector();
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var p=(await store.PrepararAsync(pagamento.Id,3600,default)).Preparacao!;
+        using var handler=new HttpRecebimentoSequencial((_,n)=>n switch
+        {
+            1=>RespostaHttp(HttpStatusCode.ServiceUnavailable,"{}"),
+            2=>ErroAusencia("cobranca_nao_encontrada"),
+            _=>RespostaHttp(HttpStatusCode.OK,JsonSerializer.Serialize(new { status="ATIVA",txid=p.Txid,valor=new { original="12.34" },calendario=new { criacao=DateTime.UtcNow.AddSeconds(-1),expiracao=3600 },revisao=0 }))
+        });
+        using var http=new HttpClient(handler);
+        var processador=new RecebimentoPixProcessamentoService(store,new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory),ProviderHttp(http),new(){Habilitado=true});
+        await processador.ExecutarPreparacaoAsync(p,default);
+        Assert.Equal(StatusCobrancaPixVistoria.Indeterminada,Assert.Single(await store.ListarAsync(default)).Status);
+        await processador.ProcessarCobrancaAsync(p.Id,default);
+        Assert.Equal(StatusCobrancaPixVistoria.Preparada,Assert.Single(await store.ListarAsync(default)).Status);
+        Assert.Equal(new[]{"PUT","GET"},handler.Operacoes.Select(x=>x.Metodo));
+        await processador.ProcessarCobrancaAsync(p.Id,default);
+        Assert.Equal(new[]{"PUT","GET","PUT"},handler.Operacoes.Select(x=>x.Metodo));
+        Assert.All(handler.Operacoes,x=>Assert.Equal("/v2/cob/"+p.Txid,x.Rota));
+        Assert.Equal(p.Id,Assert.Single(await store.ListarAsync(default)).Id);
+        Assert.Equal(StatusCobrancaPixVistoria.Ativa,Assert.Single(await store.ListarAsync(default)).Status);
+        Assert.All(await store.AuditoriaAsync(p.Id,default),a=>Assert.NotNull(a.FinishedAt));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task Http400PixAusenteReagendaInboxEProximoCicloConfirmaUmaVez()
+    {
+        using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var (pagamento,_,evento)=await Ativar(store);
+        var inbox=new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory);
+        await inbox.PersistirAsync([evento],default);
+        var id=Assert.Single(await store.EventosAsync(20,default));
+        using var handler=new HttpRecebimentoSequencial((_,n)=>n==1 ? ErroAusencia("pix_nao_encontrado") : RespostaHttp(HttpStatusCode.OK,JsonSerializer.Serialize(new { endToEndId=evento.EndToEndId,txid=evento.Txid,valor=evento.Valor.ToString("F2",CultureInfo.InvariantCulture),horario=evento.Horario })));
+        using var http=new HttpClient(handler);
+        var processador=new RecebimentoPixProcessamentoService(store,inbox,ProviderHttp(http),new(){Habilitado=true});
+        await processador.ProcessarEventoAsync(id,default);
+        Assert.Empty(await store.EventosAsync(20,default));
+        Assert.Equal(0,(await store.IndicadoresAsync(default)).EventosDivergentes);
+        Assert.Contains("recebimento-ausente",await dados.SnapshotAsync("SELECT * FROM recebimentos_pix_inbox"));
+        await dados.ExecutarAsync("UPDATE recebimentos_pix_inbox SET proxima_consulta_em=DATE_SUB(UTC_TIMESTAMP(6),INTERVAL 1 SECOND)");
+        Assert.Equal(id,Assert.Single(await store.EventosAsync(20,default)));
+        await processador.ProcessarEventoAsync(id,default);
+        var antes=await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria");
+        await processador.ProcessarEventoAsync(id,default);
+        Assert.Equal(2,handler.Operacoes.Count);
+        Assert.All(handler.Operacoes,x=>Assert.Equal("/v2/pix/"+evento.EndToEndId,x.Rota));
+        Assert.Equal(antes,await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria"));
+        var confirmado=(await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(pagamento.Id,default))!;
+        Assert.Equal(StatusPagamentoVistoria.Confirmado,confirmado.Status); Assert.Equal(evento.Horario,confirmado.PagoEm);
+        Assert.Empty(await store.EventosAsync(20,default));
+        Assert.DoesNotContain("SEGREDO",await dados.SnapshotAsync("SELECT * FROM recebimentos_pix_inbox"));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task CancelamentoDeCriacaoIndeterminadaConsultaAusenciaECancelaAtomicamenteSemNovoPut()
+    {
+        var pagamento=await Pagamento(); using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var p=(await store.PrepararAsync(pagamento.Id,3600,default)).Preparacao!;
+        using var handler=new HttpRecebimentoSequencial((_,n)=>n==1 ? RespostaHttp(HttpStatusCode.ServiceUnavailable,"{}") : ErroAusencia("cobranca_nao_encontrada"));
+        using var http=new HttpClient(handler);
+        var processador=new RecebimentoPixProcessamentoService(store,new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory),ProviderHttp(http),new(){Habilitado=true});
+        await processador.ExecutarPreparacaoAsync(p,default);
+        await store.SolicitarCancelamentoAsync(pagamento.Id,default);
+        await processador.ProcessarCobrancaAsync(p.Id,default);
+        Assert.Equal(new[]{"PUT","GET"},handler.Operacoes.Select(x=>x.Metodo));
+        Assert.All(handler.Operacoes,x=>Assert.Equal("/v2/cob/"+p.Txid,x.Rota));
+        Assert.Equal(StatusCobrancaPixVistoria.Removida,Assert.Single(await store.ListarAsync(default)).Status);
+        Assert.Equal(StatusPagamentoVistoria.Cancelado,(await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(pagamento.Id,default))!.Status);
+        Assert.Contains(await store.AuditoriaAsync(p.Id,default),a=>a.Codigo=="removida-por-ausencia" && a.FinishedAt is not null);
+        var cobrancaAntes=await dados.SnapshotAsync("SELECT * FROM cobrancas_pix_vistoria");
+        var pagamentoAntes=await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria");
+        await processador.ProcessarCobrancaAsync(p.Id,default);
+        await store.SolicitarCancelamentoAsync(pagamento.Id,default);
+        Assert.Equal(2,handler.Operacoes.Count);
+        Assert.Equal(cobrancaAntes,await dados.SnapshotAsync("SELECT * FROM cobrancas_pix_vistoria"));
+        Assert.Equal(pagamentoAntes,await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria"));
+        Assert.Empty(await store.CobrançasAsync(20,default));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task CancelamentoDePreparadaImpedePutMesmoAposAusenciaAnterior()
+    {
+        var pagamento=await Pagamento(); using var protector=Protector();
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var p=(await store.PrepararAsync(pagamento.Id,3600,default)).Preparacao!;
+        await store.FinalizarAsync(p,new(SituacaoCobrancaProvider.Indeterminada,"timeout"),default);
+        var consultar=(await store.AdquirirAsync(p.Id,default))!;
+        await store.FinalizarAsync(consultar,new(SituacaoCobrancaProvider.Ausente,"cobranca-ausente"),default);
+        Assert.Equal(StatusCobrancaPixVistoria.Preparada,Assert.Single(await store.ListarAsync(default)).Status);
+        await store.SolicitarCancelamentoAsync(pagamento.Id,default);
+        using var handler=new HttpRecebimentoSequencial((_,_)=>ErroAusencia("cobranca_nao_encontrada")); using var http=new HttpClient(handler);
+        await new RecebimentoPixProcessamentoService(store,new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory),ProviderHttp(http),new(){Habilitado=true}).ProcessarCobrancaAsync(p.Id,default);
+        Assert.Equal("GET",Assert.Single(handler.Operacoes).Metodo);
+        Assert.Equal(StatusCobrancaPixVistoria.Removida,Assert.Single(await store.ListarAsync(default)).Status);
+        Assert.Equal(StatusPagamentoVistoria.Cancelado,(await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(pagamento.Id,default))!.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task PatchComAusenciaDocumentadaConcluiCancelamentoDaMesmaCobranca()
+    {
+        using var protector=Protector();
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var (pagamento,p,_)=await Ativar(store);
+        await store.SolicitarCancelamentoAsync(pagamento.Id,default);
+        using var handler=new HttpRecebimentoSequencial((_,_)=>ErroAusencia("cobranca_nao_encontrada")); using var http=new HttpClient(handler);
+        await new RecebimentoPixProcessamentoService(store,new RecebimentoPixWebhookMySqlStore(fixture.ConnectionFactory),ProviderHttp(http),new(){Habilitado=true}).ProcessarCobrancaAsync(p.Id,default);
+        var operacao=Assert.Single(handler.Operacoes); Assert.Equal("PATCH",operacao.Metodo); Assert.Equal("/v2/cob/"+p.Txid,operacao.Rota);
+        Assert.Equal(p.Id,Assert.Single(await store.ListarAsync(default)).Id);
+        Assert.Equal(StatusCobrancaPixVistoria.Removida,Assert.Single(await store.ListarAsync(default)).Status);
+        Assert.Equal(StatusPagamentoVistoria.Cancelado,(await new PagamentoVistoriaMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(pagamento.Id,default))!.Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task CancelamentoPorAusenciaRevertePagamentoCobrancaAuditoriaELeaseSePersistenciaFalhar()
+    {
+        var pagamento=await Pagamento(); using var protector=Protector(); using var dados=new ProcessamentoPixCenario(fixture);
+        var store=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector);
+        var p=(await store.PrepararAsync(pagamento.Id,3600,default)).Preparacao!;
+        await store.FinalizarAsync(p,new(SituacaoCobrancaProvider.Indeterminada,"timeout"),default);
+        await store.SolicitarCancelamentoAsync(pagamento.Id,default);
+        var consulta=(await store.AdquirirAsync(p.Id,default))!;
+        var snapshots=new[]{await dados.SnapshotAsync("SELECT * FROM cobrancas_pix_vistoria"),await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria"),await dados.SnapshotAsync("SELECT * FROM operacoes_cobranca_pix ORDER BY id")};
+        var falho=new CobrancaPixVistoriaMySqlStore(fixture.ConnectionFactory,protector)
+        { Interceptar=(etapa,_,_)=>etapa=="Finalizacao" ? Task.FromException(new InvalidOperationException("falha-controlada")) : Task.CompletedTask };
+        await Assert.ThrowsAsync<InvalidOperationException>(()=>falho.FinalizarAsync(consulta,new(SituacaoCobrancaProvider.Ausente,"cobranca-ausente"),default));
+        Assert.Equal(snapshots[0],await dados.SnapshotAsync("SELECT * FROM cobrancas_pix_vistoria"));
+        Assert.Equal(snapshots[1],await dados.SnapshotAsync("SELECT * FROM pagamentos_vistoria"));
+        Assert.Equal(snapshots[2],await dados.SnapshotAsync("SELECT * FROM operacoes_cobranca_pix ORDER BY id"));
+    }
+
+    private static HttpResponseMessage RespostaHttp(HttpStatusCode status,string json)=>new(status){Content=new StringContent(json)};
+    private static HttpResponseMessage ErroAusencia(string nome)=>RespostaHttp(HttpStatusCode.BadRequest,JsonSerializer.Serialize(new { nome,mensagem="SEGREDO_FICTICIO" }));
+    private static EfiCobrancaPixVistoriaProvider ProviderHttp(HttpClient http)=>new(http,
+        new EfiPixOptions { Environment="Sandbox",BaseUrl="https://pix-h.api.efipay.com.br",ClientId="ficticio",ClientSecret="ficticio",CertificatePath="nao-carregado.p12" },
+        new RecebimentoPixOptions { Habilitado=true,ChaveRecebedora="ficticio@example.invalid" },TimeProvider.System);
+    private sealed class HttpRecebimentoSequencial(Func<HttpRequestMessage,int,HttpResponseMessage> resposta) : HttpMessageHandler
+    {
+        public List<(string Metodo,string Rota)> Operacoes { get; }=[];
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            if(request.RequestUri!.AbsolutePath=="/oauth/token") return Task.FromResult(RespostaHttp(HttpStatusCode.OK,"{\"access_token\":\"ficticio\",\"expires_in\":3600}"));
+            Operacoes.Add((request.Method.Method,request.RequestUri.AbsolutePath));
+            return Task.FromResult(resposta(request,Operacoes.Count));
+        }
     }
 
     private sealed class ProviderFalso : ICobrancaPixVistoriaProvider

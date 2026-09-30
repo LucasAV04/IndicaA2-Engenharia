@@ -63,8 +63,9 @@ public sealed partial class CobrancaPixVistoriaMySqlStore(MySqlConnectionFactory
         if (row is null || row.Status is 5 or 6 or 8 or 9 or 10 || row.Codigo=="bloqueio-operacional") return null;
         if (row.LeaseExpira > await Agora(c, t, ct)) return null;
         // Após crash, nunca repete PUT diretamente: primeiro consulta o mesmo txid.
-        var operacao = row.Status == 0 ? OperacaoCobranca.Criar
-            : row.Remocao && row.Status == 2 ? OperacaoCobranca.Remover : OperacaoCobranca.Consultar;
+        var operacao = row.Remocao
+            ? row.Status == 2 ? OperacaoCobranca.Remover : OperacaoCobranca.Consultar
+            : row.Status == 0 ? OperacaoCobranca.Criar : OperacaoCobranca.Consultar;
         var lease = Guid.NewGuid(); var audit = Guid.NewGuid();
         using var update = Comando(c, t, """
             UPDATE cobrancas_pix_vistoria SET lease_id=@lease,lease_expira_em=DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 5 MINUTE),
@@ -102,10 +103,11 @@ public sealed partial class CobrancaPixVistoriaMySqlStore(MySqlConnectionFactory
         { codigo="bloqueio-operacional"; }
         else if (result.Situacao is SituacaoCobrancaProvider.Limitada or SituacaoCobrancaProvider.Indisponivel or SituacaoCobrancaProvider.Conflito)
         { codigo=result.Situacao switch { SituacaoCobrancaProvider.Limitada=>"limite-transitorio", SituacaoCobrancaProvider.Conflito=>"conflito-consultar", _=>"indisponivel" }; }
-        else if (result.Situacao == SituacaoCobrancaProvider.Ausente && p.Operacao == OperacaoCobranca.Consultar)
+        else if (result.Situacao == SituacaoCobrancaProvider.Ausente && p.Operacao is OperacaoCobranca.Consultar or OperacaoCobranca.Remover)
         {
-            // A ausência permite nova invocação PUT apenas com esta identidade persistida.
-            status = r.Remocao ? 7 : 0; codigo = "ausente";
+            // Com remoção solicitada, ausência autenticada conclui cancelamento
+            // na mesma transação. Nunca volta a Preparada para criar outro PUT.
+            status = r.Remocao ? 8 : 0; codigo = r.Remocao ? "removida-por-ausencia" : "ausente";
         }
         else if (valido)
         {

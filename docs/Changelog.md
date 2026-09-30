@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-30 — Ausência HTTP 400 e resolução atômica de cancelamento (PR #37)
+
+- GET/PATCH cobrança reconhecem `cobranca_nao_encontrada`; GET recebimento reconhece `pix_nao_encontrado`. Decisão exclusivamente pelo campo `nome`, sem propagar mensagem; limites de corpo e 404 defensivo preservados.
+- Remoção solicitada impede novo PUT em Preparada/Indeterminada. GET do mesmo txid com ausência autenticada conclui remoção e cancelamento atomicamente; PATCH continua usado para cobrança ativa. Ambiguidade não cancela nem cria nova identidade.
+- Cobertura adicionada do adapter e seis integrações de recuperação, inbox, cancelamento idempotente e rollback. Inventário validado de 226 integrações/19 classes. Resultados abaixo são históricos.
+- Build aprovado em 43,36s, 0 erros/4 warnings preexistentes; direcionados 165/165 (incluindo preflight 6/6); suíte rápida 791/791; frontend lint/build e 93/93 testes em 24,42s aprovados (dois avisos Zod/Rollup preservados).
+- MySQL oficial executado uma vez: **226/226**, 0 falhos/ignorados, 26s de testes/32,9s do comando, exit 0; migrations 001–015 na fixture descartável. Inventário de leitura: 0 bancos antes/depois, 0 novos remanescentes, 0 antigos removidos. Nenhuma limpeza manual. Todos os comandos de validação com exit 0, `git diff --check` sem erros.
+- Migration 015, criptografia e regras financeiras preservadas; nenhuma chamada Efí/OAuth/Pix real.
+
 ## 2026-09-30 — Correção dos bloqueios da revisão do PR #37
 
 - Restaurado cancelamento sem cobrança quando recebimento está desabilitado, preservada proteção persistente para histórico Pix.
