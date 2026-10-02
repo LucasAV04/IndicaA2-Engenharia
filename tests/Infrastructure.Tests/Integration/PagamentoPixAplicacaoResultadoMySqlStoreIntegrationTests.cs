@@ -335,10 +335,11 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStoreIntegrationTests(MyS
         var indicada = IntegrationTestData.CriarUsuario();
         await usuarioRepository.AdicionarAsync(indicador, CancellationToken.None);
         await usuarioRepository.AdicionarAsync(indicada, CancellationToken.None);
-        var vistoria = IntegrationTestData.CriarVistoria(indicada.Id);
-        await vistoriaRepository.AdicionarAsync(vistoria, CancellationToken.None);
+        var vistoria = await JornadaFinanceiraTestData.CriarConcluidaAsync(fixture,indicada.Id);
         var indicacao = new Indicacao(indicador.Id, "Indicada Resultado", "11999999999", indicador.CodigoIndicacao!);
         indicacao.VincularVistoria(vistoria.Id);
+        indicacao.VincularUsuarioIndicado(indicada.Id);
+        indicacao.MarcarVistoriaConcluida();
         await indicacaoRepository.AdicionarAsync(indicacao, CancellationToken.None);
         var pagamentoVistoria = IntegrationTestData.CriarPagamentoVistoria(vistoria.Id);
         pagamentoVistoria.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamentoVistoria.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);

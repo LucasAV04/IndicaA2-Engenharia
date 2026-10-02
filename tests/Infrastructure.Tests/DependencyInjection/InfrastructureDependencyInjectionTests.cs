@@ -14,6 +14,22 @@ namespace Infrastructure.Tests.DependencyInjection;
 public sealed class InfrastructureDependencyInjectionTests
 {
     [Fact]
+    public void JornadaEhScopedEResolucaoNaoCarregaCriptografiaOuProvider()
+    {
+        var services=new ServiceCollection();services.AddInfrastructure(CriarConfiguration());
+        services.AddSingleton<IDadosPixProtector>(_=>throw new InvalidOperationException("Não deve resolver criptografia ao construir consultas."));
+        services.AddScoped<IPixProvider>(_=>throw new InvalidOperationException("Jornada não chama provider diretamente."));
+        using var provider=services.BuildServiceProvider(new ServiceProviderOptions {ValidateScopes=true});
+        foreach(var tipo in new[]{typeof(Application.Jornada.IJornadaPublicaStore),typeof(Application.Jornada.IJornadaConsultaStore),typeof(Application.Jornada.IJornadaFinanceiraStore)})
+        {
+            Assert.Equal(ServiceLifetime.Scoped,Assert.Single(services,d=>d.ServiceType==tipo).Lifetime);
+            using var primeiro=provider.CreateScope();using var segundo=provider.CreateScope();
+            var instancia=primeiro.ServiceProvider.GetRequiredService(tipo);
+            Assert.Same(instancia,primeiro.ServiceProvider.GetRequiredService(tipo));
+            Assert.NotSame(instancia,segundo.ServiceProvider.GetRequiredService(tipo));
+        }
+    }
+    [Fact]
     public void LeituraAdministrativaPixEhScopedESemDependenciaDeProtector()
     {
         var services = new ServiceCollection();

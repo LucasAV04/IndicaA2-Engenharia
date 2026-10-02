@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-02 — Jornada automática de indicação, portal e notificações internas
+
+- Entrega vertical sobre o merge aprovado do PR #37: captação pública com consentimento/idempotência, portal próprio, notificações duráveis e conclusão transacional. Migration 016 aditiva, sem alterar 001–015 ou inserir preços/tipos comerciais.
+- Conclusão gera Cashback de 20%, aprova e prepara ordem pendente com Dados Pix atuais. Sem chave, mantém Disponivel e notifica; worker específico desabilitado por padrão prepara no próximo tick normal, sem provider e sem sobreposição. Liquidação existente atualiza também Indicacao.CashbackPago (enum 4) e notificações no mesmo commit.
+- Captação devolve protocolo opaco, sem identidade pública. Portal usa apenas a identidade autenticada e DTOs mascarados; administração recebe alertas, origem/consentimento, links e indicadores separados. Ações HTTP manuais duplicadas deixam de ser endpoints; consultas preservadas.
+- Prefixo de lock da indicação coordena conclusão, preparação e liquidação; atualização administrativa obsoleta não pode regredir indicação concluída/paga. Portal não aceita destinatário arbitrário; ausência de Dados Pix gera notificação, não envio.
+- Validação final: build aprovado, última recompilação 0 erros/0 warnings (21,12s); quatro warnings preexistentes não foram corrigidos. Direcionados **370/370**, preflight **6/6** incluído; suíte rápida **838/838**, zero falhos/ignorados. Frontend ci/lint/build aprovados, **104/104** em 28,47s, dois avisos preexistentes Zod/Rollup; sem mudanças de dependências.
+- MySQL real local descartável **251/251 em 20 classes**, zero falhos/ignorados; 25 novos casos, migrations **001–016**, 1min03s de testes/70,33s de comando, exit 0. Consulta de leitura: 0 bancos antes/depois, 0 novos remanescentes e 0 antigos removidos; nenhuma limpeza manual.
+- Registros intermediários superados: backend 258 aprovados/3 falhos de expectativas HTTP/OpenAPI/Trait; frontend 40/46 e depois 103/104 por expectativa do título de login. MySQL 158/248 devido ao helper não persistir Realizada antes de Concluida, depois 247/248 por expectativa de agrupamento do dashboard. Causas corrigidas e casos afetados executados antes das suítes finais; asserções financeiras preservadas. Matriz completa em Implementacoes.md.
+- Documentação operacional, API.http, README do frontend, README principal e .env.example atualizados. Zero Efí/OAuth/Pix real/dados de produção. WhatsApp/e-mail/SMS/push externo, revisão jurídica do consentimento e implantação continuam fora da entrega. CI será confirmado no PR draft após publicação; nenhum resultado de CI antecipado.
+
 ## 2026-09-30 — Ausência HTTP 400 e resolução atômica de cancelamento (PR #37)
 
 - GET/PATCH cobrança reconhecem `cobranca_nao_encontrada`; GET recebimento reconhece `pix_nao_encontrado`. Decisão exclusivamente pelo campo `nome`, sem propagar mensagem; limites de corpo e 404 defensivo preservados.

@@ -5,6 +5,7 @@
         Pendente = 0,
         VistoriaVinculada = 1,
         VistoriaConcluida = 2,
-        Cancelada = 3
+        Cancelada = 3,
+        CashbackPago = 4
     }
 }

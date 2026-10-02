@@ -14,6 +14,7 @@ namespace API.Controllers;
 public sealed class CashbacksController(ICashbackService cashbackService) : ControllerBase
 {
     [HttpPost("por-pagamento/{pagamentoVistoriaId:guid}")]
+    [NonAction] // Substituído pela conclusão transacional da vistoria.
     [ProducesResponseType(typeof(CashbackResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
@@ -54,6 +55,7 @@ public sealed class CashbacksController(ICashbackService cashbackService) : Cont
         Ok(await cashbackService.ObterPorUsuarioIndicadorIdAsync(usuarioIndicadorId, cancellationToken));
 
     [HttpPatch("{id:guid}/aprovar")]
+    [NonAction] // Aprovação automática pertence à conclusão transacional.
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]

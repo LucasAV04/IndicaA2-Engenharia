@@ -23,7 +23,15 @@ pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql
 
 MySQL exige conexão privada de testes em `INDICA2_TEST_MYSQL_CONNECTION`, sem Database, autorizada somente para bancos descartáveis `indicaa2_test_`. Nunca use banco de produção nem registre credenciais. O script falha fechado sem configuração/preflight. Testes externos Efí não pertencem à suíte rápida. Frontend: `npm ci`, `npm run lint`, `npm test -- --run`, `npm run build`, com TZ America/Sao_Paulo.
 
-Workers Pix continuam desabilitados por padrão. O módulo de recebimento usa cobrança imediata, inbox mTLS e consulta autenticada antes de confirmar o pagamento. Não há confirmação manual, devolução automática, notificações ou implantação em produção. Validação local: 791 testes rápidos, 226 integrações MySQL e 93 testes frontend aprovados; detalhes e limites em Implementacoes.md. Nenhuma chamada Efí/OAuth/Pix real faz parte da validação local.
+Workers continuam desabilitados por padrão. O módulo de recebimento usa cobrança imediata, inbox mTLS e consulta autenticada antes de confirmar o pagamento. Não há confirmação manual, devolução automática ou implantação em produção. A validação de 791 testes rápidos, 226 integrações e 93 testes frontend é o registro histórico do PR #37; resultados da nova jornada são registrados separadamente em Implementacoes.md. Nenhuma chamada Efí/OAuth/Pix real faz parte da validação local.
+
+## Jornada automática da indicação
+
+`/indicar/:codigo` capta indicação com consentimento explícito e chave de idempotência, sem criar conta. `/minha-conta` oferece portal próprio com dados mascarados, link de indicação e notificações internas. O administrador vincula usuário e vistoria; após pagamento confirmado e realização, a conclusão cria/aprova o cashback de 20% e prepara a ordem Pix na mesma transação. Sem Dados Pix, mantém cashback disponível e registra aviso; o worker de preparação pode recuperar no próximo tick, sem chamar provider. A aplicação financeira existente marca Cashback/indicação como pagos e notifica atomicamente.
+
+Migration 016 é aditiva e não é executada no startup. Configure `PublicWeb__BaseUrl` HTTPS e, somente quando autorizado, `CashbackPagamentoPreparacaoWorker__Habilitado` (padrão false), `IntervaloSegundos` (60) e `TamanhoLote` (20). Não existem seeds comerciais. WhatsApp, e-mail, SMS, push externo e validação jurídica do consentimento continuam pendentes para produção. Exemplos seguros e inventário de configuração estão em `src/API/API.http` e `.env.example`.
+
+Validação local da jornada: 838 testes rápidos, 104 de frontend e 251 integrações MySQL em 20 classes aprovados, sem falhos/ignorados. Migrations 001–016 validadas somente em banco descartável; nenhum banco novo remanescente. Resultados intermediários, comandos, limites e matriz de cobertura estão em `docs/Implementacoes.md`. CI será confirmado no PR, sem habilitar workers ou provider real.
 
 ## Recebimento de vistoria
 

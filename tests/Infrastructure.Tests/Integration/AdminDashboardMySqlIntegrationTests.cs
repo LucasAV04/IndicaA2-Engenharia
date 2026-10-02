@@ -44,8 +44,8 @@ public sealed class AdminDashboardMySqlIntegrationTests(MySqlIntegrationFixture 
         var result = await new AdminDashboardMySqlStore(fixture.ConnectionFactory).ObterAsync();
         Assert.Equal(12, result.TotalUsuarios);
         Assert.Equal(11, result.UsuariosAtivos);
-        Assert.Equal(6, result.Indicacoes["VistoriaVinculada"]);
-        Assert.Equal(6, result.Vistorias["Agendada"]);
+        Assert.Equal(6, result.Indicacoes["VistoriaConcluida"]);
+        Assert.Equal(6, result.Vistorias["Concluida"]);
         Assert.Equal(5, result.PagamentosVistoria["Confirmado"]);
         Assert.Equal(1, result.PagamentosVistoria["Pendente"]);
         Assert.Equal(2499.50m, result.ReceitaConfirmada);

@@ -75,7 +75,7 @@ namespace Domain.Entities
                 throw new ArgumentException("O código persistido é obrigatório.", nameof(codigoIndicacaoUsado));
             if (!Enum.IsDefined(status))
                 throw new ArgumentOutOfRangeException(nameof(status), "O status persistido é inválido.");
-            if (status is (StatusIndicacao.VistoriaVinculada or StatusIndicacao.VistoriaConcluida) && vistoriaId is null)
+            if (status is (StatusIndicacao.VistoriaVinculada or StatusIndicacao.VistoriaConcluida or StatusIndicacao.CashbackPago) && vistoriaId is null)
                 throw new ArgumentException("O status de vistoria exige uma vistoria vinculada.", nameof(vistoriaId));
             if (status is StatusIndicacao.Pendente && vistoriaId is not null)
                 throw new ArgumentException("Uma indicação pendente não pode possuir vistoria vinculada.", nameof(vistoriaId));
@@ -133,7 +133,7 @@ namespace Domain.Entities
 
         public void Cancelar()
         {
-            if (Status is StatusIndicacao.VistoriaConcluida)
+            if (Status is StatusIndicacao.VistoriaConcluida or StatusIndicacao.CashbackPago)
                 throw new DomainException("Não é possível cancelar uma indicação com vistoria concluída.");
             if (Status is StatusIndicacao.Cancelada)
                 return;
@@ -149,6 +149,14 @@ namespace Domain.Entities
                 throw new DomainException(
                     $"Não é possível {acao}: status atual é '{Status}', esperado '{statusEsperado}'.");
             }
+        }
+
+        public void RegistrarCashbackPago()
+        {
+            if (Status == StatusIndicacao.CashbackPago) return;
+            GarantirTransicao(StatusIndicacao.VistoriaConcluida, "registrar o cashback pago");
+            Status = StatusIndicacao.CashbackPago;
+            AtualizarDataAlteracao();
         }
     }
 }

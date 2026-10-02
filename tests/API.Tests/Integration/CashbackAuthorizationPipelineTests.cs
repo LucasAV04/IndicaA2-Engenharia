@@ -61,7 +61,7 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<ApiTestWe
     }
 
     [Fact]
-    public async Task GerarPorPagamento_ComAdministrador_DeveRetornarLocationParaConsultaPorId()
+    public async Task GerarPorPagamento_ComAdministrador_NaoPermiteContornarConclusaoAtomica()
     {
         var pagamentoVistoriaId = Guid.NewGuid();
         var cashback = new CashbackResponseDto { Id = Guid.NewGuid() };
@@ -74,10 +74,9 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<ApiTestWe
 
         var response = await client.PostAsync($"/api/cashbacks/por-pagamento/{pagamentoVistoriaId}", content: null);
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.NotNull(response.Headers.Location);
-        Assert.Equal($"/api/cashbacks/{cashback.Id}", response.Headers.Location!.AbsolutePath);
-        service.Verify(item => item.GerarPorPagamentoAsync(pagamentoVistoriaId, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+        service.Verify(item => item.GerarPorPagamentoAsync(pagamentoVistoriaId, It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -89,9 +88,9 @@ public sealed class CashbackAuthorizationPipelineTests : IClassFixture<ApiTestWe
 
         Assert.True(paths.TryGetProperty("/api/cashbacks", out _));
         Assert.True(paths.TryGetProperty("/api/cashbacks/{id}", out _));
-        Assert.True(paths.TryGetProperty("/api/cashbacks/por-pagamento/{pagamentoVistoriaId}", out _));
+        Assert.False(paths.GetProperty("/api/cashbacks/por-pagamento/{pagamentoVistoriaId}").TryGetProperty("post", out _));
         Assert.True(paths.TryGetProperty("/api/cashbacks/por-indicador/{usuarioIndicadorId}", out _));
-        Assert.True(paths.TryGetProperty("/api/cashbacks/{id}/aprovar", out _));
+        Assert.False(paths.TryGetProperty("/api/cashbacks/{id}/aprovar", out _));
         Assert.True(paths.TryGetProperty("/api/cashbacks/{id}/cancelar", out _));
         Assert.False(paths.TryGetProperty("/api/cashbacks/{id}/pagar", out _));
         Assert.DoesNotContain(paths.EnumerateObject().Where(path => path.Name.StartsWith("/api/cashbacks", StringComparison.Ordinal)), path =>

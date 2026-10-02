@@ -14,17 +14,20 @@ public sealed class VistoriaService : IVistoriaService
     private readonly IUsuarioRepository _usuarioRepository;
     private readonly Application.Interfaces.Stores.IPrecificacaoStore _precificacao;
     private readonly TimeProvider _clock;
+    private readonly Application.Jornada.IJornadaFinanceiraStore _jornada;
 
     public VistoriaService(
         IVistoriaRepository vistoriaRepository,
         IUsuarioRepository usuarioRepository,
         Application.Interfaces.Stores.IPrecificacaoStore precificacao,
-        TimeProvider clock)
+        TimeProvider clock,
+        Application.Jornada.IJornadaFinanceiraStore jornada)
     {
         _vistoriaRepository = vistoriaRepository;
         _usuarioRepository = usuarioRepository;
         _precificacao = precificacao;
         _clock = clock;
+        _jornada = jornada;
     }
 
     #region Consultas
@@ -78,18 +81,10 @@ public sealed class VistoriaService : IVistoriaService
             await _vistoriaRepository.AtualizarAsync(vistoria, cancellationToken);
     }
 
-    public async Task ConcluirAsync(
+    public Task ConcluirAsync(
         Guid id,
         CancellationToken cancellationToken = default)
-    {
-        var vistoria = await ObterVistoriaOuLancarExceptionAsync(id, cancellationToken);
-        var statusAnterior = vistoria.Status;
-
-        vistoria.Concluir();
-
-        if (vistoria.Status != statusAnterior)
-            await _vistoriaRepository.AtualizarAsync(vistoria, cancellationToken);
-    }
+        => _jornada.ConcluirVistoriaAsync(id, cancellationToken);
 
     public async Task CancelarAsync(
         Guid id,

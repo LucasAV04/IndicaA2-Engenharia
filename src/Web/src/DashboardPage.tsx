@@ -3,12 +3,14 @@ import { api } from './api'
 import type { Dashboard } from './types'
 import { utcDate, labels, money } from './format'
 import { ErrorBox } from './components'
+import JornadaResumo from './JornadaResumo'
 
 export default function DashboardPage() {
   const query = useQuery({ queryKey: ['dashboard'], queryFn: () => api<Dashboard>('/admin/dashboard') })
   return <>
     <div className="page-heading"><div><p className="eyebrow">Visão geral</p><h1>Resumo operacional</h1><p>Da indicação ao pagamento, acompanhe os registros do sistema.</p></div><button onClick={() => void query.refetch()} disabled={query.isFetching}>Atualizar resumo</button></div>
     {query.isPending ? <p role="status">Carregando resumo…</p> : query.isError ? <ErrorBox retry={() => void query.refetch()} /> : query.data && <Resumo data={query.data} />}
+    <JornadaResumo />
   </>
 }
 function Resumo({ data: d }: { data: Dashboard }) {
@@ -22,7 +24,7 @@ function Resumo({ data: d }: { data: Dashboard }) {
     ['Usuários cadastrados', d.totalUsuarios], ['Usuários ativos', d.usuariosAtivos], ['Indicações pendentes', d.indicacoes.Pendente || 0],
     ['Vistorias agendadas', d.vistorias.Agendada || 0], ['Receita confirmada', money(d.receitaConfirmada)],
     ['Pagamentos pendentes', money(d.pagamentosPendentes)], ['Cashback disponível', money(d.cashbackDisponivel)],
-    ['Cashback pago', money(d.cashbackPago)], ['Pix pendente / processando', money(d.pixPendenteProcessando)],
+    ['Cashback pago', money(d.cashbackPago)],
     ['Pix concluído', money(d.pixConcluido)], ['Falhas Pix', d.falhasPix], ['Falhas definitivas', d.falhasDefinitivasPix],
   ]
   return <><div className="cards">{cards.map(([label, value]) => <article className="card" key={label}><h2>{label}</h2><strong>{value}</strong></article>)}</div>

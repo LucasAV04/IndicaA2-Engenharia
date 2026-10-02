@@ -1,6 +1,75 @@
 @API_HostAddress = http://localhost:5209
 @AccessToken = INSIRA_TOKEN_AQUI
 
+### Captação pública: código fictício, sem identidade da proprietária
+GET {{API_HostAddress}}/api/public/indicacoes/codigos/ABCD1234
+
+### Gere uma nova chave aleatória para cada envio; reutilize-a somente ao repetir o mesmo envio
+POST {{API_HostAddress}}/api/public/indicacoes
+Idempotency-Key: 88888888-8888-4888-8888-888888888888
+Content-Type: application/json
+
+{ "codigo": "ABCD1234", "nome": "Pessoa fictícia", "telefone": "85999990000", "versaoTermo": "2026-10-01", "consentimento": true }
+
+### Portal: identidade exclusivamente do JWT, nunca de parâmetros
+GET {{API_HostAddress}}/api/minha-conta
+Authorization: Bearer {{AccessToken}}
+
+### Listas próprias mascaradas
+GET {{API_HostAddress}}/api/minha-conta/indicacoes
+Authorization: Bearer {{AccessToken}}
+
+### Cashbacks e situação Pix próprios, sem dados do provider
+GET {{API_HostAddress}}/api/minha-conta/cashbacks
+Authorization: Bearer {{AccessToken}}
+
+### Dados Pix próprios: retorno apenas mascarado
+GET {{API_HostAddress}}/api/minha-conta/dados-pix
+Authorization: Bearer {{AccessToken}}
+
+### Exemplo fictício de substituição própria; não recebe UsuarioId nem retorna chave original
+PUT {{API_HostAddress}}/api/minha-conta/dados-pix
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+
+{ "tipoChavePix": 2, "chavePix": "ficticio@example.invalid" }
+
+### Notificações próprias
+GET {{API_HostAddress}}/api/notificacoes
+Authorization: Bearer {{AccessToken}}
+
+### Contagem de não lidas
+GET {{API_HostAddress}}/api/notificacoes/nao-lidas
+Authorization: Bearer {{AccessToken}}
+
+### Marcação restrita ao destinatário autenticado
+PATCH {{API_HostAddress}}/api/notificacoes/77777777-7777-4777-8777-777777777777/lida
+Authorization: Bearer {{AccessToken}}
+
+### Todas somente no próprio escopo
+PATCH {{API_HostAddress}}/api/notificacoes/lidas
+Authorization: Bearer {{AccessToken}}
+
+### Administração: indicadores seguros e alertas
+GET {{API_HostAddress}}/api/admin/jornada/indicadores
+Authorization: Bearer {{AccessToken}}
+
+### Alertas administrativos
+GET {{API_HostAddress}}/api/admin/jornada/notificacoes
+Authorization: Bearer {{AccessToken}}
+
+### Origem e consentimento, acesso administrativo
+GET {{API_HostAddress}}/api/admin/jornada/origens
+Authorization: Bearer {{AccessToken}}
+
+### Link administrativo calculado exclusivamente pela URL-base configurada
+GET {{API_HostAddress}}/api/admin/jornada/usuarios/22222222-2222-2222-2222-222222222222/link
+Authorization: Bearer {{AccessToken}}
+
+### Leitura de todos os alertas somente no escopo administrativo
+PATCH {{API_HostAddress}}/api/admin/jornada/notificacoes/lidas
+Authorization: Bearer {{AccessToken}}
+
 ### Catálogo: IDs e valores abaixo são exclusivamente fictícios, não tarifas comerciais
 GET {{API_HostAddress}}/api/tipos-planta
 Authorization: Bearer {{AccessToken}}
@@ -137,8 +206,7 @@ Authorization: Bearer {{AccessToken}}
 
 ###
 
-PATCH {{API_HostAddress}}/api/indicacoes/11111111-1111-1111-1111-111111111111/vistoria/concluir
-Authorization: Bearer {{AccessToken}}
+# A conclusão independente do vínculo foi retirada. Use PATCH /api/vistorias/{id}/concluir.
 
 ###
 
@@ -194,8 +262,7 @@ Authorization: Bearer {{AccessToken}}
 
 ###
 
-POST {{API_HostAddress}}/api/pagamentos-pix/por-cashback/44444444-4444-4444-4444-444444444444
-Authorization: Bearer {{AccessToken}}
+# A criação manual da ordem foi retirada. Conclusão e worker de preparação criam a ordem atomicamente.
 
 ###
 

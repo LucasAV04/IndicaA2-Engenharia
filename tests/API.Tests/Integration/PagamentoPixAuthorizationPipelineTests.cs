@@ -48,31 +48,32 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<ApiTe
     }
 
     [Fact]
-    public async Task CriarPorCashback_ComAdministrador_DeveRetornarCreatedLocationESemChavePix()
+    public async Task CriacaoManualRetiradaEConsultaAdministrativaContinuaSemChavePix()
     {
         var cashbackId = Guid.NewGuid();
         var pagamentoPix = CriarResposta();
         var service = new Mock<IPagamentoPixService>();
         service.Setup(item => item.CriarPorCashbackAsync(cashbackId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(pagamentoPix);
+        service.Setup(item=>item.ObterPorIdAsync(pagamentoPix.Id,It.IsAny<CancellationToken>())).ReturnsAsync(pagamentoPix);
         using var factory = CriarFactory(service.Object);
         using var client = factory.CreateHttpsClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", CriarToken("Administrador"));
 
-        var response = await client.PostAsync($"/api/pagamentos-pix/por-cashback/{cashbackId}", content: null);
+        var manual = await client.PostAsync($"/api/pagamentos-pix/por-cashback/{cashbackId}", content: null);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed,manual.StatusCode);
+        var response=await client.GetAsync($"/api/pagamentos-pix/{pagamentoPix.Id}");
         var json = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(json);
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.NotNull(response.Headers.Location);
-        Assert.Equal($"/api/pagamentos-pix/{pagamentoPix.Id}", response.Headers.Location!.AbsolutePath);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(pagamentoPix.Id, document.RootElement.GetProperty("id").GetGuid());
         Assert.False(document.RootElement.TryGetProperty("chavePix", out _));
         Assert.DoesNotContain("ciphertext", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("nonce", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("tag", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("encryptionVersion", json, StringComparison.OrdinalIgnoreCase);
-        service.Verify(item => item.CriarPorCashbackAsync(cashbackId, It.IsAny<CancellationToken>()), Times.Once);
+        service.Verify(item => item.CriarPorCashbackAsync(cashbackId, It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -131,7 +132,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<ApiTe
     }
 
     [Fact]
-    public async Task CriarPorCashback_QuandoRegraDeDominioForViolada_DeveRetornarUnprocessableEntity()
+    public async Task CriarPorCashback_RotaRetiradaNaoExecutaServicoMesmoComRegraDeDominio()
     {
         var service = new Mock<IPagamentoPixService>();
         service.Setup(item => item.CriarPorCashbackAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
@@ -142,7 +143,8 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<ApiTe
 
         var response = await client.PostAsync($"/api/pagamentos-pix/por-cashback/{Guid.NewGuid()}", content: null);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
+        service.Verify(item=>item.CriarPorCashbackAsync(It.IsAny<Guid>(),It.IsAny<CancellationToken>()),Times.Never);
     }
 
     [Fact]
@@ -198,7 +200,7 @@ public sealed class PagamentoPixAuthorizationPipelineTests : IClassFixture<ApiTe
         using var document = JsonDocument.Parse(await client.GetStringAsync("/openapi/v1.json"));
         var paths = document.RootElement.GetProperty("paths");
 
-        AssertBearer(paths.GetProperty("/api/pagamentos-pix/por-cashback/{cashbackId}").GetProperty("post"));
+        Assert.False(paths.GetProperty("/api/pagamentos-pix/por-cashback/{cashbackId}").TryGetProperty("post",out _));
         AssertBearer(paths.GetProperty("/api/pagamentos-pix/{id}").GetProperty("get"));
         AssertBearer(paths.GetProperty("/api/pagamentos-pix/por-cashback/{cashbackId}").GetProperty("get"));
         AssertBearer(paths.GetProperty("/api/pagamentos-pix/por-beneficiario/{usuarioId}").GetProperty("get"));

@@ -71,7 +71,7 @@ public sealed class PrecificacaoServiceTests
     [Fact] public async Task NovaVistoriaSemCatalogoNaoAcessaDependencias()
     {
         var store = new Mock<IPrecificacaoStore>(); var users = new Mock<IUsuarioRepository>();
-        var s = new VistoriaService(Mock.Of<IVistoriaRepository>(), users.Object, store.Object, new Relogio());
+        var s = new VistoriaService(Mock.Of<IVistoriaRepository>(), users.Object, store.Object, new Relogio(),Mock.Of<Application.Jornada.IJornadaFinanceiraStore>());
         await Assert.ThrowsAsync<DomainException>(() => s.CriarAsync(new CreateVistoriaDto()));
         Assert.Empty(store.Invocations); Assert.Empty(users.Invocations);
     }

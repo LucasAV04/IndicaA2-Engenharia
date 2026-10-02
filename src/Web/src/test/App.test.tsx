@@ -19,7 +19,7 @@ const response = (value: unknown, status = 200) => new Response(status === 204 ?
 
 beforeEach(() => {
   saveSession(null)
-  data = { '/api/usuarios': [usuario], '/api/admin/dashboard': dashboard }
+  data = { '/api/usuarios': [usuario], '/api/admin/dashboard': dashboard, '/api/admin/jornada/indicadores': {}, '/api/minha-conta': { nome: 'Cliente', codigo: 'ABCD1234', link: 'https://example.invalid/indicar/ABCD1234' }, '/api/minha-conta/dados-pix': null }
   errors = {}; requests = []
   vi.stubGlobal('fetch', vi.fn(async (input: string, init: RequestInit = {}) => {
     const method = init.method || 'GET'
@@ -39,7 +39,7 @@ it('dashboard sem preços retorna zero sem consultar módulos independentes', as
   const heading = await screen.findByRole('heading', { name: 'Tipos sem configuração' })
   expect(heading.parentElement).toHaveTextContent('0')
   expect(screen.getByText(/Nenhum preço publicado/)).toBeInTheDocument()
-  expect(requests.map(r => r.path)).toEqual(['/api/admin/dashboard'])
+  expect(requests.map(r => r.path).sort()).toEqual(['/api/admin/dashboard', '/api/admin/jornada/indicadores'])
 })
 afterEach(() => vi.unstubAllGlobals())
 it.each([[0, 0], [1, 0], [0, 1], [1, 1]])('dashboard separa %s cobranças de %s eventos divergentes', async (cobrancas, eventos) => {
@@ -49,7 +49,7 @@ it.each([[0, 0], [1, 0], [0, 1], [1, 1]])('dashboard separa %s cobranças de %s 
   expect(heading.parentElement?.querySelector('strong')).toHaveTextContent(String(cobrancas))
   expect(screen.getByRole('heading', { name: 'Eventos divergentes' }).parentElement?.querySelector('strong')).toHaveTextContent(String(eventos))
   expect(screen.queryByRole('heading', { name: 'Recebimentos divergentes' })).not.toBeInTheDocument()
-  expect(requests.map(r => r.path)).toEqual(['/api/admin/dashboard'])
+  expect(requests.map(r => r.path).sort()).toEqual(['/api/admin/dashboard', '/api/admin/jornada/indicadores'])
 })
 function mount(path = '/', authenticated = true) {
   if (authenticated) saveSession(session)
@@ -76,14 +76,15 @@ describe('Sessão administrativa', () => {
     expect(sessionStorage.getItem('indicaa2.session')).toBeNull()
     expect(document.body).not.toHaveTextContent('senha-privada')
   })
-  it('usuário comum autenticado vai para acesso negado', async () => {
+  it('usuário comum autenticado vai ao portal sem consultar administração', async () => {
     saveSession({ ...session, tipoUsuario: 1 }); mount('/', false)
-    expect(await screen.findByRole('heading', { name: 'Acesso negado' })).toBeInTheDocument()
-    expect(requests).toHaveLength(0)
+    expect(await screen.findByRole('heading', { name: 'Minha conta' })).toBeInTheDocument()
+    expect(requests.every(r => r.path.startsWith('/api/minha-conta') || r.path === '/api/notificacoes')).toBe(true)
+    expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument()
   })
   it('rota protegida sem sessão volta ao login', () => {
     mount('/cashbacks', false)
-    expect(screen.getByRole('heading', { name: 'Acesse a administração' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Acesse sua conta' })).toBeInTheDocument()
   })
   it('logout remove sessão e dados do painel', async () => {
     mount(); await screen.findByText('R$ 120,50')
@@ -231,21 +232,19 @@ describe('Fluxos administrativos via HTTP', () => {
   it.each([
     ['/vistorias', { ...base, usuarioId: 'user-1', pacote: 0, areaM2: 50, tipoPlanta: 'Apartamento' }, 'Realizar', '/api/vistorias/registro-1/realizar'],
     ['/pagamentos-vistoria', { ...base, valor: 120.50 }, 'Gerar cobrança Pix', '/api/cobrancas-pix-vistoria/por-pagamento/registro-1'],
-    ['/cashbacks', { ...base, valor: 24.10, valorTotalPago: 120.50, percentual: 0.2, usuarioIndicadorId: 'user-1' }, 'Aprovar', '/api/cashbacks/registro-1/aprovar'],
+    ['/vistorias', { ...base, status: 1, usuarioId: 'user-1', pacote: 0, areaM2: 50, tipoPlanta: 'Apartamento' }, 'Concluir', '/api/vistorias/registro-1/concluir'],
   ])('%s executa transição permitida', async (path, row, button, target) => {
     data['/api' + path] = [row]; mount(path)
     await userEvent.click(await screen.findByRole('button', { name: button }))
     await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(requests.some(r => r.path === target && r.method === (button === 'Gerar cobrança Pix' ? 'POST' : 'PATCH'))).toBe(true))
   })
-  it('cria pagamento Pix por cashback disponível, sem chave ou envio', async () => {
+  it('ordem Pix é automática e o painel não oferece criação ou envio manual', async () => {
     data['/api/cashbacks'] = [{ ...base, id: 'cashback-1', status: 1, valor: 20, usuarioIndicadorId: 'user-1' }]
     mount('/pagamentos-pix')
-    await userEvent.click(screen.getByRole('button', { name: 'Criar pagamento Pix' }))
-    await waitFor(() => expect(screen.getByRole('option', { name: /R\$\s20,00/ })).toBeInTheDocument())
-    await userEvent.selectOptions(screen.getByLabelText('Cashback disponível'), 'cashback-1')
-    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
-    await waitFor(() => expect(requests.some(r => r.path === '/api/pagamentos-pix/por-cashback/cashback-1' && r.method === 'POST')).toBe(true))
+    await screen.findByText('Nenhum registro encontrado.')
+    expect(screen.queryByRole('button', { name: 'Criar pagamento Pix' })).not.toBeInTheDocument()
+    expect(requests.filter(r => r.method !== 'GET')).toHaveLength(0)
     expect(document.body).not.toHaveTextContent('Processar agora')
   })
   it('desabilita cancelamento incompatível e exige confirmação para o permitido', async () => {
@@ -262,9 +261,9 @@ describe('Fluxos administrativos via HTTP', () => {
     await waitFor(() => expect(requests.filter(r => r.method === 'PATCH')).toHaveLength(1))
   })
   it('erro de comando exibe mensagem segura de ProblemDetails', async () => {
-    data['/api/cashbacks'] = [{ ...base, valor: 20 }]; errors['/api/cashbacks/registro-1/aprovar'] = 422
-    mount('/cashbacks'); await userEvent.click(await screen.findByRole('button', { name: 'Aprovar' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    data['/api/cashbacks'] = [{ ...base, valor: 20 }]; errors['/api/cashbacks/registro-1/cancelar'] = 422
+    mount('/cashbacks'); await userEvent.click(await screen.findByRole('button', { name: 'Cancelar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('A operação não é permitida')
     expect(document.body).not.toHaveTextContent('senha-privada')
   })
