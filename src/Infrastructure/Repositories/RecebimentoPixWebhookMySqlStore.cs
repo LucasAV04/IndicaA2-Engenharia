@@ -117,6 +117,7 @@ public sealed class RecebimentoPixWebhookMySqlStore(MySqlConnectionFactory facto
                     using var confirmarPag = Comando(c,t,"UPDATE pagamentos_vistoria SET status=1,pago_em=@horario,updated_at=UTC_TIMESTAMP(6) WHERE id=@id AND status=0 AND valor=@valor",("id",pagamentoId),("horario",confirmado.Horario),("valor",valor));
                     if(await confirmarPag.ExecuteNonQueryAsync(ct)!=1) throw new InvalidOperationException("Confirmação financeira incompatível.");
                     status=2; codigo="confirmado";
+                    await NotificacoesNaTransacao.PagamentoConfirmado(c,t,pagamentoId,ct);
                 }
                 else
                 {
@@ -131,6 +132,7 @@ public sealed class RecebimentoPixWebhookMySqlStore(MySqlConnectionFactory facto
         }
         using var finalizar = Comando(c,t,"UPDATE recebimentos_pix_inbox SET status=@status,codigo=@codigo,lease_id=NULL,lease_expira_em=NULL,updated_at=UTC_TIMESTAMP(6),proxima_consulta_em=DATE_ADD(UTC_TIMESTAMP(6),INTERVAL 30 SECOND) WHERE id=@id AND lease_id=@token AND lease_expira_em>UTC_TIMESTAMP(6)",("status",status),("codigo",codigo),("id",p.Id),("token",p.LeaseId));
         if(await finalizar.ExecuteNonQueryAsync(ct)!=1) throw new InvalidOperationException("Lease de recebimento expirou.");
+        if(status==3 || codigo=="bloqueio-operacional") await NotificacoesNaTransacao.Criar(c,t,Application.Jornada.TipoNotificacao.CobrancaRevisao,p.Id,null,ct);
         await Interceptar("InboxFinalizado",c,t); await t.CommitAsync(ct);
     }
 }

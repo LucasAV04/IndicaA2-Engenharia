@@ -33,6 +33,10 @@ public static class InfrastructureDependencyInjection
         services.AddSingleton(new MySqlConnectionFactory(connectionString));
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IPrecificacaoStore, PrecificacaoMySqlStore>();
+        services.AddScoped<Application.Jornada.IJornadaPublicaStore, JornadaPublicaMySqlStore>();
+        services.AddScoped<Application.Jornada.IJornadaConsultaStore, JornadaConsultaMySqlStore>();
+        services.AddScoped<Application.Jornada.IJornadaFinanceiraStore>(sp=>new JornadaFinanceiraMySqlStore(
+            sp.GetRequiredService<MySqlConnectionFactory>(),()=>sp.GetRequiredService<IDadosPixProtector>()));
         services.Configure<JwtOptions>(configuration.GetSection("Jwt"));
         services.Configure<EfiPixOptions>(configuration.GetSection(EfiPixOptions.SectionName));
         services.AddSingleton<EfiPixAccessTokenCache>();

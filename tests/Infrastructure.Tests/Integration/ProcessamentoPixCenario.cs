@@ -36,10 +36,11 @@ internal sealed class ProcessamentoPixCenario(MySqlIntegrationFixture fixture) :
         var indicada = IntegrationTestData.CriarUsuario();
         await usuarios.AdicionarAsync(indicador, default);
         await usuarios.AdicionarAsync(indicada, default);
-        var vistoria = IntegrationTestData.CriarVistoria(indicada.Id);
-        await new VistoriaMySqlRepository(fixture.ConnectionFactory).AdicionarAsync(vistoria, default);
+        var vistoria = await JornadaFinanceiraTestData.CriarConcluidaAsync(fixture,indicada.Id);
         var indicacao = new Indicacao(indicador.Id, "Indicada ficticia", "11999999999", indicador.CodigoIndicacao!);
         indicacao.VincularVistoria(vistoria.Id);
+        indicacao.VincularUsuarioIndicado(indicada.Id);
+        indicacao.MarcarVistoriaConcluida();
         await new IndicacaoMySqlRepository(fixture.ConnectionFactory).AdicionarAsync(indicacao, default);
         var pagamento = IntegrationTestData.CriarPagamentoVistoria(vistoria.Id);
         pagamento.ConfirmarRecebimento(Guid.Parse("11111111-1111-1111-1111-111111111111"), pagamento.PagoEm ?? DateTime.UtcNow, DateTime.UtcNow);

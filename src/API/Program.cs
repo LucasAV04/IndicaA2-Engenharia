@@ -84,9 +84,18 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddRecebimentoPix(builder.Configuration);
 builder.Services.AddHostedService<RecebimentoPixVistoriaWorker>();
+var cashbackPreparacao=builder.Configuration.GetSection("CashbackPagamentoPreparacaoWorker").Get<CashbackPreparacaoOptions>() ?? new();
+cashbackPreparacao.Validar();
+builder.Services.AddSingleton(cashbackPreparacao);
+builder.Services.AddHostedService<CashbackPagamentoPreparacaoWorker>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("referral-link", context =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            { PermitLimit=10,Window=TimeSpan.FromMinutes(1),QueueLimit=0 }));
     options.OnRejected = (context, _) =>
     {
         context.HttpContext.Response.Headers.CacheControl = "no-store";
@@ -134,6 +143,14 @@ app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseMiddleware<RecebimentoPixMtlsMiddleware>();
 app.UseRateLimiter();
+app.Use(async (context,next)=>
+{
+    if(context.Request.Path.StartsWithSegments("/api/public/indicacoes") || context.Request.Path.StartsWithSegments("/api/minha-conta") || context.Request.Path.StartsWithSegments("/api/notificacoes") || context.Request.Path.StartsWithSegments("/api/admin/jornada"))
+    { context.Response.Headers.CacheControl="no-store"; context.Response.Headers["Referrer-Policy"]="no-referrer"; }
+    if((context.Request.Path.StartsWithSegments("/api/minha-conta") || context.Request.Path.StartsWithSegments("/api/notificacoes")) && context.Request.Query.Count>0)
+    { context.Response.StatusCode=StatusCodes.Status404NotFound; return; }
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

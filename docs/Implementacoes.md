@@ -1,5 +1,101 @@
 # Implementações
 
+## PR #38 — destinatários e recuperação pública após reload (2026-10-05)
+
+- Criação calculada da vistoria notifica `Vistoria.UsuarioId` na mesma transação do snapshot, inclusive sem indicação. O vínculo notifica a indicadora; ambos usam referência da vistoria e chave única por tipo/referência/destinatário, sem PII.
+- Liquidação confirmada notifica indicadora, indicada validada contra a proprietária da vistoria e administração na mesma transação de Pix, Cashback e indicação. Falha confirmada não gera CashbackPago. Falha de inserção da notificação da indicada reverte inclusive o evento já inserido para a indicadora.
+- Captação pública persiste apenas chave idempotente e protocolo em `sessionStorage`, por código Trim/uppercase. A chave é gravada antes do POST e reutilizada após erro de rede/reload. Sucesso restaurado mantém formulário oculto; somente “Cadastrar outra indicação” limpa esse estado e inicia formulário vazio, com consentimento desmarcado. Sem localStorage ou persistência de nome/telefone/consentimento.
+- Cobertura acrescentada: proprietária sem indicação; vínculo posterior sem duplicação; rollback por FK na inserção da notificação; aplicações concorrentes; remount com protocolo; resposta perdida e retry com a mesma chave; códigos isolados. Asserções anteriores preservadas, exceto expectativa de formulário reaparecer após sucesso, substituída pelo comportamento corrigido.
+- Validação desta correção: build aprovado, 0 erros/4 warnings preexistentes de nulabilidade (84,64s). Primeira tentativa foi bloqueada pelo sandbox ao ler NuGet.Config antes da compilação; repetida com acesso autorizado, sem mudança de configuração. Direcionados **423/423** (100 Domain, 98 Application, 92 Infrastructure incluindo os seis preflight, 133 API); suíte rápida **838/838** (173/227/163/275), zero falhos/ignorados. Frontend lint/build aprovados, **106/106** em cinco arquivos (51,92s), dois avisos preexistentes Zod/Rollup.
+- MySQL oficial **255/255 em 20 classes**, zero falhos/ignorados, 39s de testes/48,15s de comando, exit 0, migrations 001–016 somente no banco descartável da fixture. Inventário de leitura: 0 antes/depois, 0 novos remanescentes, 0 antigos removidos; nenhuma limpeza manual. Quatro casos novos, demais asserções financeiras preservadas. `git diff --check` aprovado.
+- Resultados de 2026-10-02 abaixo são históricos. Migration 016 e arquitetura financeira preservadas; zero Efí/OAuth/Pix real e dados de produção. WhatsApp/e-mail não implementados. CI da correção será registrado no PR após publicação, sem antecipar aprovação.
+
+| Correção | Teste |
+| --- | --- |
+| Vistoria sem indicação e referência correta | `VistoriaSemIndicacaoNotificaProprietariaNaCriacao` |
+| Vínculo posterior e destinatários diferentes | `VinculoPosteriorNotificaIndicadoraSemDuplicarEventoDaProprietaria` |
+| Rollback integral por falha de inserção da notificação | `FalhaNaNotificacaoDaIndicadaReverteLiquidacaoETodasNotificacoes` |
+| Concorrência e reaplicação, uma notificação por destinatário | `AplicacoesConcorrentesNotificamCadaDestinatarioUmaVez` |
+| Sucesso para ambas / falha sem sucesso | `JornadaPublicaRecebimentoConfirmadoEEnvioFalsoFinalizamIndicacaoAtomicamente`, `FalhaConfirmadaNaoPagaCashbackENotificaAdministracao` |
+| Isolamento de usuários | `PortalENotificacoesSaoRestritosAoDestinatario` e testes HTTP do portal |
+| Reload, resposta perdida, nova indicação e códigos isolados | `Jornada.test.tsx`, 13 cenários; substitui a expectativa antiga de reabrir formulário no reload |
+
+Comandos desta correção: `dotnet build IndicaA2.slnx`; direcionados com filtro `Category!=MySqlIntegration&(FullyQualifiedName~Vistoria|FullyQualifiedName~Precificacao|FullyQualifiedName~Indicacao|FullyQualifiedName~Notificac|FullyQualifiedName~PagamentoPixAplicacaoResultado|FullyQualifiedName~Authorization|FullyQualifiedName~Autorizacao|FullyQualifiedName~Jornada|FullyQualifiedName~MySqlIntegrationPreflight)`; suíte rápida oficial (excluindo MySQL/Efí); frontend `npm run lint`, `npm test -- --run`, `npm run build` com TZ America/Sao_Paulo; `pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql`; revisão completa do diff. Todos os comandos de validação após a autorização de acesso ao NuGet terminaram com exit 0.
+
+## Jornada de indicação — implementação e validação local (2026-10-02)
+
+Base aprovada: `574c5f20e227bb8d20138cef33a5ec66b616a637` (PR #37 integrado). Branch `feature/mvp-jornada-indicacao`. Os registros incrementais abaixo são históricos e superados pela validação final desta seção. Não representam autorização de produção.
+
+- Conclusão de vistoria coordenada em transação única; envio externo continua exclusivamente nos motores financeiros existentes, fora da transação.
+- Captação pública não cria conta. Chave aleatória de envio é armazenada somente como SHA-256, sem nome/telefone no hash; protocolo independente opaco. Consentimento explícito com versão e UTC; legado administrativo não recebe consentimento inventado.
+- Notificações internas armazenam tipos/referências, sem mensagens arbitrárias ou PII. Canais externos não foram escolhidos. Portal recebe DTOs mascarados e escopo derivado da identidade autenticada.
+- Migration 016 aditiva, sem seed e sem alterar 001–015. Cashback permanece 20%, sem teto novo; status CashbackPago acrescentado como 4, sem renumerar estados existentes.
+- Decisão de concorrência: conclusão bloqueia vistoria/indicação antes de cashback; preparação e aplicação financeira usam indicação como prefixo comum antes dos respectivos locks financeiros. Atualização administrativa independente não sobrescreve indicação já concluída/paga. Nenhum HTTP ocorre nessas transações.
+- Preparação sem Dados Pix mantém cashback disponível e cria notificações estruturadas; o worker usa os Dados Pix atuais somente no próximo tick normal. Valor arredondado a zero falha fechado, sem inventar mínimo comercial nem alterar os 20%.
+- Portal deriva destinatário do `sub`; URLs/queries/payloads de troca de destinatário são rejeitados. Links dependem exclusivamente de `PublicWeb:BaseUrl` HTTPS validada. Rate limit da indicação: 10 solicitações/minuto por IP, independente do pagamento, antes dos stores; a implantação deverá configurar proxy confiável conforme sua topologia, sem confiar em headers enviados pelo público.
+- Validação incremental (não final): build inicial 0 erros/6 warnings (4 preexistentes e 2 novos de nulabilidade, estes corrigidos); build seguinte 0 erros/1 warning preexistente; compilação incremental posterior 0 erros/0 warnings. Novos testes locais de validação pública/rate limit/worker: **31 aprovados**, 0 falhos/ignorados. Nenhuma execução MySQL desta entrega até este registro. `npm ci`: 258 pacotes, 0 vulnerabilidades reportadas; aviso de política de install scripts do esbuild, sem alteração do lockfile.
+- Arranjos financeiros de Envio/reconciliação/aplicação passaram a utilizar vistoria concluída calculada, vínculo do usuário e indicação concluída. As verificações financeiras foram preservadas. Registros legados continuam legíveis nos repositories; não há backfill de produção.
+
+### Contrato implementado
+
+- `JornadaFinanceiraMySqlStore` scoped coordena `PATCH /api/vistorias/{id}/concluir`: bloqueia vistoria/indicação, exige pagamento confirmado coerente com snapshot, conclui, cria ou reutiliza Cashback (20%, AwayFromZero), aprova e prepara ordem criptografada se houver Dados Pix. Notificações e cadeia são confirmadas no mesmo commit; falhas/cancelamento revertem tudo. Sem indicação não há Cashback; indicação cancelada não gera benefício.
+- Repetição de conclusão aplicada não refaz histórico. Cashback/ordem existentes só são reutilizados quando coerentes. Valor, beneficiário e material AES-GCM/AAD não são recalculados. Vistoria legada sem snapshot não gera benefício automático: exige regularização futura explícita, sem preço inventado. Ordens financeiras incoerentes falham fechadas antes da liquidação.
+- Sem Dados Pix: Cashback Disponivel, sem ordem, com aviso interno à usuária e administração. O worker seleciona IDs de disponíveis sem ordem e com Dados Pix, usa primeiro tick, lote limitado e processamento sequencial. Falha de um item não impede os seguintes; falha do seletor espera próximo tick. Não resolve provider.
+- Configuração `CashbackPagamentoPreparacaoWorker`: Habilitado=false, IntervaloSegundos=60, TamanhoLote=20; quando habilitado, intervalo 5–3600s e lote 1–100. Escopo por ciclo; nenhuma sobreposição. A criptografia é resolvida somente quando necessária, não ao consultar vistoria.
+- Aplicação financeira existente estende a mesma transação: indicação antes dos locks financeiros, validação da jornada, Pix.Concluido + Cashback.Pago + Indicacao.CashbackPago + notificações. Falha confirmada preserva Cashback disponível e cria alerta. Não há nova política de retry; leases/reconciliação permanecem intactos.
+- Atualizações administrativas obsoletas não regridem vistoria/indicação concluídas. Leitura administrativa concorrente vê a cadeia anterior ou a confirmada, nunca uma atualização parcial.
+- Migration **016** adiciona origem/consentimento, hash/protocolo únicos, notificações com evento único/FK/escopo e índices. Migrations 001–015 intactas; sem seeds, backfill ou migrations no startup. Datas de eventos financeiros usam relógio MySQL; fronteiras HTTP usam TimeProvider.
+
+### HTTP, interface e privacidade
+
+| Fronteira | Rotas/contrato |
+| --- | --- |
+| Pública | `GET /api/public/indicacoes/codigos/{codigo}` somente utilizável; `POST /api/public/indicacoes` recebe consentimento e Idempotency-Key, devolve apenas protocolo opaco |
+| Portal autenticado | `GET /api/minha-conta`, `/indicacoes`, `/cashbacks`, `GET/PUT /dados-pix`; identidade exclusivamente do usuário autenticado |
+| Notificações próprias | `GET /api/notificacoes`, `/nao-lidas`, `PATCH /{id}/lida`, `/lidas`; ID de outro usuário retorna 404 |
+| Administração | `GET /api/admin/jornada/indicadores`, `/origens`, `/notificacoes`, `/usuarios/{id}/link`; `PATCH /notificacoes/{id}/lida`, `/notificacoes/lidas`; política administrativa existente |
+| Fechamento | `PATCH /api/vistorias/{id}/concluir` é a porta transacional, sem HTTP externo |
+
+- Comandos HTTP manuais GerarCashback/AprovarCashback/CriarPagamentoPix/MarcarVistoriaConcluida retirados da superfície HTTP (`NonAction`) e da interface. Consultas preservadas; métodos internos legados não são portas HTTP. Transição administrativa explícita, testada por HTTP/OpenAPI.
+- `/indicar/:codigo` não usa sessão nem cria conta: telefone normalizado, nome limitado, termo `2026-10-01` desmarcado por padrão. Hash contém somente chave aleatória, não PII; repetição recupera protocolo inclusive após desativação do link. Constraint decide concorrência, sem revelar conteúdo anterior.
+- `/minha-conta` mostra primeiro nome da indicada, dois últimos dígitos do telefone, valores próprios e estado Pix sem IDs do provider. Dados Pix retornam máscara, nunca chave. Cache isolado por usuário/recurso e limpo na troca de sessão/logout; nenhuma PII em localStorage. Administração mantém menu, origem/consentimento, link, alertas e indicadores separados.
+- Rate limit independente de cobrança (10/min/IP), 429/Retry-After quando disponível, no-store/no-referrer antes de store/provider. Links vêm de `PublicWeb:BaseUrl` HTTPS, não Host. Erros são genéricos; logs novos somente tipo/status, testados com marcador fictício.
+- Notificações persistem tipos/referências: vínculo, pagamento confirmado, Dados Pix necessários, Cashback criado/pago, falha financeira, cobrança bloqueada/divergente. Evento único impede duplicação. Alertas administrativos compartilhados entre administradores; lista de 100 recentes e contagem integral de não lidas.
+- Antes de produção: revisão jurídica do consentimento/LGPD e retenção, configuração HTTPS/proxy confiável, secrets externos, implantação administrativa do schema e habilitação operacional explícita. WhatsApp/e-mail/SMS/push externos não escolhidos. Sem deploy, dados reais ou preços comerciais.
+
+### Matriz de cobertura
+
+| Garantia | Métodos/classes |
+| --- | --- |
+| Jornada completa pública, recebimento, Pix falso e idempotência | `JornadaPublicaRecebimentoConfirmadoEEnvioFalsoFinalizamIndicacaoAtomicamente`, `ConclusaoCalculaVintePorCentoCriaOrdemCriptografadaENotificaUmaVez` |
+| Falta de Dados Pix e preparação concorrente | `SemDadosPixConcluiENovoCadastroPermitePreparacaoIdempotente`, `PreparacoesConcorrentesNaoDuplicamOrdem` |
+| Sem indicação, cancelada, pagamento ausente/divergente | `SemIndicacaoConcluiSemCashback`, `IndicacaoCanceladaNaoProduzCashback`, `PagamentoNaoConfirmadoFalhaSemMutacao`, `ValorDivergenteFalhaSemMutacao` |
+| Rollback e cancelamento | `FalhaVistoriaReverteTudo`, `FalhaIndicacaoReverteTudo`, `FalhaCashbackReverteTudo`, `FalhaAprovacaoReverteTudo`, `FalhaOrdemReverteTudo`, `FalhaNotificacaoReverteTudo`, `CancelamentoAntesCommitReverteTudo`, `FalhaAoAtualizarIndicacaoPagaReverteCashbackPixENotificacoes` |
+| Conclusão/leitura concorrentes e atualização antiga | `ConclusoesConcorrentesCriamUmaCadeia`, `LeituraAdministrativaDuranteConclusaoNaoVeCadeiaParcial`, `AtualizacoesObsoletasNaoRegridemVistoriaOuIndicacaoConcluidas` |
+| Preservação de Cashback e ordem existentes | `CashbackPreexistenteCoerenteEReutilizadoSemAlterarSnapshot`, `OrdemPreexistenteCoerentePreservaMaterialCriptograficoETentativa` |
+| Captação, privacidade, falha confirmada e schema | `CaptacaoConcorrenteRepeteProtocoloSemDuplicarOuCriarConta`, `PortalENotificacoesSaoRestritosAoDestinatario`, `FalhaConfirmadaNaoPagaCashbackENotificaAdministracao`, `Migration016PreservaFinanceiroEProtegeOrigemIndicesENotificacoes` |
+| HTTP/autorização/rate limit/logs | `IndicacaoPublicaPipelineTests`, `PortalJornadaPipelineTests`, `JornadaValidacaoTests` |
+| Worker, DI, enum | `CashbackPagamentoPreparacaoWorkerTests` (ticks Channel/TCS), `JornadaEhScopedEResolucaoNaoCarregaCriptografiaOuProvider`, `IndicacaoJornadaTests` |
+| Interface | `Jornada.test.tsx` (11 cenários), `App.test.tsx`: consentimento, protocolo, duplicidade, 429, portal, máscaras, cache, notificações, ações manuais retiradas |
+
+| Teste anterior alterado | Motivo | Cobertura preservada/substituta |
+| --- | --- | --- |
+| ConcluirAsync do VistoriaService | Atomicidade exige coordenador | Delegação ao store + conclusão/rollback MySQL |
+| POST manual Cashback/Pix e OpenAPI | Comandos retirados da superfície HTTP | HTTP 405/POST ausente, GET e DTO seguro preservados, jornada completa |
+| Aprovar Cashback no painel | Automação substitui ação manual | Ausência da ação, conclusão de vistoria e cancelamento explícito testados |
+| Arranjos financeiros/dashboard | Jornada exige vistoria/indicação concluídas | Mesmas asserções monetárias; agrupamento espera Concluida/VistoriaConcluida |
+
+### Resultados locais e histórico da validação
+
+- Build completo e recompilações aprovados. Último `dotnet build IndicaA2.slnx --no-restore`: **0 erros/0 warnings**, 21,12s. Quatro warnings preexistentes de nulabilidade não foram corrigidos; build incremental não os reemitiu.
+- Direcionados finais **370/370**, zero falhos/ignorados (74 Domain, 172 Application, 93 API, 31 Infrastructure), incluindo preflight **6/6**. Filtro: `Category!=MySqlIntegration&(FullyQualifiedName~Jornada|FullyQualifiedName~Indicacao|FullyQualifiedName~VistoriaServiceTests|FullyQualifiedName~Cashback|FullyQualifiedName~PagamentoPix|FullyQualifiedName~DependencyInjection|FullyQualifiedName~Authorization|FullyQualifiedName~MySqlIntegrationPreflightTests)`.
+- Suíte rápida oficial **838/838**, zero falhos/ignorados (173 Domain, 227 Application, 275 API, 163 Infrastructure), exit 0; durações 192ms/1s/11s/5s. Comando: `dotnet test IndicaA2.slnx --no-build --no-restore --filter "Category!=MySqlIntegration&FullyQualifiedName!~EfiPixSandboxIntegrationTests&FullyQualifiedName!~EfiPixTlsDiagnosticTests" --logger "console;verbosity=quiet"`.
+- MySQL **251/251 em 20 classes**, zero falhos/ignorados, 1min03s de testes/70,33s do comando, exit 0. Script `pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql`, conexão privada local sem Database, preflight e migrations **001–016** pela fixture descartável. Leitura antes/depois: **0 bancos antes, 0 depois, 0 novos remanescentes, 0 antigos removidos**; nenhuma limpeza manual. Os 25 novos cenários estão incluídos no total.
+- Histórico MySQL superado: primeira execução 158/248 aprovados, 90 falhos (22s); helper compartilhado tentava persistir Agendada→Concluida sem persistir Realizada. Preparação corrigida, cenário afetado aprovado isoladamente. Segunda: 247/248 (37s); expectativa antiga do dashboard corrigida. Novos cenários + dashboard: **26/26**, 5s, antes da suíte final. Produção não foi enfraquecida.
+- Histórico backend superado: 258 aprovados/3 falhos (rota 405, GET preservado no OpenAPI, formato estático do Trait); corrigidos e revalidados isoladamente (API 5/5, preflight 6/6). Frontend inicial 40/46, expectativas de ordenação das consultas independentes/ação removida corrigidas. Título antigo do login também ajustado e aprovado isoladamente. Exclusões por filtro não são aprovações.
+- Frontend: `npm ci`, `npm run lint`, `npm test -- --run` e `npm run build` com TZ America/Sao_Paulo e runtime existente (npm 11). Resultado final **104/104**, zero falhos/ignorados, 5 arquivos, 28,47s, exit 0. Vite 4,61s, exit 0, dois avisos preexistentes Zod/Rollup. Nenhuma dependência/lockfile alterado. Uma execução anterior à última correção da expectativa do login teve 103/104; o teste afetado passou isoladamente antes desta execução completa.
+- Zero Efí/OAuth/Pix real, somente providers falsos e dados fictícios. Workers permanecem desabilitados. CI backend/frontend/MySQL será acompanhado no PR após publicação; não é antecipado pelos resultados locais.
+
 ## PR #37 — ausência estruturada e cancelamento seguro (2026-09-30)
 
 - A classificação anterior tratava ausência documentada em HTTP 400 como bloqueio permanente. GET/PATCH `/v2/cob/:txid` com `nome=cobranca_nao_encontrada` agora retorna ausência; GET `/v2/pix/:e2eId` com `nome=pix_nao_encontrado` mantém a inbox pendente. HTTP 404 continua aceito defensivamente. Referências: [cobranças imediatas](https://dev.efipay.com.br/docs/api-pix/cobrancas-imediatas/) e [gestão de Pix](https://dev.efipay.com.br/docs/api-pix/gestao-de-pix/).

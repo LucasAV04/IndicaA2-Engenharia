@@ -144,6 +144,7 @@ public sealed partial class CobrancaPixVistoriaMySqlStore(MySqlConnectionFactory
             using var cancel = Comando(c, t, "UPDATE pagamentos_vistoria SET status=2,updated_at=UTC_TIMESTAMP(6) WHERE id=@id AND status=0", ("id", r.PagamentoId));
             if (await cancel.ExecuteNonQueryAsync(ct) != 1) throw new InvalidOperationException("Pagamento incompatível com remoção.");
         }
+        if(status==10 || codigo=="bloqueio-operacional") await NotificacoesNaTransacao.Criar(c,t,Application.Jornada.TipoNotificacao.CobrancaRevisao,p.Id,null,ct);
         await Interceptar("Finalizacao", c, t); await t.CommitAsync(ct);
     }
 

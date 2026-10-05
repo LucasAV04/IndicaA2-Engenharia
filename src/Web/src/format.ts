@@ -7,4 +7,4 @@ export function businessDate(value?: string) {
   const parts = value?.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/)
   return parts ? `${parts[3]}/${parts[2]}/${parts[1]}, ${parts[4]}:${parts[5]}` : '—'
 }
-export const labels: Record<string, string> = { VistoriaVinculada: 'Vistoria vinculada', VistoriaConcluida: 'Vistoria concluída', Concluida: 'Concluída', Concluido: 'Concluído', Disponivel: 'Disponível', FalhaDefinitiva: 'Falha definitiva' }
+export const labels: Record<string, string> = { VistoriaVinculada: 'Vistoria vinculada', VistoriaConcluida: 'Vistoria concluída', CashbackPago: 'Cashback pago', Concluida: 'Concluída', Concluido: 'Concluído', Disponivel: 'Disponível', FalhaDefinitiva: 'Falha definitiva' }

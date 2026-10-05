@@ -25,13 +25,12 @@ export const resources: Record<ResourceKey, Resource> = {
   },
   indicacoes: {
     title: 'Indicações', singular: 'indicação', description: 'Acompanhe a indicação desde o código até a vistoria concluída.',
-    statuses: ['Pendente', 'Vistoria vinculada', 'Vistoria concluída', 'Cancelada'],
+    statuses: ['Pendente', 'Vistoria vinculada', 'Vistoria concluída', 'Cancelada', 'Cashback pago'],
     columns: [{ label: 'Pessoa indicada', value: r => r.nomeIndicada! }, { label: 'Telefone', value: r => r.telefoneIndicada! }, { label: 'Indicador', value: (r, l) => nome(l, r.usuarioIndicadorId) }, { label: 'Código', value: r => r.codigoIndicacaoUsado || '—' }],
     create: { label: 'Nova indicação', method: 'POST', path: () => '/indicacoes/por-codigo', fields: [{ name: 'codigoIndicacao', label: 'Código de indicação' }, { name: 'nomeIndicada', label: 'Nome da pessoa indicada' }, { name: 'telefoneIndicada', label: 'Telefone da pessoa indicada', type: 'tel' }] },
     actions: [
       { label: 'Vincular usuário', method: 'PATCH', path: r => '/indicacoes/' + r!.id + '/usuario-indicado', fields: [{ name: 'usuarioIndicadoId', label: 'Usuário indicado', source: 'usuarios' }], body: (v, r) => ({ ...v, indicacaoId: r!.id }), allowed: r => !r.usuarioIndicadoId && r.status !== 3 },
       { label: 'Vincular vistoria', method: 'PATCH', path: r => '/indicacoes/' + r!.id + '/vistoria', fields: [{ name: 'vistoriaId', label: 'Vistoria', source: 'vistorias' }], body: (v, r) => ({ ...v, indicacaoId: r!.id }), allowed: r => r.status === 0 && !r.vistoriaId },
-      { label: 'Concluir vínculo', method: 'PATCH', path: r => '/indicacoes/' + r!.id + '/vistoria/concluir', allowed: r => r.status === 1 },
       cancel('indicacoes', [0, 1]),
     ],
   },
@@ -50,11 +49,11 @@ export const resources: Record<ResourceKey, Resource> = {
     actions: [{ label: 'Gerar cobrança Pix', method: 'POST', path: r => '/cobrancas-pix-vistoria/por-pagamento/' + r!.id, allowed: r => r.status === 0 }, cancel('pagamentos-vistoria', [0])],
   },
   cashbacks: {
-    title: 'Cashback', singular: 'cashback', description: 'Gere a partir de um pagamento confirmado. Disponível não significa pago.',
+    title: 'Cashback', singular: 'cashback', description: 'Gerado automaticamente na conclusão da vistoria. Disponível não significa pago.',
     statuses: ['Pendente', 'Disponível', 'Pago', 'Cancelado'],
     columns: [{ label: 'Indicador', value: (r, l) => nome(l, r.usuarioIndicadorId) }, { label: 'Total pago', value: r => money(r.valorTotalPago) }, { label: 'Percentual', value: r => new Intl.NumberFormat('pt-BR', { style: 'percent' }).format(r.percentual || 0) }, { label: 'Cashback', value: r => money(r.valor) }],
     create: { label: 'Gerar cashback', method: 'POST', path: (_, v) => '/cashbacks/por-pagamento/' + v!.pagamentoVistoriaId, fields: [{ name: 'pagamentoVistoriaId', label: 'Pagamento confirmado', source: 'pagamentos-vistoria', onlyStatus: 1 }], body: () => undefined },
-    actions: [{ label: 'Aprovar', method: 'PATCH', path: r => '/cashbacks/' + r!.id + '/aprovar', allowed: r => r.status === 0 }, cancel('cashbacks', [0, 1])],
+    actions: [cancel('cashbacks', [0, 1])],
   },
   'pagamentos-pix': {
     title: 'Pagamentos Pix', singular: 'pagamento Pix', description: 'O processamento depende do worker configurado no servidor. Este painel não dispara envios nem retentativas.',

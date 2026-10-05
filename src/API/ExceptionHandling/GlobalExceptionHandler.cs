@@ -82,6 +82,18 @@ public sealed class GlobalExceptionHandler(
         };
 
         var path = httpContext.Request.Path;
+        if (path.StartsWithSegments("/api/public/indicacoes") || path.StartsWithSegments("/api/minha-conta") || path.StartsWithSegments("/api/notificacoes") || path.StartsWithSegments("/api/admin/jornada"))
+        {
+            if (exception is KeyNotFoundException) status=StatusCodes.Status404NotFound;
+            if (exception is UnauthorizedAccessException) status=StatusCodes.Status401Unauthorized;
+            detail="Não foi possível concluir a operação. Confira os dados e tente novamente.";
+            logger.LogWarning("Falha segura de jornada: {Tipo}; {Status}",exception.GetType().Name,status);
+            httpContext.Response.StatusCode=status;
+            httpContext.Response.Headers.CacheControl="no-store";
+            httpContext.Response.Headers["Referrer-Policy"]="no-referrer";
+            await httpContext.Response.WriteAsJsonAsync(new ProblemDetails { Status=status,Title="Operação indisponível",Detail=detail },cancellationToken);
+            return true;
+        }
         if (path.StartsWithSegments("/api/cobrancas-pix-vistoria") || path.StartsWithSegments("/api/public/cobranca-pix-vistoria") || path.StartsWithSegments("/api/webhooks/efi"))
         {
             detail = "Não foi possível concluir a operação de recebimento Pix.";

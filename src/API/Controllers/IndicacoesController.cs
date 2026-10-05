@@ -136,6 +136,7 @@ public sealed class IndicacoesController(
     }
 
     [HttpPatch("{id:guid}/vistoria/concluir")]
+    [NonAction] // O vínculo conclui atomicamente com a vistoria.
     [Authorize(Policy = AuthorizationPolicies.Administrador)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> MarcarVistoriaConcluidaAsync(

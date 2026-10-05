@@ -27,7 +27,7 @@ public sealed class VistoriaServiceTests
         store.Setup(s => s.CriarVistoriaAsync(usuarioId, dto.TipoPlantaId, dto.AreaM2, dto.Pacote, dto.DataAgendada, It.IsAny<DateTime>(), cancellationToken))
             .ReturnsAsync(CriarVistoria(usuarioId));
 
-        var resultado = await new VistoriaService(vistoriaRepository.Object, usuarioRepository.Object, store.Object, TimeProvider.System).CriarAsync(dto, cancellationToken);
+        var resultado = await new VistoriaService(vistoriaRepository.Object, usuarioRepository.Object, store.Object, TimeProvider.System, Mock.Of<Application.Jornada.IJornadaFinanceiraStore>()).CriarAsync(dto, cancellationToken);
 
         Assert.Equal(usuarioId, resultado.UsuarioId);
         Assert.Equal(StatusVistoria.Agendada, resultado.Status);
@@ -126,18 +126,20 @@ public sealed class VistoriaServiceTests
     }
 
     [Fact]
-    public async Task ConcluirAsync_DeveAlterarVistoriaEPersistir()
+    public async Task ConcluirAsync_DeveDelegarTransacaoCompletaSemAtualizacaoIndependente()
     {
         var vistoria = CriarVistoria();
         vistoria.MarcarRealizada();
         var vistoriaRepository = CriarRepositoryComVistoria(vistoria);
 
-        await CriarService(vistoriaRepository, new Mock<IUsuarioRepository>()).ConcluirAsync(vistoria.Id);
-
-        Assert.Equal(StatusVistoria.Concluida, vistoria.Status);
+        var jornada=new Mock<Application.Jornada.IJornadaFinanceiraStore>();
+        using var cts=new CancellationTokenSource();
+        await new VistoriaService(vistoriaRepository.Object,Mock.Of<IUsuarioRepository>(),Mock.Of<IPrecificacaoStore>(),TimeProvider.System,jornada.Object).ConcluirAsync(vistoria.Id,cts.Token);
+        jornada.Verify(x=>x.ConcluirVistoriaAsync(vistoria.Id,cts.Token),Times.Once);
+        Assert.Equal(StatusVistoria.Realizada, vistoria.Status);
         vistoriaRepository.Verify(
             repository => repository.AtualizarAsync(vistoria, It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Never);
     }
 
     [Fact]
@@ -171,7 +173,7 @@ public sealed class VistoriaServiceTests
     private static VistoriaService CriarService(
         Mock<IVistoriaRepository> vistoriaRepository,
         Mock<IUsuarioRepository> usuarioRepository) =>
-        new(vistoriaRepository.Object, usuarioRepository.Object, Mock.Of<IPrecificacaoStore>(), TimeProvider.System);
+        new(vistoriaRepository.Object, usuarioRepository.Object, Mock.Of<IPrecificacaoStore>(), TimeProvider.System,Mock.Of<Application.Jornada.IJornadaFinanceiraStore>());
 
     private static Mock<IVistoriaRepository> CriarRepositoryComVistoria(Vistoria vistoria)
     {

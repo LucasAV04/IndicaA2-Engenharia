@@ -161,6 +161,8 @@ public sealed class PrecificacaoMySqlStore : IPrecificacaoStore
                 if (await cmd.ExecuteNonQueryAsync(token) != 1) throw new InvalidOperationException("Snapshot não persistido.");
             }
             await _ponto(PontoTransacionalPrecificacao.SnapshotGravado, c, tx, token);
+            await NotificacoesNaTransacao.Criar(c, tx, Application.Jornada.TipoNotificacao.VistoriaVinculada,
+                vistoria.Id, vistoria.UsuarioId, token);
             return vistoria;
         }, token);
 

@@ -183,9 +183,35 @@ public sealed class IndicacaoMySqlRepository : IIndicacaoRepository
     {
         await using var connection = _connectionFactory.Create();
         await connection.OpenAsync(cancellationToken);
+        await using var transaction=await connection.BeginTransactionAsync(cancellationToken);
         await using var command = CriarComando(connection, sql);
+        command.Transaction=transaction;
         adicionarParametros(command);
+        if(sql.TrimStart().StartsWith("UPDATE",StringComparison.Ordinal))
+        {
+            await using var anterior=new MySqlCommand("SELECT status FROM indicacoes WHERE id=@id FOR UPDATE",connection,transaction);
+            anterior.Parameters.AddWithValue("@id",command.Parameters["@id"].Value);
+            var estado=await anterior.ExecuteScalarAsync(cancellationToken);
+            if(estado is not null and not DBNull && (Convert.ToInt32(estado) is 2 or 4 || (Convert.ToInt32(estado)==3 && Convert.ToInt32(command.Parameters["@status"].Value)!=3)))
+                throw new DomainException("Indicação concluída não admite atualização independente da jornada financeira.");
+        }
         await command.ExecuteNonQueryAsync(cancellationToken);
+        if(command.Parameters.Contains("@status") && Convert.ToInt32(command.Parameters["@status"].Value)==1)
+        {
+            var id=Guid.Parse(command.Parameters["@id"].Value?.ToString() ?? throw new InvalidOperationException("Identidade ausente."));
+            using var destinatario=new MySqlCommand("SELECT usuario_indicador_id,vistoria_id FROM indicacoes WHERE id=@id",connection,transaction);
+            destinatario.Parameters.AddWithValue("@id",id.ToString());
+            Guid usuario;
+            Guid vistoriaId;
+            await using (var reader = await destinatario.ExecuteReaderAsync(cancellationToken))
+            {
+                if (!await reader.ReadAsync(cancellationToken)) throw new InvalidOperationException("Indicação ausente.");
+                usuario = reader.ObterGuid("usuario_indicador_id");
+                vistoriaId = reader.ObterGuid("vistoria_id");
+            }
+            await NotificacoesNaTransacao.Criar(connection,transaction,Application.Jornada.TipoNotificacao.VistoriaVinculada,vistoriaId,usuario,cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static MySqlCommand CriarComando(MySqlConnection connection, string sql) => new(sql, connection);

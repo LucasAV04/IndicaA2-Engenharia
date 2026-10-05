@@ -18,6 +18,7 @@ public sealed class PagamentosPixController(IPagamentoPixService pagamentoPixSer
         Ok(await pagamentoPixService.ObterTodosAsync(cancellationToken));
 
     [HttpPost("por-cashback/{cashbackId:guid}")]
+    [NonAction] // Preparação automática, sem comando financeiro manual.
     [ProducesResponseType(typeof(PagamentoPixResponseDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]

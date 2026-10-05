@@ -103,7 +103,7 @@ public sealed class VistoriaMySqlRepository : IVistoriaRepository
             SET
                 status = @status,
                 updated_at = @updatedAt
-            WHERE id = @id;
+            WHERE id = @id AND (status = @status OR (status = 0 AND @status IN (1,3)) OR (status = 1 AND @status = 2));
             """;
 
         await ExecutarComandoAsync(sql, command =>
@@ -144,7 +144,9 @@ public sealed class VistoriaMySqlRepository : IVistoriaRepository
         await connection.OpenAsync(cancellationToken);
         await using var command = CriarComando(connection, sql);
         adicionarParametros(command);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var alterados=await command.ExecuteNonQueryAsync(cancellationToken);
+        if(sql.TrimStart().StartsWith("UPDATE",StringComparison.Ordinal) && alterados!=1)
+            throw new Domain.Exceptions.DomainException("A vistoria foi alterada concorrentemente; recarregue seu estado.");
     }
 
     private static MySqlCommand CriarComando(MySqlConnection connection, string sql) => new(sql, connection);
