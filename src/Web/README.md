@@ -32,7 +32,7 @@ Dados Pix retornam somente `chaveMascarada`; o formulário de substituição sem
 - `/pagar#TOKEN`: página pública mínima, QR local, copia e cola e consulta periódica limitada; token removido da URL e não persistido no navegador.
 - `/cashbacks`: visualizar snapshot de 20% gerado/aprovado na conclusão da vistoria; cancelamento conforme regras existentes.
 - `/pagamentos-pix`: acompanhar ordem automática e cancelar quando permitido; sem criação ou envio manual.
-- `/indicar/:codigo`: formulário público sem identidade da indicadora, consentimento explícito e protocolo opaco. Uma chave aleatória por envio é reutilizada nas falhas de rede; não há reenvio automático ao atualizar a página.
+- `/indicar/:codigo`: formulário público sem identidade da indicadora, consentimento explícito e protocolo opaco. SessionStorage guarda somente chave idempotente/protocolo por código normalizado, antes do POST. Após erro de rede/reload, retry reutiliza a chave; após sucesso, reload mostra protocolo sem formulário ou POST automático. “Cadastrar outra indicação” limpa apenas esse estado público e reinicia consentimento desmarcado. Nome, telefone e consentimento nunca são persistidos; não usa localStorage.
 - `/minha-conta`: portal autenticado de usuário comum, link, listas próprias mascaradas, Dados Pix e notificações internas. Queries segregadas por usuário; logout/troca de sessão limpam cache.
 - `/alertas`: notificações administrativas. Dashboard apresenta pendências de Dados Pix, ordens e falhas separadamente.
 
@@ -41,6 +41,12 @@ Fluxo: indicação pública ou administrativa → vínculo ao usuário/vistoria 
 O formulário público não cria conta. Reset de senha, promoção de role, canais externos, envio manual e retry financeiro continuam fora do escopo. O recebimento possui webhook seguro separado, nunca cadastrado pelo frontend automaticamente. Criar ordem não significa pagá-la. Todos os workers permanecem desabilitados por padrão.
 
 Configure `PublicWeb__BaseUrl` com a origem HTTPS pública aprovada. Links nunca usam `Host` da requisição. `CashbackPagamentoPreparacaoWorker__Habilitado=false` é o padrão; quando habilitado, intervalo de 5–3600 segundos e lote de 1–100, sequencial e sem provider. A migration 016 deve ser aplicada pelo processo administrativo, nunca pelo startup. Texto de consentimento versão `2026-10-01` precisa de revisão jurídica/comercial antes de produção; esta entrega não habilita canais externos.
+
+## Notificações e validação da jornada
+
+Notificações são internas: proprietária recebe confirmação na criação da vistoria, indicadora recebe vínculo e ambas recebem Cashback pago; a administração conserva o evento financeiro. Criação e liquidação incluem notificações na mesma transação, com unicidade por evento/referência/destinatário. WhatsApp e e-mail não foram implementados.
+
+Validação da correção (2026-10-05): lint e build aprovados; 106/106 testes em cinco arquivos, zero falhos/ignorados, 51,92s. Os 13 cenários de Jornada incluem remount após sucesso, resposta perdida com retry pela mesma chave, ação explícita de nova indicação e isolamento por código. Dois avisos preexistentes Zod/Rollup preservados; zero provider real.
 
 ## Precificação
 

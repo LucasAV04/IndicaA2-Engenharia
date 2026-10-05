@@ -9,7 +9,8 @@ internal enum PontoTransacionalPix
     AuditoriaEnvioAntesDeLiberarLease,
     PagamentoAtualizadoAntesDoCashback,
     AuditoriasConsultaAntesDeLiberarLease,
-    JornadaAtualizadaAntesDoCommit
+    JornadaAtualizadaAntesDoCommit,
+    AntesDeNotificarClienteIndicada
 }
 
 // Instância por store; nenhuma configuração pública ou estado global mutável.

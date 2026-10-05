@@ -63,6 +63,81 @@ public sealed class JornadaMySqlIntegrationTests(MySqlIntegrationFixture fixture
     private async Task<Cashback> Cashback()=>Assert.Single(await new CashbackMySqlRepository(fixture.ConnectionFactory).ObterTodosAsync(default));
 
     [MySqlIntegrationFact]
+    public async Task VistoriaSemIndicacaoNotificaProprietariaNaCriacao()
+    {
+        var c=await Preparar(indicacao:false);
+        Assert.Single(await Consulta.NotificacoesAsync(c.Vistoria.UsuarioId,false,default),n=>n.Tipo==TipoNotificacao.VistoriaVinculada);
+        Assert.Empty(await Consulta.NotificacoesAsync(c.Indicador.Id,false,default));
+        await using var conexao=fixture.ConnectionFactory.Create();await conexao.OpenAsync();
+        using var cmd=new MySqlCommand("SELECT referencia_id FROM notificacoes_internas WHERE usuario_id=@id",conexao);
+        cmd.Parameters.AddWithValue("@id",c.Vistoria.UsuarioId.ToString());
+        await using var reader=await cmd.ExecuteReaderAsync();Assert.True(await reader.ReadAsync());
+        Assert.Equal(c.Vistoria.Id,reader.ObterGuid("referencia_id"));Assert.False(await reader.ReadAsync());
+    }
+
+    [MySqlIntegrationFact]
+    public async Task VinculoPosteriorNotificaIndicadoraSemDuplicarEventoDaProprietaria()
+    {
+        var c=await Preparar(indicacao:false);
+        var repository=new IndicacaoMySqlRepository(fixture.ConnectionFactory);
+        await repository.AdicionarAsync(c.Indicacao);await repository.AtualizarAsync(c.Indicacao);
+        Assert.Single(await Consulta.NotificacoesAsync(c.Vistoria.UsuarioId,false,default),n=>n.Tipo==TipoNotificacao.VistoriaVinculada);
+        Assert.Single(await Consulta.NotificacoesAsync(c.Indicador.Id,false,default),n=>n.Tipo==TipoNotificacao.VistoriaVinculada);
+        using var snapshots=new ProcessamentoPixCenario(fixture);
+        var referencias=await snapshots.SnapshotAsync("SELECT referencia_id FROM notificacoes_internas ORDER BY id");
+        Assert.DoesNotContain(c.Indicacao.Id.ToString(),referencias,StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2,await Quantidade("notificacoes_internas"));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task FalhaNaNotificacaoDaIndicadaReverteLiquidacaoETodasNotificacoes()
+    {
+        var c=await Preparar();await Financeiro.ConcluirVistoriaAsync(c.Vistoria.Id,default);
+        var cb=await Cashback();var pix=(await new PagamentoPixMySqlRepository(fixture.ConnectionFactory,_protector).ObterPorCashbackIdAsync(cb.Id))!;
+        using var fluxo=new ProcessamentoPixCenario(fixture);
+        await new Application.Services.PagamentoPixEnvioService(fluxo.Pagamentos,fluxo.Envios,new ProviderFalso()).ProcessarEnvioAsync(pix.Id,default);
+        var antes=await Snapshot();
+        var store=new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory,_protector,async(p,conexao,transacao,ct)=>
+        {
+            if(p!=PontoTransacionalPix.AntesDeNotificarClienteIndicada)return;
+            // Falha real de FK na inserção, na mesma transação, sem trigger/permissão global.
+            using var cmd=new MySqlCommand("INSERT INTO notificacoes_internas(id,tipo,escopo,usuario_id,referencia_id,evento_chave,created_at) VALUES(@id,4,0,@ausente,@ref,@evento,UTC_TIMESTAMP(6))",conexao,transacao);
+            cmd.Parameters.AddWithValue("@id",Guid.NewGuid().ToString());cmd.Parameters.AddWithValue("@ausente",Guid.NewGuid().ToString());
+            cmd.Parameters.AddWithValue("@ref",cb.Id.ToString());cmd.Parameters.AddWithValue("@evento",Guid.NewGuid().ToString());
+            await cmd.ExecuteNonQueryAsync(ct);
+        });
+        await Assert.ThrowsAsync<MySqlException>(()=>store.AplicarAsync(pix.Id));
+        Assert.Equal(antes,await Snapshot());
+        Assert.Equal(StatusCashback.Disponivel,(await Cashback()).Status);
+    }
+
+    [MySqlIntegrationFact]
+    public async Task AplicacoesConcorrentesNotificamCadaDestinatarioUmaVez()
+    {
+        var c=await Preparar();await Financeiro.ConcluirVistoriaAsync(c.Vistoria.Id,default);
+        var cb=await Cashback();var pix=(await new PagamentoPixMySqlRepository(fixture.ConnectionFactory,_protector).ObterPorCashbackIdAsync(cb.Id))!;
+        using var fluxo=new ProcessamentoPixCenario(fixture);
+        await new Application.Services.PagamentoPixEnvioService(fluxo.Pagamentos,fluxo.Envios,new ProviderFalso()).ProcessarEnvioAsync(pix.Id,default);
+        var entrou=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var liberar=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store=new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory,_protector,async(p,_,_,_)=>
+        {if(p==PontoTransacionalPix.AntesDeNotificarClienteIndicada){entrou.TrySetResult();await liberar.Task.WaitAsync(TimeSpan.FromSeconds(10));}});
+        var a=store.AplicarAsync(pix.Id);Task? b=null;
+        try
+        {
+            await Task.WhenAny(entrou.Task,a).WaitAsync(TimeSpan.FromSeconds(10));if(a.IsCompleted)await a;
+            Assert.True(entrou.Task.IsCompletedSuccessfully);
+            b=new PagamentoPixAplicacaoResultadoMySqlStore(fixture.ConnectionFactory,_protector).AplicarAsync(pix.Id);
+        }
+        finally{liberar.TrySetResult();await Task.WhenAll(a,b??Task.CompletedTask).WaitAsync(TimeSpan.FromSeconds(10));}
+        foreach(var usuario in new[]{c.Indicador.Id,c.Vistoria.UsuarioId})
+            Assert.Single(await Consulta.NotificacoesAsync(usuario,false,default),n=>n.Tipo==TipoNotificacao.CashbackPago);
+        Assert.Single(await Consulta.NotificacoesAsync(c.Indicador.Id,true,default),n=>n.Tipo==TipoNotificacao.CashbackPago);
+        Assert.Equal(StatusCashback.Pago,(await Cashback()).Status);
+        var antes=await Snapshot();await store.AplicarAsync(pix.Id);Assert.Equal(antes,await Snapshot());
+    }
+
+    [MySqlIntegrationFact]
     public async Task ConclusaoCalculaVintePorCentoCriaOrdemCriptografadaENotificaUmaVez()
     {
         var c=await Preparar();using var snapshots=new ProcessamentoPixCenario(fixture);
@@ -190,6 +265,7 @@ public sealed class JornadaMySqlIntegrationTests(MySqlIntegrationFixture fixture
         Assert.Equal(depois,await Snapshot());Assert.Equal(1,provider.Envios);Assert.Equal(0,provider.Consultas);
         Assert.Equal(material,await fluxo.SnapshotImutavelAsync(pix.Id));
         Assert.Single(await Consulta.NotificacoesAsync(c.Indicador.Id,false,default),n=>n.Tipo==TipoNotificacao.CashbackPago);
+        Assert.Single(await Consulta.NotificacoesAsync(c.Vistoria.UsuarioId,false,default),n=>n.Tipo==TipoNotificacao.CashbackPago);
         Assert.Single(await Consulta.NotificacoesAsync(c.Indicador.Id,false,default),n=>n.Tipo==TipoNotificacao.PagamentoConfirmado);
     }
     [MySqlIntegrationFact]
@@ -214,6 +290,7 @@ public sealed class JornadaMySqlIntegrationTests(MySqlIntegrationFixture fixture
         Assert.Equal(StatusIndicacao.VistoriaConcluida,(await new IndicacaoMySqlRepository(fixture.ConnectionFactory).ObterPorIdAsync(c.Indicacao.Id))!.Status);
         Assert.Contains(await Consulta.NotificacoesAsync(c.Indicador.Id,true,default),n=>n.Tipo==TipoNotificacao.FalhaFinanceira);
         Assert.DoesNotContain(await Consulta.NotificacoesAsync(c.Indicador.Id,false,default),n=>n.Tipo==TipoNotificacao.CashbackPago);
+        Assert.DoesNotContain(await Consulta.NotificacoesAsync(c.Vistoria.UsuarioId,false,default),n=>n.Tipo==TipoNotificacao.CashbackPago);
     }
     [MySqlIntegrationFact]
     public async Task PreparacoesConcorrentesNaoDuplicamOrdem()

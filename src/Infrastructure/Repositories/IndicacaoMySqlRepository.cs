@@ -199,11 +199,17 @@ public sealed class IndicacaoMySqlRepository : IIndicacaoRepository
         if(command.Parameters.Contains("@status") && Convert.ToInt32(command.Parameters["@status"].Value)==1)
         {
             var id=Guid.Parse(command.Parameters["@id"].Value?.ToString() ?? throw new InvalidOperationException("Identidade ausente."));
-            using var destinatario=new MySqlCommand("SELECT usuario_indicador_id FROM indicacoes WHERE id=@id",connection,transaction);
+            using var destinatario=new MySqlCommand("SELECT usuario_indicador_id,vistoria_id FROM indicacoes WHERE id=@id",connection,transaction);
             destinatario.Parameters.AddWithValue("@id",id.ToString());
-            var raw=(await destinatario.ExecuteScalarAsync(cancellationToken))!;
-            var usuario=raw is Guid guid?guid:Guid.Parse((string)raw);
-            await NotificacoesNaTransacao.Criar(connection,transaction,Application.Jornada.TipoNotificacao.VistoriaVinculada,id,usuario,cancellationToken);
+            Guid usuario;
+            Guid vistoriaId;
+            await using (var reader = await destinatario.ExecuteReaderAsync(cancellationToken))
+            {
+                if (!await reader.ReadAsync(cancellationToken)) throw new InvalidOperationException("Indicação ausente.");
+                usuario = reader.ObterGuid("usuario_indicador_id");
+                vistoriaId = reader.ObterGuid("vistoria_id");
+            }
+            await NotificacoesNaTransacao.Criar(connection,transaction,Application.Jornada.TipoNotificacao.VistoriaVinculada,vistoriaId,usuario,cancellationToken);
         }
         await transaction.CommitAsync(cancellationToken);
     }

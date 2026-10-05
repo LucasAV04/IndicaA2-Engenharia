@@ -1,5 +1,27 @@
 # Implementações
 
+## PR #38 — destinatários e recuperação pública após reload (2026-10-05)
+
+- Criação calculada da vistoria notifica `Vistoria.UsuarioId` na mesma transação do snapshot, inclusive sem indicação. O vínculo notifica a indicadora; ambos usam referência da vistoria e chave única por tipo/referência/destinatário, sem PII.
+- Liquidação confirmada notifica indicadora, indicada validada contra a proprietária da vistoria e administração na mesma transação de Pix, Cashback e indicação. Falha confirmada não gera CashbackPago. Falha de inserção da notificação da indicada reverte inclusive o evento já inserido para a indicadora.
+- Captação pública persiste apenas chave idempotente e protocolo em `sessionStorage`, por código Trim/uppercase. A chave é gravada antes do POST e reutilizada após erro de rede/reload. Sucesso restaurado mantém formulário oculto; somente “Cadastrar outra indicação” limpa esse estado e inicia formulário vazio, com consentimento desmarcado. Sem localStorage ou persistência de nome/telefone/consentimento.
+- Cobertura acrescentada: proprietária sem indicação; vínculo posterior sem duplicação; rollback por FK na inserção da notificação; aplicações concorrentes; remount com protocolo; resposta perdida e retry com a mesma chave; códigos isolados. Asserções anteriores preservadas, exceto expectativa de formulário reaparecer após sucesso, substituída pelo comportamento corrigido.
+- Validação desta correção: build aprovado, 0 erros/4 warnings preexistentes de nulabilidade (84,64s). Primeira tentativa foi bloqueada pelo sandbox ao ler NuGet.Config antes da compilação; repetida com acesso autorizado, sem mudança de configuração. Direcionados **423/423** (100 Domain, 98 Application, 92 Infrastructure incluindo os seis preflight, 133 API); suíte rápida **838/838** (173/227/163/275), zero falhos/ignorados. Frontend lint/build aprovados, **106/106** em cinco arquivos (51,92s), dois avisos preexistentes Zod/Rollup.
+- MySQL oficial **255/255 em 20 classes**, zero falhos/ignorados, 39s de testes/48,15s de comando, exit 0, migrations 001–016 somente no banco descartável da fixture. Inventário de leitura: 0 antes/depois, 0 novos remanescentes, 0 antigos removidos; nenhuma limpeza manual. Quatro casos novos, demais asserções financeiras preservadas. `git diff --check` aprovado.
+- Resultados de 2026-10-02 abaixo são históricos. Migration 016 e arquitetura financeira preservadas; zero Efí/OAuth/Pix real e dados de produção. WhatsApp/e-mail não implementados. CI da correção será registrado no PR após publicação, sem antecipar aprovação.
+
+| Correção | Teste |
+| --- | --- |
+| Vistoria sem indicação e referência correta | `VistoriaSemIndicacaoNotificaProprietariaNaCriacao` |
+| Vínculo posterior e destinatários diferentes | `VinculoPosteriorNotificaIndicadoraSemDuplicarEventoDaProprietaria` |
+| Rollback integral por falha de inserção da notificação | `FalhaNaNotificacaoDaIndicadaReverteLiquidacaoETodasNotificacoes` |
+| Concorrência e reaplicação, uma notificação por destinatário | `AplicacoesConcorrentesNotificamCadaDestinatarioUmaVez` |
+| Sucesso para ambas / falha sem sucesso | `JornadaPublicaRecebimentoConfirmadoEEnvioFalsoFinalizamIndicacaoAtomicamente`, `FalhaConfirmadaNaoPagaCashbackENotificaAdministracao` |
+| Isolamento de usuários | `PortalENotificacoesSaoRestritosAoDestinatario` e testes HTTP do portal |
+| Reload, resposta perdida, nova indicação e códigos isolados | `Jornada.test.tsx`, 13 cenários; substitui a expectativa antiga de reabrir formulário no reload |
+
+Comandos desta correção: `dotnet build IndicaA2.slnx`; direcionados com filtro `Category!=MySqlIntegration&(FullyQualifiedName~Vistoria|FullyQualifiedName~Precificacao|FullyQualifiedName~Indicacao|FullyQualifiedName~Notificac|FullyQualifiedName~PagamentoPixAplicacaoResultado|FullyQualifiedName~Authorization|FullyQualifiedName~Autorizacao|FullyQualifiedName~Jornada|FullyQualifiedName~MySqlIntegrationPreflight)`; suíte rápida oficial (excluindo MySQL/Efí); frontend `npm run lint`, `npm test -- --run`, `npm run build` com TZ America/Sao_Paulo; `pwsh -NoProfile -File ./scripts/Invoke-MySqlIntegrationTests.ps1 -RequireMySql`; revisão completa do diff. Todos os comandos de validação após a autorização de acesso ao NuGet terminaram com exit 0.
+
 ## Jornada de indicação — implementação e validação local (2026-10-02)
 
 Base aprovada: `574c5f20e227bb8d20138cef33a5ec66b616a637` (PR #37 integrado). Branch `feature/mvp-jornada-indicacao`. Os registros incrementais abaixo são históricos e superados pela validação final desta seção. Não representam autorização de produção.

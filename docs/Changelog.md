@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-05 — Correção de destinatários e idempotência pública (PR #38)
+
+- Vistoria notifica a proprietária na transação de criação/snapshot; vínculo notifica indicadora com referência comum da vistoria e unicidade por destinatário.
+- Cashback pago notifica ambas as clientes e administração, com validação da proprietária, idempotência e rollback integral se uma notificação falhar.
+- Chave/protocolo públicos persistidos por código normalizado em sessionStorage, sem PII; reload recupera protocolo ou reutiliza chave após resposta perdida. Nova indicação exige ação explícita e novo consentimento.
+- Testes concorrentes/transacionais e remount ampliados: build 0 erros/4 warnings preexistentes; direcionados 423/423 (preflight 6/6 incluído); suíte rápida 838/838; frontend lint/build e 106/106 (51,92s) aprovados. Dois avisos preexistentes Zod/Rollup. Tentativa inicial de build bloqueada por leitura NuGet no sandbox, corrigida com acesso autorizado, não por alteração do projeto.
+- MySQL oficial 255/255 em 20 classes, 0 falhos/ignorados, 39s/48,15s comando, exit 0; migrations 001–016 na fixture. Inventário 0 bancos antes/depois, nenhum novo remanescente ou antigo removido. `git diff --check` aprovado. Resultados anteriores são históricos; nenhuma migration/canal externo novo, zero Efí/OAuth/Pix real ou dados de produção.
+
 ## 2026-10-02 — Jornada automática de indicação, portal e notificações internas
 
 - Entrega vertical sobre o merge aprovado do PR #37: captação pública com consentimento/idempotência, portal próprio, notificações duráveis e conclusão transacional. Migration 016 aditiva, sem alterar 001–015 ou inserir preços/tipos comerciais.

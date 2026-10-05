@@ -26,8 +26,10 @@ internal static class NotificacoesNaTransacao
         await bloquear.ExecuteScalarAsync(ct);
     }
 
-    internal static async Task Liquidacao(MySqlConnection c,MySqlTransaction t,Domain.Entities.Cashback cashback,bool confirmado,CancellationToken ct)
+    internal static async Task Liquidacao(MySqlConnection c,MySqlTransaction t,Domain.Entities.Cashback cashback,bool confirmado,CancellationToken ct,
+        Infrastructure.Database.InterceptadorTransacionalPix interceptar)
     {
+        Guid indicadaId;
         using var ler=Comando(c,t,"""
             SELECT i.status,i.usuario_indicador_id,i.usuario_indicado_id,v.usuario_id,v.status vistoria_status,v.valor_final,p.status pagamento_status,p.valor,p.pago_em
             FROM indicacoes i JOIN vistorias v ON v.id=i.vistoria_id JOIN pagamentos_vistoria p ON p.vistoria_id=v.id
@@ -43,12 +45,15 @@ internal static class NotificacoesNaTransacao
                 || Infrastructure.Database.MySqlDataReaderExtensions.ObterGuidOpcional(r,"usuario_indicado_id")!=Infrastructure.Database.MySqlDataReaderExtensions.ObterGuid(r,"usuario_id")
                 || cashback.Percentual!=0.20m || cashback.Valor!=decimal.Round(cashback.ValorTotalPago*0.20m,2,MidpointRounding.AwayFromZero))
                 throw new InvalidOperationException("Jornada financeira incompatível com liquidação.");
+            indicadaId=Infrastructure.Database.MySqlDataReaderExtensions.ObterGuid(r,"usuario_id");
         }
         if(confirmado)
         {
             using var update=Comando(c,t,"UPDATE indicacoes SET status=4,updated_at=UTC_TIMESTAMP(6) WHERE id=@id AND status=2",("id",cashback.IndicacaoId));
             await update.ExecuteNonQueryAsync(ct);
             await Criar(c,t,TipoNotificacao.CashbackPago,cashback.Id,cashback.UsuarioIndicadorId,ct);
+            await interceptar(Infrastructure.Database.PontoTransacionalPix.AntesDeNotificarClienteIndicada,c,t,ct);
+            await Criar(c,t,TipoNotificacao.CashbackPago,cashback.Id,indicadaId,ct);
             await Criar(c,t,TipoNotificacao.CashbackPago,cashback.Id,null,ct);
         }
         else await Criar(c,t,TipoNotificacao.FalhaFinanceira,cashback.Id,null,ct);

@@ -71,7 +71,7 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
 
             if (EstadoJaAplicado(pagamentoPix, cashback, resultadoConclusivo.Value))
             {
-                await NotificacoesNaTransacao.Liquidacao(connection,transaction,cashback.Entidade,resultadoConclusivo==ResultadoOperacaoPagamentoPix.Confirmado,cancellationToken);
+                await NotificacoesNaTransacao.Liquidacao(connection,transaction,cashback.Entidade,resultadoConclusivo==ResultadoOperacaoPagamentoPix.Confirmado,cancellationToken,_interceptar);
                 await transaction.CommitAsync(cancellationToken);
                 return ResultadoPersistenciaAplicacaoPagamentoPix.JaAplicado(resultadoConclusivo.Value);
             }
@@ -109,7 +109,7 @@ public sealed class PagamentoPixAplicacaoResultadoMySqlStore : IPagamentoPixApli
                     "A atualização condicional do Cashback não foi aplicada e a transação foi revertida.");
             }
 
-            await NotificacoesNaTransacao.Liquidacao(connection,transaction,cashback.Entidade,resultadoConclusivo==ResultadoOperacaoPagamentoPix.Confirmado,cancellationToken);
+            await NotificacoesNaTransacao.Liquidacao(connection,transaction,cashback.Entidade,resultadoConclusivo==ResultadoOperacaoPagamentoPix.Confirmado,cancellationToken,_interceptar);
             await _interceptar(PontoTransacionalPix.JornadaAtualizadaAntesDoCommit,connection,transaction,cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return ResultadoPersistenciaAplicacaoPagamentoPix.Aplicado(resultadoConclusivo.Value);

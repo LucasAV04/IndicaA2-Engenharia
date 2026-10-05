@@ -27,11 +27,13 @@ Workers continuam desabilitados por padrão. O módulo de recebimento usa cobran
 
 ## Jornada automática da indicação
 
+A confirmação interna da criação da vistoria chega à proprietária, inclusive sem indicação; o vínculo também notifica a indicadora, sem duplicar o evento da proprietária. Cashback pago notifica ambas e a administração na mesma transação financeira. A captação pública mantém somente chave idempotente/protocolo em sessionStorage por código: reload restaura o protocolo ou permite retry com a mesma chave após perda de resposta. “Cadastrar outra indicação” inicia novo formulário vazio e consentimento desmarcado. Nenhum nome/telefone é persistido no navegador.
+
 `/indicar/:codigo` capta indicação com consentimento explícito e chave de idempotência, sem criar conta. `/minha-conta` oferece portal próprio com dados mascarados, link de indicação e notificações internas. O administrador vincula usuário e vistoria; após pagamento confirmado e realização, a conclusão cria/aprova o cashback de 20% e prepara a ordem Pix na mesma transação. Sem Dados Pix, mantém cashback disponível e registra aviso; o worker de preparação pode recuperar no próximo tick, sem chamar provider. A aplicação financeira existente marca Cashback/indicação como pagos e notifica atomicamente.
 
 Migration 016 é aditiva e não é executada no startup. Configure `PublicWeb__BaseUrl` HTTPS e, somente quando autorizado, `CashbackPagamentoPreparacaoWorker__Habilitado` (padrão false), `IntervaloSegundos` (60) e `TamanhoLote` (20). Não existem seeds comerciais. WhatsApp, e-mail, SMS, push externo e validação jurídica do consentimento continuam pendentes para produção. Exemplos seguros e inventário de configuração estão em `src/API/API.http` e `.env.example`.
 
-Validação local da jornada: 838 testes rápidos, 104 de frontend e 251 integrações MySQL em 20 classes aprovados, sem falhos/ignorados. Migrations 001–016 validadas somente em banco descartável; nenhum banco novo remanescente. Resultados intermediários, comandos, limites e matriz de cobertura estão em `docs/Implementacoes.md`. CI será confirmado no PR, sem habilitar workers ou provider real.
+Validação local atual da jornada e correção: 423 direcionados (incluindo seis preflight), 838 testes rápidos, 106 de frontend e 255 integrações MySQL em 20 classes aprovados, sem falhos/ignorados. Build aprovado com quatro warnings preexistentes; migrations 001–016 validadas somente em banco descartável, nenhum banco novo remanescente. Resultados históricos, comandos, limites e matriz de cobertura estão em `docs/Implementacoes.md`. CI será confirmado no PR, sem habilitar workers ou provider real.
 
 ## Recebimento de vistoria
 
