@@ -1,3 +1,4 @@
+using API.Homologation;
 using API.ExceptionHandling;
 using API.Authorization;
 using API.OpenApi;
@@ -12,7 +13,40 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
-var builder = WebApplication.CreateBuilder(args);
+var adminCommand = args.Length == 1 && args[0] is "--preflight-homologation"
+    or "--migrate-homologation" or "--bootstrap-homologation";
+var builder = WebApplication.CreateBuilder(adminCommand ? [] : args);
+if (adminCommand)
+{
+    using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+    try
+    {
+        await HomologationEnvironment.RunAdminAsync(builder, args[0], timeout.Token);
+        Console.WriteLine("Comando administrativo concluído.");
+    }
+    catch (Exception exception)
+    {
+        var code = exception is MySqlConnector.MySqlException mysql ? $" {mysql.Number}" : "";
+        Console.Error.WriteLine($"Falha administrativa ({exception.GetType().Name}{code}).");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+
+var homologation = builder.Environment.IsEnvironment("Homologation");
+if (homologation)
+{
+    try
+    {
+        HomologationEnvironment.Configure(builder);
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Configuração de homologação inválida ({exception.GetType().Name}).");
+        Environment.ExitCode = 1;
+        return;
+    }
+}
 
 if (builder.Configuration.GetValue<bool>("RecebimentoPix:Habilitado"))
 {
@@ -154,6 +188,9 @@ app.Use(async (context,next)=>
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapOperationalEndpoints();
+if (homologation)
+    app.UseHomologationWeb();
 
 app.Run();
 

@@ -70,3 +70,7 @@ npm run build
 ```
 
 Vitest/Testing Library exercitam os fluxos com mocks na fronteira fetch. Nenhum teste Web executa MySQL, Efí, OAuth ou Pix. CI separa backend rápido, frontend e MySQL 8 descartável. A listagem é integral com filtros locais neste MVP; paginação e observabilidade completa ficam para evolução. Não use o painel para produção sem a revisão e implantação específicas.
+
+## Homologação operacional
+
+O Compose compila o React com npm ci e publica a aplicação e /api na origem https://localhost:8443. Veja o [runbook](../../docs/HomologacaoOperacional.md).
