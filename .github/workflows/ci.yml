@@ -106,8 +106,17 @@ jobs:
           if (Test-Path .homologacao-smoke/disposable-owner) {
             ./scripts/Invoke-Homologation.ps1 -Action Cleanup -Disposable
           }
-          foreach ($kind in 'container', 'network', 'volume') {
-            $flags = if ($kind -eq 'container') { @('-a') } else { @() }
-            $remaining = docker $kind ls @flags -q --filter label=com.docker.compose.project=indicaa2-homologacao-smoke
-            if ($LASTEXITCODE -ne 0 -or $remaining) { throw "Falha no inventário ou restaram recursos do smoke." }
-          }
+          $label = 'label=com.docker.compose.project=indicaa2-homologacao-smoke'
+          $containers = docker container ls -a -q --filter $label
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao inventariar containers ($LASTEXITCODE)." }
+
+          $networks = docker network ls -q --filter $label
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao inventariar redes ($LASTEXITCODE)." }
+
+          $volumes = docker volume ls -q --filter $label
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao inventariar volumes ($LASTEXITCODE)." }
+
+          if ($containers) { throw 'Restaram containers descartáveis do smoke.' }
+          if ($networks) { throw 'Restaram redes descartáveis do smoke.' }
+          if ($volumes) { throw 'Restaram volumes descartáveis do smoke.' }
+          'Containers, redes e volumes descartáveis restantes: 0.'
