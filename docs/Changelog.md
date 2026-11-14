@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-14 — Correção de segurança do Zod (PR #39)
+
+- Zod declarado em ^4.6.6 e resolvido para 4.6.7 pelo npm. Auditoria de produção com zero vulnerabilidades.
+- Lint, TypeScript, build e 106 testes frontend aprovados. A instalação completa registrou 13 alertas de desenvolvimento, build e teste (11 moderados e 2 altos).
+
 ## 2026-11-13 — Homologação operacional conteinerizada
 
 - Origem HTTPS local única, imagem multi-stage, armazenamento MySQL persistente e comandos explícitos de migração e bootstrap.

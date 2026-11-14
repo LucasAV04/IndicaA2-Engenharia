@@ -46,14 +46,14 @@ As flags de processamento Pix, recebimento e preparação de Cashback permanecem
 
 ## Auditoria npm do PR #39
 
-O `npm ci` local original reportou 15 alertas (12 moderados e 3 altos). O CI original, run 43530360123, reportou 14 (11 moderados e 3 altos). A nova consulta local ao mesmo lockfile retornou 14 no `npm audit` e 1 alto no `npm audit --omit=dev`. Os totais contam pacotes sinalizados, incluindo efeitos transitivos, e refletem os advisories disponíveis na consulta.
+O `npm ci` local original reportou 15 alertas (12 moderados e 3 altos). O CI original, run 43530360123, reportou 14 (11 moderados e 3 altos). Antes da atualização do Zod, uma consulta local ao mesmo lockfile retornou 14 no `npm audit` e 1 alto no `npm audit --omit=dev`. Os totais contam pacotes sinalizados, incluindo efeitos transitivos, e refletem os advisories disponíveis na consulta.
 
 | Escopo | Pacote e caminho | Correção |
 | --- | --- | --- |
-| Produção, alto | Projeto → `zod@4.6.5`, também peer de `@hookform/resolvers`. O Zod e símbolos de validação de coleções estão no JS entregue ao navegador. Os schemas de formulário usam objetos e campos escalares, sem schemas de array, set ou map expostos às entradas. A rotina afetada não é alcançada pelos fluxos atuais. | `4.6.6` é a primeira versão corrigida e cabe na faixa `^4.1.0`. [Advisory do Zod](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) |
+| Produção, alto (corrigido) | Projeto → `zod@4.6.5`, também peer de `@hookform/resolvers`. O Zod e símbolos de validação de coleções estão no JS entregue ao navegador. Os schemas de formulário usam objetos e campos escalares, sem schemas de array, set ou map expostos às entradas. A rotina afetada não é alcançada pelos fluxos atuais. | `4.6.6` é a primeira versão corrigida e cabe na faixa `^4.1.0`. [Advisory do Zod](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) |
 | Desenvolvimento, alto | Projeto → `vite@7.3.6`. Os avisos são do servidor de desenvolvimento e da integração de editor. | A versão 7.3.7 está disponível e cabe na faixa declarada. |
 | Build e testes, alto | `vite → postcss → source-map-js@1.2.1` e `jsdom → cssstyle ou @asamuzakjp/dom-selector → css-tree → source-map-js`. | `1.2.2` cabe na faixa `^1.2.1` dos consumidores. |
 | Testes, moderado | Projeto → `vitest@5.0.1 → @vitest/mocker@5.0.1`. O audit sinaliza os dois pacotes. | `vitest@5.0.3` cabe na faixa declarada e traz o mocker corrigido. |
 | Lint, moderado | `eslint → minimatch` diretamente e via `@eslint/config-array`. `typescript-eslint → @typescript-eslint/typescript-estree → minimatch`, com efeitos em `@typescript-eslint/parser`, `utils`, `type-utils` e `eslint-plugin`. | O `minimatch` corrigido começa em `11.0.1`. As faixas transitivas atuais são 10.x. A troca de `typescript-eslint` sugerida pelo audit foi sinalizada como potencialmente incompatível. |
 
-O build entrega somente os arquivos estáticos do Vite. Os caminhos de lint, build e teste da tabela ficam fora do runtime publicado. Esta correção preserva o manifesto e o lockfile.
+O build entrega somente os arquivos estáticos do Vite. Os caminhos de lint, build e teste da tabela ficam fora do runtime publicado. A correção do inventário preservou o manifesto e o lockfile. Posteriormente, a atualização direcionada declarou Zod ^4.6.6 e resolveu 4.6.7 no lockfile gerado pelo npm. Após npm ci, npm audit --omit=dev retornou zero vulnerabilidades. A auditoria da instalação completa registrou 13 alertas de desenvolvimento, build e teste (11 moderados e 2 altos). Lint, TypeScript, build e os 106 testes frontend passaram.
