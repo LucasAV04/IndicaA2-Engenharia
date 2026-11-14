@@ -13,6 +13,8 @@ x-application: &application
     RecebimentoPix__ProcessamentoWorker__Habilitado: "false"
     CashbackPagamentoPreparacaoWorker__Habilitado: "false"
     RecebimentoPix__Habilitado: "false"
+    Email__Habilitado: "false"
+    Email__Worker__Habilitado: "false"
     TZ: UTC
   secrets: [application.json, localhost.pfx]
   networks: [private]

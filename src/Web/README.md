@@ -74,3 +74,8 @@ Vitest/Testing Library exercitam os fluxos com mocks na fronteira fetch. Nenhum 
 ## Homologação operacional
 
 O Compose compila o React com npm ci e publica a aplicação e /api na origem https://localhost:8443. Veja o [runbook](../../docs/HomologacaoOperacional.md).
+
+
+## Segurança da conta e relatórios
+
+O login oferece recuperação de senha. O frontend recebe os links de conta por fragmento, remove o fragmento da URL e usa o token apenas em memória. A seção Segurança da conta permite confirmar e-mail e alterar a senha. A troca encerra a sessão e retorna ao login. Em `/relatorios`, o administrador confere os filtros aplicados antes de exportar o CSV.

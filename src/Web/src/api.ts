@@ -12,11 +12,11 @@ export function readSession(): Sessao | null {
     return candidate
   } catch { sessionStorage.removeItem(SESSION_KEY); return null }
 }
-export function saveSession(session: Sessao | null) {
+export function saveSession(session: Sessao | null, senhaAlterada = false) {
   memory = session
   if (session) sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
   else sessionStorage.removeItem(SESSION_KEY)
-  window.dispatchEvent(new Event('session-change'))
+  window.dispatchEvent(new CustomEvent('session-change', { detail: { senhaAlterada } }))
 }
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message) }

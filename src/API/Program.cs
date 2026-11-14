@@ -62,7 +62,15 @@ if (builder.Configuration.GetValue<bool>("RecebimentoPix:Habilitado"))
 // registrar antes dele a exceção bruta, que pode conter uma chave Pix inválida.
 builder.Logging.AddFilter("Microsoft.AspNetCore.Diagnostics.ExceptionHandlerMiddleware", LogLevel.None);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
+{
+    var current = options.InvalidModelStateResponseFactory;
+    options.InvalidModelStateResponseFactory = context =>
+        context.ActionDescriptor is Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor action
+            && action.ControllerTypeInfo.AsType() == typeof(API.Controllers.ContaSegurancaController)
+        ? new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new { mensagem = "Verifique os dados informados." })
+        : current(context);
+});
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
@@ -73,10 +81,12 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
 jwtOptions.Validate();
+builder.Services.AddScoped<VerificarSessaoJwt>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.MapInboundClaims = false;
+        options.EventsType = typeof(VerificarSessaoJwt);
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -116,7 +126,10 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddScoped<Infrastructure.Repositories.ContaMySqlStore>();
+builder.Services.AddScoped<Application.Relatorios.IRelatorioOperacionalStore, Infrastructure.Repositories.RelatorioOperacionalMySqlStore>();
 builder.Services.AddRecebimentoPix(builder.Configuration);
+ConfiguracaoEmail.Adicionar(builder);
 builder.Services.AddHostedService<RecebimentoPixVistoriaWorker>();
 var cashbackPreparacao=builder.Configuration.GetSection("CashbackPagamentoPreparacaoWorker").Get<CashbackPreparacaoOptions>() ?? new();
 cashbackPreparacao.Validar();
@@ -125,6 +138,11 @@ builder.Services.AddHostedService<CashbackPagamentoPreparacaoWorker>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("seguranca-conta", context =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            { PermitLimit = 8, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("referral-link", context =>
         System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -179,7 +197,7 @@ app.UseMiddleware<RecebimentoPixMtlsMiddleware>();
 app.UseRateLimiter();
 app.Use(async (context,next)=>
 {
-    if(context.Request.Path.StartsWithSegments("/api/public/indicacoes") || context.Request.Path.StartsWithSegments("/api/minha-conta") || context.Request.Path.StartsWithSegments("/api/notificacoes") || context.Request.Path.StartsWithSegments("/api/admin/jornada"))
+    if(API.Controllers.ContaSegurancaController.Protege(context.Request.Path) || context.Request.Path.StartsWithSegments("/api/public/indicacoes") || context.Request.Path.StartsWithSegments("/api/minha-conta") || context.Request.Path.StartsWithSegments("/api/notificacoes") || context.Request.Path.StartsWithSegments("/api/admin/jornada"))
     { context.Response.Headers.CacheControl="no-store"; context.Response.Headers["Referrer-Policy"]="no-referrer"; }
     if((context.Request.Path.StartsWithSegments("/api/minha-conta") || context.Request.Path.StartsWithSegments("/api/notificacoes")) && context.Request.Query.Count>0)
     { context.Response.StatusCode=StatusCodes.Status404NotFound; return; }

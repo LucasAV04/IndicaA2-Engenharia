@@ -1,4 +1,4 @@
-﻿using Domain.Enums;
+using Domain.Enums;
 using Domain.Exceptions;
 
 using Domain.Exceptions.Email;
@@ -13,6 +13,8 @@ namespace Domain.Entities
         public string Email { get; private set; }
 
         public string SenhaHash { get; private set; }
+
+        public long VersaoCredenciais { get; private set; } = 1;
 
         public string? Telefone { get; private set; }
 
@@ -65,8 +67,10 @@ namespace Domain.Entities
             DateTime? ultimoLogin,
             DateTime createdAt,
             DateTime updatedAt,
-            string? codigoIndicacao = null)
+            string? codigoIndicacao = null,
+            long versaoCredenciais = 1)
         {
+            if (versaoCredenciais < 1) throw new ArgumentOutOfRangeException(nameof(versaoCredenciais));
             if (id == Guid.Empty)
                 throw new ArgumentException("O identificador persistido é obrigatório.", nameof(id));
             if (string.IsNullOrWhiteSpace(nome))
@@ -90,6 +94,7 @@ namespace Domain.Entities
                 Nome = nome,
                 Email = email,
                 SenhaHash = senhaHash,
+                VersaoCredenciais = versaoCredenciais,
                 Telefone = telefone,
                 Status = status,
                 TipoUsuario = tipoUsuario,

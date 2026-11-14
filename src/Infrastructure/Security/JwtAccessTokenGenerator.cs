@@ -19,8 +19,7 @@ public sealed class JwtAccessTokenGenerator(IOptions<JwtOptions> options) : IAcc
         var claims = new[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, usuario.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.Email, usuario.Email),
-            new Claim("name", usuario.Nome),
+            new Claim("cv", usuario.VersaoCredenciais.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new Claim("role", usuario.TipoUsuario.ToString())
         };
         var credentials = new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Key)), SecurityAlgorithms.HmacSha256);

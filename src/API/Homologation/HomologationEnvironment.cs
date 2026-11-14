@@ -59,6 +59,7 @@ internal static class HomologationEnvironment
             ["Jwt:Key"] = settings["JwtKey"],
             ["DadosPixEncryption:Key"] = settings["PixKey"],
             ["Homologation:ChargeKey"] = settings["ChargeKey"],
+            ["Email:TokenKey"] = settings["EmailTokenKey"],
             ["Homologation:CertificatePassword"] = settings["CertificatePassword"]
         });
         Validate(builder.Configuration);

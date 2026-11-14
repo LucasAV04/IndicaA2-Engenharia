@@ -54,3 +54,8 @@ A página `/pagar#TOKEN` remove o fragmento imediatamente e transmite o token so
 ## Homologação operacional local
 
 O ambiente Docker oferece MySQL e uma origem HTTPS para o React e a API. Consulte o [runbook de homologação](docs/HomologacaoOperacional.md).
+
+
+## Contas e operação
+
+A recuperação de senha e a confirmação de e-mail usam links de uso único. A troca de senha encerra as sessões emitidas com a versão anterior das credenciais. O painel administrativo oferece relatórios paginados e exportação CSV. Consulte o [runbook](docs/HomologacaoOperacional.md) para a migration 017, o worker de e-mail e a homologação com Mailpit.

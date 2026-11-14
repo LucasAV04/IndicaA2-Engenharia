@@ -883,3 +883,10 @@ O registro intermediário acima é superado pela validação final desta entrega
 
 - `Cliente.cs` e `TipoChavePix.cs` não estavam presentes no projeto antes desta refatoração.
 - O controle financeiro de cashback e os dados Pix permanecem pendentes de módulo próprio.
+
+
+## 2026-11-14 — Fechamento operacional do MVP
+
+- Migration 017 com versão de credenciais, tokens de conta e outbox de e-mail.
+- Recuperação, confirmação e alteração autenticada de senha, com revogação das sessões antigas.
+- Mailpit opt-in para homologação, relatórios administrativos e exportação CSV.

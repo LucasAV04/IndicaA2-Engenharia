@@ -1608,3 +1608,20 @@ Esta seção descreve o mecanismo anterior, removido no PR #33. Ele não deve se
 - Testes de integração reais contra MySQL.
 - Vistorias e validação real de `VistoriaId`.
 - Cashback, Pix, pagamentos e módulo de código de indicação.
+
+
+## Fechamento operacional do MVP
+
+A migration 017 adiciona uma versão de credenciais, tokens de conta e a outbox de e-mail. Os JWTs carregam a versão e a role, conferidas contra o usuário ativo no banco a cada requisição autenticada. O reset e a troca autenticada alteram a senha com BCrypt e incrementam a versão na mesma transação.
+
+O token bruto vive no link e no material AES-GCM da outbox até a entrega ou uma decisão terminal. O consumo usa o SHA-256, a finalidade, a validade e a identidade vinculada ao endereço de emissão. Solicitação e inclusão na outbox são atômicas. A entrega SMTP usa lease de cinco minutos e resultado condicionado ao executor, com envio fora da transação.
+
+A seleção de e-mail copia as notificações elegíveis posteriores à migration sem interferir nas transações financeiras que as originaram. Os relatórios administrativos consultam valores persistidos e usam o mesmo filtro para paginação, totais e CSV. Consulte o [runbook](HomologacaoOperacional.md) para limites e planos de operação.
+
+### Validação local
+
+Restore e build .NET aprovados. As regressões direcionadas passaram em 656 casos e a suíte rápida em 872. As 270 integrações MySQL passaram em 22 classes, usando um container MySQL 8.0.46 local descartável. As migrations 001–017 foram aplicadas por journal no smoke e pela fixture nas integrações.
+
+No frontend, lint, TypeScript, build e 111 testes passaram. A auditoria de produção retornou zero vulnerabilidades. A instalação completa reportou 13 alertas de desenvolvimento (11 moderados e 2 altos). O build registrou avisos preexistentes de comentários do Zod e um aviso de tamanho do bundle.
+
+Os dois smokes Docker passaram. O normal confirmou backup e restauração. O de e-mail capturou três mensagens fictícias no Mailpit e verificou consumo único, revogação, relatório/CSV e ausência de repetição após reinício. Nenhuma chamada Efí, OAuth, Pix ou SMTP externo foi executada.

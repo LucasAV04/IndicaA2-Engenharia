@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -34,7 +35,12 @@ public sealed class ApiTestWebApplicationFactory : WebApplicationFactory<Program
             configuration.AddInMemoryCollection(TestConfiguration));
         builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureTestServices(services =>
-            services.AddDataProtection().UseEphemeralDataProtectionProvider());
+        {
+            services.AddDataProtection().UseEphemeralDataProtectionProvider();
+            // Policy tests supply signed identities without a persisted user.
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme,
+                options => options.EventsType = null);
+        });
     }
 }
 

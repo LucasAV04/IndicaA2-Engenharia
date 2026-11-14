@@ -24,7 +24,8 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
         email_confirmado,
         ultimo_login,
         created_at,
-        updated_at
+        updated_at,
+        versao_credenciais
         """;
 
     private readonly MySqlConnectionFactory _connectionFactory;
@@ -192,19 +193,21 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
             UPDATE usuarios
             SET
                 nome = @nome,
+                email_confirmado = IF(BINARY email = BINARY @email, email_confirmado OR @emailConfirmado, FALSE),
                 email = @email,
+                versao_credenciais = versao_credenciais + IF(BINARY senha_hash = BINARY @senhaHash, 0, 1),
                 senha_hash = @senhaHash,
                 telefone = @telefone,
                 status = @status,
-                email_confirmado = @emailConfirmado,
                 ultimo_login = @ultimoLogin,
                 updated_at = @updatedAt
-            WHERE id = @id;
+            WHERE id = @id AND versao_credenciais = @versao;
             """;
 
         await ExecutarComandoAsync(sql, command =>
         {
             AdicionarGuid(command, "@id", usuario.Id);
+            command.Parameters.AddWithValue("@versao", usuario.VersaoCredenciais);
             command.Parameters.Add("@nome", MySqlDbType.VarChar).Value = usuario.Nome;
             command.Parameters.Add("@email", MySqlDbType.VarChar).Value = usuario.Email;
             command.Parameters.Add("@senhaHash", MySqlDbType.VarChar).Value = usuario.SenhaHash;
@@ -214,6 +217,21 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
             AdicionarDataOpcional(command, "@ultimoLogin", usuario.UltimoLogin);
             command.Parameters.Add("@updatedAt", MySqlDbType.DateTime).Value = usuario.UpdatedAt;
         }, cancellationToken);
+    }
+
+    public async Task<bool> RegistrarLoginAsync(Usuario usuario, CancellationToken cancellationToken = default)
+    {
+        await using var connection = _connectionFactory.Create();
+        await connection.OpenAsync(cancellationToken);
+        await using var command = CriarComando(connection, """
+            UPDATE usuarios SET ultimo_login=UTC_TIMESTAMP(6)
+            WHERE id=@id AND status=@ativo AND versao_credenciais=@versao AND BINARY email=BINARY @email
+            """);
+        AdicionarGuid(command, "@id", usuario.Id);
+        command.Parameters.AddWithValue("@ativo", (int)StatusUsuario.Ativo);
+        command.Parameters.AddWithValue("@versao", usuario.VersaoCredenciais);
+        command.Parameters.AddWithValue("@email", usuario.Email);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
     private async Task ExecutarComandoAsync(
@@ -281,7 +299,8 @@ public sealed class UsuarioMySqlRepository : IUsuarioRepository
             ObterDataOpcionalUtc(reader, "ultimo_login"),
             ObterDataUtc(reader, "created_at"),
             ObterDataUtc(reader, "updated_at"),
-            ObterTextoOpcional(reader, "codigo_indicacao"));
+            ObterTextoOpcional(reader, "codigo_indicacao"),
+            reader.GetInt64(reader.GetOrdinal("versao_credenciais")));
     }
 
     private static string? ObterTextoOpcional(MySqlDataReader reader, string nomeColuna)

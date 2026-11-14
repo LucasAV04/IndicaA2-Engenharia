@@ -82,7 +82,7 @@ public sealed class GlobalExceptionHandler(
         };
 
         var path = httpContext.Request.Path;
-        if (path.StartsWithSegments("/api/public/indicacoes") || path.StartsWithSegments("/api/minha-conta") || path.StartsWithSegments("/api/notificacoes") || path.StartsWithSegments("/api/admin/jornada"))
+        if (API.Controllers.ContaSegurancaController.Protege(path) || path.StartsWithSegments("/api/admin/relatorios") || path.StartsWithSegments("/api/public/indicacoes") || path.StartsWithSegments("/api/minha-conta") || path.StartsWithSegments("/api/notificacoes") || path.StartsWithSegments("/api/admin/jornada"))
         {
             if (exception is KeyNotFoundException) status=StatusCodes.Status404NotFound;
             if (exception is UnauthorizedAccessException) status=StatusCodes.Status401Unauthorized;

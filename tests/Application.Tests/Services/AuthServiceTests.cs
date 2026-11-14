@@ -21,6 +21,7 @@ public sealed class AuthServiceTests
         var tokenGenerator = new Mock<IAccessTokenGenerator>();
         var cancellationToken = new CancellationTokenSource().Token;
         repository.Setup(item => item.ObterPorEmailAsync("ana@exemplo.com", cancellationToken)).ReturnsAsync(usuario);
+        repository.Setup(item => item.RegistrarLoginAsync(usuario, cancellationToken)).ReturnsAsync(true);
         hasher.Setup(item => item.VerifyPassword("senha", "hash")).Returns(true);
         tokenGenerator.Setup(item => item.Generate(usuario)).Returns(new AccessTokenResult("token-ficticio", DateTime.UtcNow.AddHours(1)));
         var service = new AuthService(repository.Object, hasher.Object, tokenGenerator.Object);
@@ -30,7 +31,7 @@ public sealed class AuthServiceTests
         Assert.Equal(usuario.Id, response.UsuarioId);
         Assert.Equal("token-ficticio", response.AccessToken);
         Assert.NotNull(usuario.UltimoLogin);
-        repository.Verify(item => item.AtualizarAsync(usuario, cancellationToken), Times.Once);
+        repository.Verify(item => item.RegistrarLoginAsync(usuario, cancellationToken), Times.Once);
     }
 
     [Fact]

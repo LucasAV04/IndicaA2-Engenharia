@@ -16,9 +16,10 @@ public sealed class AuthService(IUsuarioRepository usuarioRepository, IPasswordH
         var usuario = await usuarioRepository.ObterPorEmailAsync(dto.Email.Trim().ToLowerInvariant(), cancellationToken);
         if (usuario is null || !passwordHasher.VerifyPassword(dto.Senha, usuario.SenhaHash)) throw new CredenciaisInvalidasException();
         if (usuario.Status is not StatusUsuario.Ativo) throw new UsuarioSemAcessoException();
-        var token = accessTokenGenerator.Generate(usuario);
         usuario.RegistrarLogin();
-        await usuarioRepository.AtualizarAsync(usuario, cancellationToken);
+        if (!await usuarioRepository.RegistrarLoginAsync(usuario, cancellationToken))
+            throw new CredenciaisInvalidasException();
+        var token = accessTokenGenerator.Generate(usuario);
         return new LoginResponseDto { AccessToken = token.Token, ExpiresAtUtc = token.ExpiresAtUtc, UsuarioId = usuario.Id, Nome = usuario.Nome, Email = usuario.Email, TipoUsuario = usuario.TipoUsuario };
     }
 }

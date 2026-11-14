@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Navigate, NavLink, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet, Route, Routes, useNavigate } from 'react-router-dom'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -9,6 +9,8 @@ import type { Sessao } from './types'
 import { resources, type ResourceKey } from './resources'
 import ResourcePage from './ResourcePage'
 import DashboardPage from './DashboardPage'
+import RelatoriosPage from './RelatoriosPage'
+import { ContaPublica } from './SegurancaConta'
 import PrecosPage from './PrecosPage'
 import TiposPlantaPage from './TiposPlantaPage'
 import PagarPage from './PagarPage'
@@ -20,10 +22,14 @@ import { ErrorBox } from './components'
 
 export default function App() {
   const [session, setSession] = useState(readSession)
+  const [senhaAlterada, setSenhaAlterada] = useState(false)
   const navigate = useNavigate()
   const client = useQueryClient()
   useEffect(() => {
-    const update = () => { client.clear(); setSession(readSession()) }
+    const update = (event: Event) => {
+      client.clear(); setSession(readSession())
+      if (event instanceof CustomEvent) setSenhaAlterada(event.detail?.senhaAlterada === true)
+    }
     const denied = () => navigate('/acesso-negado')
     window.addEventListener('session-change', update); window.addEventListener('access-denied', denied)
     return () => { window.removeEventListener('session-change', update); window.removeEventListener('access-denied', denied) }
@@ -34,13 +40,17 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [session])
   return <Routes>
+    <Route path="/esqueci-senha" element={<ContaPublica key="solicitar" modo="solicitar" />} />
+    <Route path="/redefinir-senha" element={<ContaPublica key="redefinir" modo="redefinir" />} />
+    <Route path="/confirmar-email" element={<ContaPublica key="confirmar" modo="confirmar" />} />
     <Route path="/pagar" element={<PagarPage />} />
     <Route path="/indicar/:codigo" element={<IndicacaoPublicaPage />} />
     <Route path="/minha-conta" element={session ? <MinhaContaPage key={session.usuarioId} /> : <Navigate to="/login" replace />} />
-    <Route path="/login" element={session ? <Navigate to={session.tipoUsuario === 2 ? '/' : '/minha-conta'} replace /> : <Login />} />
+    <Route path="/login" element={session ? <Navigate to={session.tipoUsuario === 2 ? '/' : '/minha-conta'} replace /> : <Login senhaAlterada={senhaAlterada} /> } />
     <Route path="/acesso-negado" element={session ? <div className="access-denied"><h1>Acesso negado</h1><p>Este painel é exclusivo de administradores.</p><button onClick={() => saveSession(null)}>Sair</button></div> : <Navigate to="/login" replace />} />
     <Route element={!session ? <Navigate to="/login" replace /> : session.tipoUsuario !== 2 ? <Navigate to="/minha-conta" replace /> : <Layout session={session} />}>
       <Route index element={<DashboardPage />} />
+      <Route path="/relatorios" element={<RelatoriosPage />} />
       <Route path="/tipos-planta" element={<TiposPlantaPage />} />
       <Route path="/precos-vistoria" element={<PrecosPage />} />
       <Route path="/cobrancas-pix-vistoria" element={<CobrancasPage />} />
@@ -57,14 +67,14 @@ function Layout({ session }: { session: Sessao }) {
     <div className="brand">IndicA2<span>ADMINISTRAÇÃO</span></div><nav aria-label="Principal"><NavLink to="/" end onClick={() => setOpen(false)}>Visão geral</NavLink>{Object.entries(resources).map(([key, value]) => <NavLink key={key} to={'/' + key} onClick={() => setOpen(false)}>{value.title}</NavLink>)}</nav>
     <nav aria-label="Configuração de preços"><NavLink to="/tipos-planta" onClick={() => setOpen(false)}>Tipos de planta</NavLink><NavLink to="/precos-vistoria" onClick={() => setOpen(false)}>Tabela de preços</NavLink></nav>
     <nav aria-label="Recebimentos"><NavLink to="/cobrancas-pix-vistoria" onClick={() => setOpen(false)}>Cobranças Pix de vistoria</NavLink></nav>
-    <nav aria-label="Jornada"><NavLink to="/alertas" onClick={() => setOpen(false)}>Alertas internos</NavLink></nav>
+    <nav aria-label="Jornada"><NavLink to="/alertas" onClick={() => setOpen(false)}>Alertas internos</NavLink><NavLink to="/relatorios" onClick={() => setOpen(false)}>Relatórios</NavLink></nav>
     <div className="sidebar-note">Painel operacional<br />A2 Engenharia & Diagnóstico</div></aside>
     <div className="workspace"><header className="topbar"><button className="menu" aria-expanded={open} aria-label="Alternar navegação" onClick={() => setOpen(!open)}>☰ Menu</button><span className="muted">Área administrativa</span><div className="identity"><strong>{session.nome}</strong><small>{session.email}</small></div><button onClick={() => saveSession(null)}>Sair</button></header>
     {fetching > 0 && <div role="status" className="global-loading" aria-label="Atualizando dados" />}
     <main><Outlet /></main><footer>IndicA2 • Gestão de indicações e vistorias</footer></div></div>
 }
 const loginSchema = z.object({ email: z.string().email('Informe um e-mail válido.'), senha: z.string().min(1, 'Informe sua senha.') })
-function Login() {
+function Login({ senhaAlterada }: { senhaAlterada: boolean }) {
   const [error, setError] = useState(false)
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof loginSchema>>({ resolver: zodResolver(loginSchema) })
   async function login(values: z.infer<typeof loginSchema>) {
@@ -77,5 +87,5 @@ function Login() {
     <div className="field"><label htmlFor="senha">Senha</label><input id="senha" type="password" autoComplete="current-password" {...register('senha')} />{errors.senha && <span role="alert">{errors.senha.message}</span>}</div>
     {error && <ErrorBox message="Não foi possível entrar. Confira suas credenciais e tente novamente." />}
     <button className="primary" disabled={isSubmitting}>{isSubmitting ? 'Entrando…' : 'Entrar'}</button>
-  </form><p className="muted">A sessão é encerrada ao sair ou expirar.</p></section></div>
+  </form><p><Link to="/esqueci-senha">Esqueci minha senha</Link></p>{senhaAlterada && <p role="status">Senha alterada. Entre novamente.</p>}<p className="muted">A sessão é encerrada ao sair ou expirar.</p></section></div>
 }

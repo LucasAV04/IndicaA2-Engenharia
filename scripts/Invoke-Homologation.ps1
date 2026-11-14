@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Init','Preflight','Build','Migrate','Start','Bootstrap','Status','Stop','Down','Backup','RestoreTest','Smoke','Cleanup')]
+    [ValidateSet('Init','Preflight','Build','Migrate','Start','Bootstrap','Status','Stop','Down','Backup','RestoreTest','Smoke','EmailSmoke','Cleanup')]
     [string]$Action,
     [switch]$Disposable,
     [switch]$TrustCertificate
@@ -67,7 +67,8 @@ function Invoke-Docker {
 
 function Invoke-Compose {
     param([string[]]$Arguments, [int]$Timeout = 120, [string]$InputFile, [string]$OutputFile)
-    Invoke-Docker -Arguments (@('compose','--project-name',$project,'--env-file',$emptyEnv,'-f',(Join-Path $root 'compose.yaml')) + $Arguments) -Timeout $Timeout -InputFile $InputFile -OutputFile $OutputFile
+    $overlay = if (Test-Path -LiteralPath (Join-Path $private 'mailpit-enabled')) { @('-f',(Join-Path $root 'compose.email-smoke.yaml')) } else { @() }
+    Invoke-Docker -Arguments (@('compose','--project-name',$project,'--env-file',$emptyEnv,'-f',(Join-Path $root 'compose.yaml')) + $overlay + $Arguments) -Timeout $Timeout -InputFile $InputFile -OutputFile $OutputFile
 }
 
 function New-Secret { [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)) }
@@ -96,6 +97,7 @@ function Initialize-Private {
         JwtKey = New-Secret
         PixKey = New-Secret
         ChargeKey = New-Secret
+        EmailTokenKey = New-Secret
         CertificatePassword = New-Secret
     }
     $rootPassword = New-Secret
@@ -146,7 +148,7 @@ function Assert-Owned {
     }
     $containers = Invoke-Docker -Arguments @('container','ls','-a','--filter',"label=$ownerLabel",'--format','{{.Names}}')
     foreach ($name in ($containers -split '\r?\n' | Where-Object { $_ })) {
-        if ($name -cnotmatch "^$project-(mysql|migrate|api)-1$") { throw 'Container não previsto no projeto.' }
+        if ($name -cnotmatch "^$project-(mysql|migrate|api|mailpit)-1$") { throw 'Container não previsto no projeto.' }
     }
 }
 
@@ -162,7 +164,7 @@ function Remove-Disposable {
             throw 'Restaram recursos descartáveis do projeto.'
         }
     }
-    foreach ($file in 'compose.env','application.json','localhost.pfx','localhost.crt','admin.json','mysql-password','mysql-root-password','mysql-client.cnf','mysql-root.cnf','disposable-owner') {
+    foreach ($file in 'compose.env','application.json','localhost.pfx','localhost.crt','admin.json','mysql-password','mysql-root-password','mysql-client.cnf','mysql-root.cnf','mailpit-enabled','disposable-owner') {
         [IO.File]::Delete((Join-Path $private $file))
     }
     [IO.Directory]::Delete($private)
@@ -198,7 +200,7 @@ function Test-Restore([string]$Path) {
         Invoke-MySql -Schema $temporary -InputFile $Path | Out-Null
         $query = "SET SESSION group_concat_max_len=8192; SELECT CONCAT(COUNT(*), ':', SHA2(GROUP_CONCAT(CONCAT_WS(':',ordinal,name,sha256,applied_at) ORDER BY ordinal SEPARATOR '|'),256)) FROM migration_journal WHERE applied_at IS NOT NULL"
         $restored = Invoke-MySql -Schema $temporary -Sql $query
-        if ($restored -notmatch '^16:' -or $restored -cne (Invoke-MySql -Schema $database -Sql $query)) {
+        if ($restored -notmatch '^17:' -or $restored -cne (Invoke-MySql -Schema $database -Sql $query)) {
             throw 'Journal restaurado difere do principal.'
         }
         $query = 'SELECT COUNT(*) FROM usuarios'
@@ -262,10 +264,86 @@ function Test-PrivateOutput([string]$Output, [string[]]$Additional = @()) {
     if ($Output -match '(?i)Server=mysql;|User ID=indicaa2;|BEGIN (?:RSA |EC )?PRIVATE KEY') { throw 'Configuração privada detectada.' }
 }
 
+function Get-Mailpit([string]$Path) {
+    $json = Invoke-Compose -Arguments @('exec','-T','--interactive=false','api','curl',
+        '--silent','--fail','--max-time','4',"http://mailpit:8025/api/v1/$Path")
+    $json | ConvertFrom-Json
+}
+
+function Wait-Mail([string]$Subject) {
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(45)
+    do {
+        $found = @((Get-Mailpit 'messages').messages | Where-Object Subject -eq $Subject)
+        if ($found.Count -gt 1) { throw 'Entrega duplicada no Mailpit.' }
+        if ($found.Count -eq 1) { return Get-Mailpit "message/$($found[0].ID)" }
+        Start-Sleep -Milliseconds 300
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    throw 'Entrega esperada não apareceu no Mailpit.'
+}
+
+function Test-EmailFlow($Admin, [string]$Jwt) {
+    $auth = @{Authorization="Bearer $Jwt"}
+    $existing = Request '/api/auth/esqueci-senha' @{Method='Post';ContentType='application/json';Body=(@{email=$Admin.Email}|ConvertTo-Json)}
+    $absent = Request '/api/auth/esqueci-senha' @{Method='Post';ContentType='application/json';Body='{"email":"ausente@example.invalid"}'}
+    if ($existing.StatusCode -ne 202 -or $absent.StatusCode -ne 202 -or $existing.Content -cne $absent.Content) {
+        throw 'Contrato genérico de redefinição divergente.'
+    }
+    $reset = Wait-Mail 'Redefina sua senha'
+    $resetToken = [regex]::Match($reset.Text, 'https://localhost:8443/redefinir-senha#([0-9a-f]{64})').Groups[1].Value
+    if (!$resetToken) { throw 'Link de redefinição inválido.' }
+
+    if ((Request '/api/minha-conta/email/confirmacao' @{Method='Post';Headers=$auth}).StatusCode -ne 202) {
+        throw 'Solicitação de confirmação falhou.'
+    }
+    $confirmation = Wait-Mail 'Confirme seu e-mail'
+    $confirmToken = [regex]::Match($confirmation.Text, 'https://localhost:8443/confirmar-email#([0-9a-f]{64})').Groups[1].Value
+    if (!$confirmToken -or (Request '/api/auth/confirmar-email' @{Method='Post';Headers=@{'X-Conta-Token'=$confirmToken}}).StatusCode -ne 204) {
+        throw 'Confirmação falhou.'
+    }
+    $security = Request '/api/minha-conta/seguranca' @{Headers=$auth}
+    if ($security.StatusCode -ne 200 -or !(($security.Content | ConvertFrom-Json).emailConfirmado)) {
+        throw 'Confirmação não persistiu.'
+    }
+
+    $newPassword = New-Secret
+    $data = @{Method='Post';Headers=@{'X-Conta-Token'=$resetToken};ContentType='application/json';Body=(@{senha=$newPassword}|ConvertTo-Json)}
+    if ((Request '/api/auth/redefinir-senha' $data).StatusCode -ne 204 -or
+        (Request '/api/auth/redefinir-senha' $data).StatusCode -ne 400) { throw 'O token não teve consumo único.' }
+    if ((Request '/api/admin/dashboard' @{Headers=$auth}).StatusCode -ne 401) { throw 'JWT anterior ainda aceito.' }
+    $login = @{Method='Post';ContentType='application/json';Body=(@{email=$Admin.Email;senha=$Admin.Password}|ConvertTo-Json)}
+    if ((Request '/api/auth/login' $login).StatusCode -ne 401) { throw 'Senha antiga ainda aceita.' }
+    $login.Body = @{email=$Admin.Email;senha=$newPassword}|ConvertTo-Json
+    $newSession = Request '/api/auth/login' $login
+    if ($newSession.StatusCode -ne 200) { throw 'Senha nova não autentica.' }
+    $session = $newSession.Content | ConvertFrom-Json
+    $uid = ([Guid]$session.usuarioId).ToString()
+    Invoke-MySql -Schema $database -Sql "INSERT INTO notificacoes_internas(id,tipo,escopo,usuario_id,referencia_id,evento_chave,created_at) VALUES(UUID(),0,0,'$uid',UUID(),'email-smoke-vistoria',UTC_TIMESTAMP(6))" | Out-Null
+    Wait-Mail 'Há uma atualização sobre sua vistoria' | Out-Null
+    $newAuth = @{Authorization="Bearer $($session.accessToken)"}
+    $report = Request '/api/admin/relatorios?tipo=Emails' @{Headers=$newAuth}
+    if ($report.StatusCode -ne 200 -or ($report.Content | ConvertFrom-Json).total -ne 3) {
+        throw 'Relatório de e-mails inesperado.'
+    }
+    if ((Request '/api/admin/relatorios/csv?tipo=Emails' @{Headers=$newAuth}).StatusCode -ne 200) { throw 'CSV falhou.' }
+    Invoke-Compose -Arguments @('restart','api') | Out-Null
+    Wait-Ready 200
+    $sent = 'SELECT COUNT(*) FROM email_outbox WHERE status=2'
+    $limit = [DateTimeOffset]::UtcNow.AddSeconds(8)
+    do {
+        if ((Invoke-MySql -Schema $database -Sql $sent) -cne '3' -or (Get-Mailpit 'messages').total -ne 3) {
+            throw 'Reinício alterou as entregas confirmadas.'
+        }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTimeOffset]::UtcNow -lt $limit)
+    Test-PrivateOutput (Invoke-Compose -Arguments @('logs','--no-color','api','mysql','migrate')) @($Jwt,$session.accessToken,$newPassword,$resetToken,$confirmToken)
+    'EmailSmoke aprovado: Mailpit interno, confirmação, consumo único, revogação, jornada e relatórios.'
+}
+
 function Invoke-Smoke {
     if (-not $Disposable) { throw 'Smoke exige -Disposable.' }
     Initialize-Private
     try {
+        if ($Action -eq 'EmailSmoke') { [IO.File]::WriteAllText((Join-Path $private 'mailpit-enabled'), '') }
         Invoke-Compose -Arguments @('config','--quiet') | Out-Null
         Invoke-Compose -Arguments @('build','--pull','--no-cache','api') -Timeout 1200 | Out-Null
         Invoke-Compose -Arguments @('run','--rm','--no-deps','-T','api','--preflight-homologation') | Out-Null
@@ -317,15 +395,26 @@ function Invoke-Smoke {
         if ((Request '/api/admin/dashboard' @{Headers=@{Authorization="Bearer $token"}}).StatusCode -ne 200) { throw 'Dashboard falhou.' }
         Assert-Response '/api/public/indicacoes/codigos/INVALID0' 404 | Out-Null
 
+        if ($Action -eq 'EmailSmoke') {
+            $config = Invoke-Compose -Arguments @('config','--format','json') | ConvertFrom-Json
+            if (!$config.networks.private.internal -or $config.services.mailpit.ports -or
+                @($config.services.mailpit.networks.PSObject.Properties.Name).Count -ne 1 -or
+                $config.services.mailpit.networks.PSObject.Properties.Name -notcontains "private") {
+                throw 'Isolamento do Mailpit inválido.'
+            }
+            Test-EmailFlow $admin $token
+            return
+        }
+
         $journalQuery = 'SELECT CONCAT(COUNT(*),":",MAX(applied_at)) FROM migration_journal WHERE applied_at IS NOT NULL'
         $journal = Invoke-MySql -Schema $database -Sql $journalQuery
-        if ($journal -notmatch '^16:') { throw 'Journal incompleto.' }
-        $hash = Invoke-MySql -Schema $database -Sql 'SELECT sha256 FROM migration_journal WHERE ordinal=16'
+        if ($journal -notmatch '^17:') { throw 'Journal incompleto.' }
+        $hash = Invoke-MySql -Schema $database -Sql 'SELECT sha256 FROM migration_journal WHERE ordinal=17'
         try {
-            Invoke-MySql -Schema $database -Sql "UPDATE migration_journal SET sha256=REPEAT('0',64) WHERE ordinal=16" | Out-Null
+            Invoke-MySql -Schema $database -Sql "UPDATE migration_journal SET sha256=REPEAT('0',64) WHERE ordinal=17" | Out-Null
             Wait-Ready 503
             Assert-Response '/health/live' 200 | Out-Null
-        } finally { Invoke-MySql -Schema $database -Sql "UPDATE migration_journal SET sha256='$hash' WHERE ordinal=16" | Out-Null }
+        } finally { Invoke-MySql -Schema $database -Sql "UPDATE migration_journal SET sha256='$hash' WHERE ordinal=17" | Out-Null }
         Wait-Ready 200
 
         Invoke-Compose -Arguments @('stop','mysql') | Out-Null
@@ -375,7 +464,7 @@ function Invoke-Smoke {
 }
 
 if ($Action -eq 'Init') { Initialize-Private; return }
-if ($Action -eq 'Smoke') { Invoke-Smoke; return }
+if ($Action -in 'Smoke','EmailSmoke') { Invoke-Smoke; return }
 if (-not (Test-Path -LiteralPath $emptyEnv)) { throw 'Execute Init para preparar a configuração privada.' }
 
 switch ($Action) {
