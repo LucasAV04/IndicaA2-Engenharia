@@ -50,3 +50,7 @@ Configuração habilitada: base Efí de homologação, credenciais/P12 externos,
 O webhook `/api/webhooks/efi/pix` aceita somente certificado cliente da conexão TLS validado pela CA configurada. Nesta implantação o TLS deve chegar ao Kestrel (direto ou passthrough); headers de certificado de proxy não são aceitos. Não configure bypass mTLS. O cadastro do webhook é administrativo explícito, nunca executado no startup.
 
 A página `/pagar#TOKEN` remove o fragmento imediatamente e transmite o token somente no header `PaymentLink`, sem armazenamento persistente. O token é devolvido uma única vez na geração/rotação; no banco há somente hash e validade. QR é gerado localmente. Webhook sozinho nunca confirma pagamento: é necessária evidência obtida pela consulta autenticada e aplicada na transação financeira.
+
+## Homologação operacional local
+
+O ambiente Docker oferece MySQL e uma origem HTTPS para o React e a API. Consulte o [runbook de homologação](docs/HomologacaoOperacional.md).

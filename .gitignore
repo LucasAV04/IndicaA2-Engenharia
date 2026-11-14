@@ -489,3 +489,6 @@ coverage/
 .env.*
 !.env.example
 *.tsbuildinfo
+
+# Homologação local
+/.homologacao*/

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-14 — Correção de segurança do Zod (PR #39)
+
+- Zod declarado em ^4.6.6 e resolvido para 4.6.7 pelo npm. Auditoria de produção com zero vulnerabilidades.
+- Lint, TypeScript, build e 106 testes frontend aprovados. A instalação completa registrou 13 alertas de desenvolvimento, build e teste (11 moderados e 2 altos).
+
+## 2026-11-13 — Homologação operacional conteinerizada
+
+- Origem HTTPS local única, imagem multi-stage, armazenamento MySQL persistente e comandos explícitos de migração e bootstrap.
+- Sondas de saúde, backup e restauração descartável, smoke com limpeza por projeto e job Docker de CI.
+- Suíte rápida com 854 testes, 554 direcionados, 263 integrações MySQL e 106 testes frontend aprovados localmente. O npm reportou 15 alertas nas dependências existentes (12 moderados e 3 altos).
+- Smoke Docker aprovado, incluindo recuperação do MySQL, persistência, backup e restauração, com zero containers, redes e volumes descartáveis restantes.
+
 ## 2026-10-05 — Correção de destinatários e idempotência pública (PR #38)
 
 - Vistoria notifica a proprietária na transação de criação/snapshot; vínculo notifica indicadora com referência comum da vistoria e unicidade por destinatário.

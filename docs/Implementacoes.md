@@ -1,5 +1,10 @@
 # Implementações
 
+## Homologação operacional conteinerizada
+
+O Compose usa Kestrel para servir React e API sob HTTPS local, MySQL 8.0 privado e comandos administrativos separados para schema e primeiro administrador. O readiness exige o journal completo e confere os hashes. Os processos de homologação rejeitam configuração Efí e workers ativos. Consulte [Homologação operacional](HomologacaoOperacional.md) para os procedimentos de operação e recuperação.
+
+
 ## PR #38 — destinatários e recuperação pública após reload (2026-10-05)
 
 - Criação calculada da vistoria notifica `Vistoria.UsuarioId` na mesma transação do snapshot, inclusive sem indicação. O vínculo notifica a indicadora; ambos usam referência da vistoria e chave única por tipo/referência/destinatário, sem PII.
