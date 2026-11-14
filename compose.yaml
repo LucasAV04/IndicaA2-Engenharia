@@ -1,0 +1,122 @@
+name: indicaa2-homologacao
+
+x-application: &application
+  image: indicaa2-homologacao-api:local
+  environment:
+    ASPNETCORE_ENVIRONMENT: Homologation
+    ASPNETCORE_HTTP_PORTS: ""
+    PublicWeb__BaseUrl: https://localhost:8443
+    AllowedHosts: localhost
+    Jwt__Issuer: IndicaA2-Homologation
+    Jwt__Audience: IndicaA2-Homologation
+    PagamentoPix__ProcessamentoWorker__Habilitado: "false"
+    RecebimentoPix__ProcessamentoWorker__Habilitado: "false"
+    CashbackPagamentoPreparacaoWorker__Habilitado: "false"
+    RecebimentoPix__Habilitado: "false"
+    TZ: UTC
+  secrets: [application.json, localhost.pfx]
+  networks: [private]
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  init: true
+  logging: &logging
+    driver: local
+    options:
+      max-size: "5m"
+      max-file: "2"
+
+services:
+  mysql:
+    image: mysql:8.0.46
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_DATABASE: indicaa2_homologacao
+      MYSQL_USER: indicaa2
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql-password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-root-password
+      MYSQL_ROOT_HOST: localhost
+      TZ: UTC
+    secrets: [mysql-password, mysql-root-password, mysql-client.cnf, mysql-root.cnf]
+    volumes:
+      - data:/var/lib/mysql
+    networks: [private]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
+    stop_grace_period: 40s
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          umask 077; f=$$(mktemp); trap 'rm -f "$$f"' EXIT;
+          cat /run/secrets/mysql-client.cnf > "$$f" &&
+          mysql --defaults-extra-file="$$f" --connect-timeout=2 --batch --execute='SELECT 1'
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    logging: *logging
+
+  migrate:
+    <<: *application
+    command: ["--migrate-homologation"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  api:
+    <<: *application
+    build:
+      context: .
+    networks: [private, loopback]
+    ports: ["127.0.0.1:8443:8443"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "--cacert", "/run/secrets/localhost.crt", "--max-time", "4", "https://localhost:8443/health/ready"]
+      interval: 4s
+      timeout: 5s
+      retries: 12
+    secrets: [application.json, localhost.pfx, localhost.crt]
+    stop_grace_period: 30s
+
+  bootstrap:
+    <<: *application
+    profiles: [admin]
+    command: ["--bootstrap-homologation"]
+    secrets: [application.json, localhost.pfx, admin.json]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+networks:
+  loopback:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  private:
+    internal: true
+volumes:
+  data:
+secrets:
+  application.json:
+    file: ${INDICAA2_PRIVATE_DIR:-./.homologacao}/application.json
+  localhost.pfx:
+    file: ${INDICAA2_PRIVATE_DIR:-./.homologacao}/localhost.pfx
+  localhost.crt:
+    file: ${INDICAA2_PRIVATE_DIR:-./.homologacao}/localhost.crt
+  admin.json:
+    file: ${INDICAA2_PRIVATE_DIR:-./.homologacao}/admin.json
+  mysql-password:
+    file: ${INDICAA2_PRIVATE_DIR:-./.homologacao}/mysql-password
+  mysql-root-password:
+    file: ${INDICAA2_PRIVATE_DIR:-./.homologacao}/mysql-root-password
+  mysql-client.cnf:
+    file: ${INDICAA2_PRIVATE_DIR:-./.homologacao}/mysql-client.cnf
+  mysql-root.cnf:
+    file: ${INDICAA2_PRIVATE_DIR:-./.homologacao}/mysql-root.cnf

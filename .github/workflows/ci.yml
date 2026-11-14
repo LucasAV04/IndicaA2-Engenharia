@@ -91,3 +91,32 @@ jobs:
               'Bancos temporários restantes: 0'
             } finally { $command.Dispose() }
           } finally { $connection.Dispose() }
+  homologation-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build e smoke de homologação local
+        shell: pwsh
+        run: ./scripts/Invoke-Homologation.ps1 -Action Smoke -Disposable
+      - name: Encerrar e verificar recursos descartáveis
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path .homologacao-smoke/disposable-owner) {
+            ./scripts/Invoke-Homologation.ps1 -Action Cleanup -Disposable
+          }
+          $label = 'label=com.docker.compose.project=indicaa2-homologacao-smoke'
+          $containers = docker container ls -a -q --filter $label
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao inventariar containers ($LASTEXITCODE)." }
+
+          $networks = docker network ls -q --filter $label
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao inventariar redes ($LASTEXITCODE)." }
+
+          $volumes = docker volume ls -q --filter $label
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao inventariar volumes ($LASTEXITCODE)." }
+
+          if ($containers) { throw 'Restaram containers descartáveis do smoke.' }
+          if ($networks) { throw 'Restaram redes descartáveis do smoke.' }
+          if ($volumes) { throw 'Restaram volumes descartáveis do smoke.' }
+          'Containers, redes e volumes descartáveis restantes: 0.'
