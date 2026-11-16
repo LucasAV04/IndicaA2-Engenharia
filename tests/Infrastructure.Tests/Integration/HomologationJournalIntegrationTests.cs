@@ -55,7 +55,7 @@ public sealed class HomologationJournalIntegrationTests
     {
         await ApplyAsync(factory, journal);
         await using var connection = await OpenAsync(factory);
-        await ExecuteAsync(connection, "DELETE FROM migration_journal WHERE ordinal=16");
+        await ExecuteAsync(connection, "DELETE FROM migration_journal WHERE ordinal=17");
         Assert.False(await journal.IsReadyAsync(connection, default));
     });
 

@@ -99,6 +99,9 @@ jobs:
       - name: Build e smoke de homologação local
         shell: pwsh
         run: ./scripts/Invoke-Homologation.ps1 -Action Smoke -Disposable
+      - name: Smoke SMTP com Mailpit interno
+        shell: pwsh
+        run: ./scripts/Invoke-Homologation.ps1 -Action EmailSmoke -Disposable
       - name: Encerrar e verificar recursos descartáveis
         if: always()
         shell: pwsh

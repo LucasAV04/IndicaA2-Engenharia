@@ -39,13 +39,12 @@ public sealed class JwtAccessTokenGeneratorTests
         Assert.Equal("IndicA2.Tests", token.Issuer);
         Assert.Contains(token.Audiences, audience => audience == "IndicA2.Tests");
         Assert.Contains(token.Claims, claim => claim.Type == JwtRegisteredClaimNames.Sub && claim.Value == usuario.Id.ToString());
-        Assert.Contains(token.Claims, claim => claim.Type == JwtRegisteredClaimNames.Email && claim.Value == usuario.Email);
-        Assert.Contains(token.Claims, claim => claim.Type == "name" && claim.Value == usuario.Nome);
+        Assert.DoesNotContain(token.Claims, claim => claim.Type == JwtRegisteredClaimNames.Email);
+        Assert.DoesNotContain(token.Claims, claim => claim.Type == "name");
         Assert.Contains(token.Claims, claim => claim.Type == "role" && claim.Value == "Administrador");
-        Assert.Equal(usuario.Nome, principal.Identity?.Name);
+        Assert.Equal("1", principal.FindFirst("cv")?.Value);
         Assert.True(principal.IsInRole("Administrador"));
         Assert.Equal(usuario.Id.ToString(), principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value);
-        Assert.Equal(usuario.Email, principal.FindFirst(JwtRegisteredClaimNames.Email)?.Value);
         Assert.True(tokenValidado.ValidTo > DateTime.UtcNow);
         Assert.InRange(result.ExpiresAtUtc, tokenValidado.ValidTo, tokenValidado.ValidTo.AddSeconds(1));
         Assert.DoesNotContain(token.Claims, claim => claim.Value == usuario.SenhaHash);

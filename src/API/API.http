@@ -397,3 +397,18 @@ Authorization: Bearer {{AccessToken}}
 ### Estado da configuração externa; nenhuma URL ou chave arbitrária recebida do navegador
 GET {{API_HostAddress}}/api/cobrancas-pix-vistoria/webhook
 Authorization: Bearer {{AccessToken}}
+
+
+### Solicitar redefinição sem revelar se a conta existe
+POST {{API_HostAddress}}/api/auth/esqueci-senha
+Content-Type: application/json
+
+{"email":"conta-ficticia@example.invalid"}
+
+### Relatório de e-mail administrativo
+GET {{API_HostAddress}}/api/admin/relatorios?tipo=Emails&pagina=1&tamanho=30
+Authorization: Bearer {{AccessToken}}
+
+### CSV de e-mails com os mesmos filtros
+GET {{API_HostAddress}}/api/admin/relatorios/csv?tipo=Emails
+Authorization: Bearer {{AccessToken}}

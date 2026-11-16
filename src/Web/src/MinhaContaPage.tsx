@@ -5,6 +5,7 @@ import { ErrorBox } from './components'
 import { money, utcDate } from './format'
 import OperationForm from './OperationForm'
 import NotificacoesPanel from './NotificacoesPanel'
+import { SegurancaConta } from './SegurancaConta'
 
 type Perfil = { nome: string; codigo: string; link: string }
 type Indicacao = { nome: string; telefoneMascarado: string; status: number; criadaEm: string }
@@ -23,6 +24,6 @@ export default function MinhaContaPage() {
     <section className="panel"><h2>Meus cashbacks</h2>{cashbacks.isPending ? <p role="status">Carregando cashbacks…</p> : cashbacks.isError ? <ErrorBox retry={() => void cashbacks.refetch()} /> : !cashbacks.data.length ? <p>Nenhum cashback.</p> : <ul>{cashbacks.data.map((c, index) => <li key={index}>{money(c.valor)} • {['Pendente', 'Disponível', 'Pago', 'Cancelado'][c.status]} • Pix: {c.situacaoPix === null ? 'Aguardando preparação' : ['Pendente', 'Processando', 'Concluído', 'Falhou', 'Falha definitiva', 'Cancelado'][c.situacaoPix]}</li>)}</ul>}</section>
     <section className="panel"><h2>Meus Dados Pix</h2>{dados.isPending ? <p role="status">Carregando Dados Pix…</p> : dados.isError ? <ErrorBox retry={() => void dados.refetch()} /> : <><p>{dados.data?.chaveMascarada ?? 'Cadastre seus Dados Pix para receber cashback.'}</p><button onClick={() => setEditar(true)}>{dados.data ? 'Atualizar Dados Pix' : 'Cadastrar Dados Pix'}</button></>}
       {editar && <OperationForm lists={{}} invalidateKeys={[[ 'portal', usuario, 'dados-pix' ]]} done={() => setEditar(false)} operation={{ label: 'Salvar Dados Pix', method: 'PUT', path: () => '/minha-conta/dados-pix', fields: [{ name: 'tipoChavePix', label: 'Tipo de chave', options: ['CPF', 'CNPJ', 'E-mail', 'Telefone', 'Aleatória'] }, { name: 'chavePix', label: 'Nova chave Pix', type: 'password' }] }} />}
-    </section><NotificacoesPanel />
+    </section><SegurancaConta /><NotificacoesPanel />
   </main>
 }

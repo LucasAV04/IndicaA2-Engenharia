@@ -26,7 +26,7 @@ pwsh -NoProfile -File ./scripts/Invoke-Homologation.ps1 -Action Bootstrap
 ## Diagnóstico, recuperação e persistência
 
 - `GET /health/live` retorna 200 enquanto o processo responde.
-- `GET /health/ready` retorna 200 após conexão com MySQL e conferência dos 16 registros completos do journal, ou 503 com resposta genérica. As duas respostas usam no-store.
+- `GET /health/ready` retorna 200 após conexão com MySQL e conferência dos 17 registros completos do journal, ou 503 com resposta genérica. As duas respostas usam no-store.
 - `-Action Status` mostra apenas serviços e estados. Para inspeção local use `docker compose --project-name indicaa2-homologacao --env-file .homologacao/compose.env logs --tail 100`. Trate a saída como privada.
 - `-Action Stop` preserva containers e volume. `-Action Down` remove os containers e redes do projeto e preserva o volume. `-Action Start` recupera o ambiente e verifica o journal antes da API.
 - `-Action Backup` exporta um snapshot do schema e dos dados para o diretório privado. O dump não carrega credenciais de conexão, mas inclui dados de aplicação e hashes de autenticação. Proteja e retenha de acordo com a finalidade do teste. Execute sem migração ou alterações de schema concorrentes.
@@ -57,3 +57,18 @@ O `npm ci` local original reportou 15 alertas (12 moderados e 3 altos). O CI ori
 | Lint, moderado | `eslint → minimatch` diretamente e via `@eslint/config-array`. `typescript-eslint → @typescript-eslint/typescript-estree → minimatch`, com efeitos em `@typescript-eslint/parser`, `utils`, `type-utils` e `eslint-plugin`. | O `minimatch` corrigido começa em `11.0.1`. As faixas transitivas atuais são 10.x. A troca de `typescript-eslint` sugerida pelo audit foi sinalizada como potencialmente incompatível. |
 
 O build entrega somente os arquivos estáticos do Vite. Os caminhos de lint, build e teste da tabela ficam fora do runtime publicado. A correção do inventário preservou o manifesto e o lockfile. Posteriormente, a atualização direcionada declarou Zod ^4.6.6 e resolveu 4.6.7 no lockfile gerado pelo npm. Após npm ci, npm audit --omit=dev retornou zero vulnerabilidades. A auditoria da instalação completa registrou 13 alertas de desenvolvimento, build e teste (11 moderados e 2 altos). Lint, TypeScript, build e os 106 testes frontend passaram.
+
+
+## Contas, e-mail e relatórios
+
+A migration 017 é aplicada pelo migrador e passa a integrar o journal exigido pelo readiness. Usuários existentes começam na versão 1. JWTs emitidos antes da migration precisam de novo login, pois não contêm a versão. Contas não confirmadas continuam podendo entrar. A eventual exigência comercial de confirmação para funções específicas depende de decisão posterior.
+
+A redefinição expira em 30 minutos e a confirmação, em 24 horas. Há cooldown persistente de 60 segundos para cada finalidade. O link carrega o token no fragmento e o navegador o remove antes de enviar pelo header `X-Conta-Token`. Guarde a chave `Email__TokenKey` externamente, com 32 bytes em Base64 e independente de JWT e Pix. O consumo grava os eventos no relógio UTC do banco. A troca de senha invalida inclusive o JWT da requisição.
+
+O adapter usa SMTP do .NET com timeout, TLS obrigatório fora de Homologation e validação padrão de certificado. Os templates são texto simples definido na aplicação. A origem do link vem de `PublicWeb__BaseUrl`. O worker aguarda o primeiro tick, processa sequencialmente com um lease de cinco minutos e tenta no máximo cinco vezes, com backoff persistente. O servidor SMTP pode aceitar uma mensagem e encerrar a conexão antes da confirmação ao cliente. Um novo envio desse resultado indeterminado pode duplicar a mensagem. A versão, a expiração e o consumo único protegem o mesmo token.
+
+`Smoke` mantém SMTP e workers desabilitados. `EmailSmoke -Disposable` habilita exclusivamente o Mailpit da rede interna do projeto, com destinatários `example.invalid` fictícios. A API do Mailpit é acessada dentro da rede, sem publicar a interface. Não cole mensagens, links ou tokens no CI.
+
+O relatório administrativo em `/relatorios` usa período UTC de até 366 dias, por padrão os últimos 30 dias, e páginas de 1 a 100 linhas. O CSV usa os mesmos filtros e limita a exportação a 5.000 linhas. A exportação omite nomes, e-mails e identificadores externos e neutraliza células interpretáveis como fórmulas. O navegador apresenta a data na hora local. Valores e totais vêm dos snapshots persistidos.
+
+Provedor SMTP definitivo, credenciais reais, domínio, certificado, revisão jurídica de consentimento e retenção, eventual WhatsApp/SMS/push, ativação da Efí, habilitação de workers e implantação em produção dependem de decisão externa.

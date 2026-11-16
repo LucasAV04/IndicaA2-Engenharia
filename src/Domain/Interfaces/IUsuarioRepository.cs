@@ -1,4 +1,4 @@
-﻿using Domain.Entities;
+using Domain.Entities;
 
 namespace Domain.Interfaces
 {
@@ -26,6 +26,8 @@ namespace Domain.Interfaces
         Task AdicionarAsync(Usuario usuario, CancellationToken cancellationToken = default);
 
         Task AtualizarAsync(Usuario usuario, CancellationToken cancellationToken = default);
+
+        Task<bool> RegistrarLoginAsync(Usuario usuario, CancellationToken cancellationToken = default);
 
         #endregion
     }

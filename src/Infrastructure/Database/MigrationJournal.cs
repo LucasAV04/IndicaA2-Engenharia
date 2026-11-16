@@ -22,7 +22,8 @@ public sealed class MigrationJournal
         "013_add_processamento_idx_pagamentos_pix.sql",
         "014_create_precificacao_vistorias.sql",
         "015_create_cobrancas_pix_vistoria.sql",
-        "016_add_jornada_indicacao_notificacoes.sql"
+        "016_add_jornada_indicacao_notificacoes.sql",
+        "017_add_contas_email_relatorios.sql"
     ];
 
     private readonly (string Name, byte[] Sql, string Hash)[] migrations;
