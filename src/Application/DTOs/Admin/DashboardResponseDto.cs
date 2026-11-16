@@ -11,6 +11,7 @@ public sealed class DashboardResponseDto
     public int? UltimaVersaoPreco { get; init; }
     public string? UltimoTipoPreco { get; init; }
     public long TotalUsuarios { get; init; }
+    public long TotalClientes { get; init; }
     public long UsuariosAtivos { get; init; }
     public IReadOnlyDictionary<string, long> Indicacoes { get; init; } = new Dictionary<string, long>();
     public IReadOnlyDictionary<string, long> Vistorias { get; init; } = new Dictionary<string, long>();

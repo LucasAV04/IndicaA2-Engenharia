@@ -1,3 +1,4 @@
+import { useEnvioUnico } from './useEnvioUnico'
 import { useForm, useWatch } from 'react-hook-form'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ApiError, send } from './api'
@@ -9,6 +10,7 @@ export default function PagamentoVistoriaForm({ vistorias, done }: { vistorias: 
   const { register, handleSubmit, control } = useForm<{ vistoriaId: string }>({ defaultValues: { vistoriaId: '' } })
   const id = useWatch({ control, name: 'vistoriaId' })
   const selecionada = vistorias.find(v => v.id === id && v.precificacao)
+  const enviar = useEnvioUnico()
   const client = useQueryClient()
   const mutation = useMutation({
     mutationFn: ({ vistoriaId }: { vistoriaId: string }) => send('/pagamentos-vistoria', 'POST', { vistoriaId }),
@@ -17,7 +19,7 @@ export default function PagamentoVistoriaForm({ vistorias, done }: { vistorias: 
       done()
     },
   })
-  return <form onSubmit={handleSubmit(v => { if (selecionada) mutation.mutate(v) })}>
+  return <form onSubmit={handleSubmit(v => { if (selecionada) return enviar(() => mutation.mutateAsync(v)) })}>
     <div className="field"><label htmlFor="vistoriaPagamento">Vistoria</label>
       <select id="vistoriaPagamento" {...register('vistoriaId', { required: true })}>
         <option value="">Selecione</option>
@@ -31,6 +33,6 @@ export default function PagamentoVistoriaForm({ vistorias, done }: { vistorias: 
     {mutation.isError && <ErrorBox message={mutation.error instanceof ApiError && [409, 422].includes(mutation.error.status)
       ? 'Não foi possível criar: a vistoria pode ser legada ou já possuir pagamento. Atualize a lista; regularização de legado não está disponível.'
       : mutation.error instanceof ApiError ? mutation.error.message : undefined} />}
-    <button className="primary" disabled={!selecionada || mutation.isPending} type="submit">Salvar</button>
+    <button className="primary" disabled={!selecionada || mutation.isPending} type="submit">{mutation.isPending ? 'Salvando…' : 'Salvar'}</button>
   </form>
 }

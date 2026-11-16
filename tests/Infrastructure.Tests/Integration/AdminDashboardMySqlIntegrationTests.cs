@@ -16,6 +16,7 @@ public sealed class AdminDashboardMySqlIntegrationTests(MySqlIntegrationFixture 
         await fixture.LimparDadosAsync();
         var result = await new AdminDashboardMySqlStore(fixture.ConnectionFactory).ObterAsync();
         Assert.Equal(0, result.TotalUsuarios);
+        Assert.Equal(0, result.TotalClientes);
         Assert.Equal(0, result.UsuariosAtivos);
         Assert.All(new[] { result.Indicacoes, result.Vistorias, result.PagamentosVistoria, result.Cashbacks, result.PagamentosPix },
             counts => { Assert.NotEmpty(counts); Assert.All(counts.Values, count => Assert.Equal(0, count)); });

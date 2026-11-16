@@ -101,7 +101,20 @@ jobs:
         run: ./scripts/Invoke-Homologation.ps1 -Action Smoke -Disposable
       - name: Smoke SMTP com Mailpit interno
         shell: pwsh
-        run: ./scripts/Invoke-Homologation.ps1 -Action EmailSmoke -Disposable
+        run: ./scripts/Invoke-Homologation.ps1 -Action EmailSmoke -Disposable -UseBuiltImage
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: src/Web/package-lock.json
+      - name: Preparar Chromium
+        working-directory: src/Web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Aceite Chromium, axe e Open sem navegador
+        shell: pwsh
+        run: ./scripts/Invoke-Homologation.ps1 -Action UiSmoke -Disposable -UseBuiltImage
       - name: Encerrar e verificar recursos descartáveis
         if: always()
         shell: pwsh

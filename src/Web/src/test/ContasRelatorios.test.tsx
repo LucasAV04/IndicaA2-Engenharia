@@ -28,6 +28,7 @@ it('solicita instruções pelo login sem revelar se existe conta', async () => {
   vi.stubGlobal('fetch', fetcher)
   montar('/login')
   await userEvent.click(screen.getByRole('link', { name: 'Esqueci minha senha' }))
+  await screen.findByRole('heading', { name: 'Esqueci minha senha' })
   await userEvent.type(screen.getByLabelText('E-mail'), 'ausente@example.invalid')
   await userEvent.click(screen.getByRole('button', { name: 'Solicitar instruções' }))
   expect(await screen.findByText(/se o endereço puder/i)).toBeVisible()

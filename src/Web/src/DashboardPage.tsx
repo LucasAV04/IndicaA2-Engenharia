@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from './api'
 import type { Dashboard } from './types'
-import { utcDate, labels, money } from './format'
+import { utcDate, money } from './format'
 import { ErrorBox } from './components'
 import JornadaResumo from './JornadaResumo'
+import PrimeirosPassos from './PrimeirosPassos'
+import { estadoDesconhecido, estadosIndicacao, estadosVistoria, estadosPagamento, estadosCashback, estadosPix } from './estados'
 
 export default function DashboardPage() {
   const query = useQuery({ queryKey: ['dashboard'], queryFn: () => api<Dashboard>('/admin/dashboard') })
@@ -27,9 +29,16 @@ function Resumo({ data: d }: { data: Dashboard }) {
     ['Cashback pago', money(d.cashbackPago)],
     ['Pix concluído', money(d.pixConcluido)], ['Falhas Pix', d.falhasPix], ['Falhas definitivas', d.falhasDefinitivasPix],
   ]
-  return <><div className="cards">{cards.map(([label, value]) => <article className="card" key={label}><h2>{label}</h2><strong>{value}</strong></article>)}</div>
+  const grupos = [
+    ['Indicações', d.indicacoes, ['Pendente', 'VistoriaVinculada', 'VistoriaConcluida', 'Cancelada', 'CashbackPago'], estadosIndicacao],
+    ['Vistorias', d.vistorias, ['Agendada', 'Realizada', 'Concluida', 'Cancelada'], estadosVistoria],
+    ['Pagamentos de vistoria', d.pagamentosVistoria, ['Pendente', 'Confirmado', 'Cancelado'], estadosPagamento],
+    ['Cashback', d.cashbacks, ['Pendente', 'Disponivel', 'Pago', 'Cancelado'], estadosCashback],
+    ['Pix', d.pagamentosPix, ['Pendente', 'Processando', 'Concluido', 'Falhou', 'FalhaDefinitiva', 'Cancelado'], estadosPix],
+  ] as const
+  return <><PrimeirosPassos dados={d} cliente={(d.totalClientes ?? 0) > 0} /><div className="cards">{cards.map(([label, value]) => <article className="card" key={label}><h2>{label}</h2><strong>{value}</strong></article>)}</div>
     {d.totalUsuarios === 0 && <p className="notice">Ainda não há usuários cadastrados. Comece pela página Usuários.</p>}
-    <div className="status-grid">{([['Indicações', d.indicacoes], ['Vistorias', d.vistorias], ['Pagamentos de vistoria', d.pagamentosVistoria], ['Cashback', d.cashbacks], ['Pix', d.pagamentosPix]] as [string, Record<string, number>][]).map(([title, counts]) => <section className="panel" key={title}><h2>{title} por status</h2>{Object.entries(counts).map(([s, count]) => <div className="status-line" key={s}><span>{labels[s] || s}</span><strong>{count}</strong></div>)}</section>)}</div>
+    <div className="status-grid">{grupos.map(([title, counts, chaves, rotulos]) => <section className="panel" key={title}><h2>{title} por status</h2>{Object.entries(counts).map(([s, count]) => <div className="status-line" key={s}><span>{rotulos[chaves.findIndex(chave => chave === s)] ?? estadoDesconhecido}</span><strong>{count}</strong></div>)}</section>)}</div>
     <p>Último preço publicado: {d.ultimaVersaoPreco ? `${d.ultimoTipoPreco} — versão ${d.ultimaVersaoPreco}` : 'Nenhum preço publicado.'}</p>
     <p className="muted">Resumo calculado em {utcDate(d.calculadoEmUtc)}. Valores pendentes não representam dinheiro recebido.</p>
   </>

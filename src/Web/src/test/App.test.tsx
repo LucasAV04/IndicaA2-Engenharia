@@ -142,7 +142,7 @@ describe('Fluxos administrativos via HTTP', () => {
     data['/api/usuarios'] = [{ ...usuario, id: clienteId }]
     data['/api/tipos-planta'] = [{ id: tipoId, nome: 'Tipo fictício', ativo: true, possuiPrecoAtivo: true }]
     mount('/vistorias')
-    await userEvent.click(screen.getByRole('button', { name: 'Nova vistoria' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Nova vistoria' }))
     await screen.findByLabelText('Cliente')
     await userEvent.selectOptions(screen.getByLabelText('Cliente'), clienteId)
     await userEvent.selectOptions(screen.getByLabelText('Pacote'), '0')
@@ -175,7 +175,7 @@ describe('Fluxos administrativos via HTTP', () => {
     data['/api/vistorias'] = [{ ...base, usuarioId: usuario.id }]
     mount('/vistorias')
     await screen.findByRole('button', { name: 'Realizar' })
-    await userEvent.click(screen.getByRole('button', { name: 'Nova vistoria' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Nova vistoria' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os seletores')
     expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Fechar/ }))
@@ -236,7 +236,7 @@ describe('Fluxos administrativos via HTTP', () => {
   ])('%s executa transição permitida', async (path, row, button, target) => {
     data['/api' + path] = [row]; mount(path)
     await userEvent.click(await screen.findByRole('button', { name: button }))
-    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+    await userEvent.click(screen.getByRole('button', { name: button === 'Concluir' ? 'Confirmar conclusão da vistoria' : 'Salvar' }))
     await waitFor(() => expect(requests.some(r => r.path === target && r.method === (button === 'Gerar cobrança Pix' ? 'POST' : 'PATCH'))).toBe(true))
   })
   it('ordem Pix é automática e o painel não oferece criação ou envio manual', async () => {

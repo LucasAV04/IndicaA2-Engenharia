@@ -14,7 +14,7 @@ export type DadosPix = { id: string; usuarioId: string; tipoChavePix: number; ch
 export type Dashboard = {
   cobrancasPixVistoria?: Record<string, number>; cobrancasDivergentes?: number; eventosDivergentes?: number;
   tiposCadastrados: number; tiposComPrecoAtivo: number; tiposSemConfiguracao: number; ultimaVersaoPreco: number | null; ultimoTipoPreco: string | null;
-  totalUsuarios: number; usuariosAtivos: number; receitaConfirmada: number;
+  totalUsuarios: number; totalClientes?: number; usuariosAtivos: number; receitaConfirmada: number;
   pagamentosPendentes: number; cashbackDisponivel: number; cashbackPago: number;
   pixPendenteProcessando: number; pixConcluido: number; falhasPix: number; falhasDefinitivasPix: number;
   calculadoEmUtc: string; indicacoes: Record<string, number>; vistorias: Record<string, number>;

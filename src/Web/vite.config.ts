@@ -6,6 +6,6 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: { proxy: { '/api': { target: env.API_PROXY_TARGET || 'http://localhost:5209', changeOrigin: true } } },
-    test: { environment: 'jsdom', setupFiles: './src/test/setup.ts', globals: true },
+    test: { include: ['src/**/*.test.{ts,tsx}'], environment: 'jsdom', setupFiles: './src/test/setup.ts', globals: true },
   }
 })

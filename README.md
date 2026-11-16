@@ -59,3 +59,14 @@ O ambiente Docker oferece MySQL e uma origem HTTPS para o React e a API. Consult
 ## Contas e operação
 
 A recuperação de senha e a confirmação de e-mail usam links de uso único. A troca de senha encerra as sessões emitidas com a versão anterior das credenciais. O painel administrativo oferece relatórios paginados e exportação CSV. Consulte o [runbook](docs/HomologacaoOperacional.md) para a migration 017, o worker de e-mail e a homologação com Mailpit.
+
+
+## Abrir o IndicA2
+
+Com o perfil persistente preparado e o Docker em execução, dê duplo clique em `scripts/Abrir-IndicaA2.cmd` ou use o comando abaixo na raiz. A abertura aguarda a prontidão em HTTPS. Para parar e preservar os dados, use `scripts/Fechar-IndicaA2.cmd`.
+
+```powershell
+pwsh -NoProfile -File ./scripts/Invoke-Homologation.ps1 -Action Open
+```
+
+O painel vazio começa pelo catálogo e pela tabela de preços, conforme a seção Primeiros passos. Consulte o [runbook](docs/HomologacaoOperacional.md) para a preparação inicial, reinício e aceite descartável.

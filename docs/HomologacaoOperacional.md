@@ -1,6 +1,6 @@
 # Homologação operacional local
 
-Use Docker Desktop com containers Linux, Compose v2 ou superior e PowerShell 7.4 ou superior. Reserve a porta 8443 do loopback. Os perfis persistente e descartável usam a mesma porta e devem ser executados em momentos distintos.
+Use Docker Desktop com containers Linux, Compose v2 ou superior e PowerShell 7.4 ou superior. Reserve as portas de loopback 8443 para o perfil persistente e 18443 para os testes descartáveis.
 
 O Kestrel serve o React compilado e a API em https://localhost:8443. O build usa Node 24 e o SDK .NET 9. A imagem final contém o runtime ASP.NET Core 9, o aplicativo, os arquivos SQL históricos e o curl para a sonda. O MySQL 8.0 fica em rede interna, sem porta no host. Uma segunda rede bridge permite ao Docker Desktop publicar somente o HTTPS do Kestrel no loopback. O runtime da API usa usuário sem privilégios, raiz somente leitura e /tmp em memória. O limite padrão de corpo do Kestrel é preservado. Os containers usam UTC e o frontend conserva sua apresentação de horários.
 
@@ -72,3 +72,22 @@ O adapter usa SMTP do .NET com timeout, TLS obrigatório fora de Homologation e 
 O relatório administrativo em `/relatorios` usa período UTC de até 366 dias, por padrão os últimos 30 dias, e páginas de 1 a 100 linhas. O CSV usa os mesmos filtros e limita a exportação a 5.000 linhas. A exportação omite nomes, e-mails e identificadores externos e neutraliza células interpretáveis como fórmulas. O navegador apresenta a data na hora local. Valores e totais vêm dos snapshots persistidos.
 
 Provedor SMTP definitivo, credenciais reais, domínio, certificado, revisão jurídica de consentimento e retenção, eventual WhatsApp/SMS/push, ativação da Efí, habilitação de workers e implantação em produção dependem de decisão externa.
+
+
+## Abrir, parar e reiniciar
+
+Conclua a preparação inicial uma vez, incluindo a configuração privada e o provisionamento do administrador. Com Docker Desktop já aberto e as imagens locais prontas, execute `pwsh -NoProfile -File ./scripts/Invoke-Homologation.ps1 -Action Open` ou abra `scripts/Abrir-IndicaA2.cmd`. O script aguarda readiness e abre https://localhost:8443 no Windows. Use `-NoBrowser` em automação ou para validar somente a prontidão. Open usa o Start oficial, sem construir imagens ou recriar credenciais.
+
+Use `scripts/Fechar-IndicaA2.cmd` ou `-Action Stop` para parar mantendo o banco. Execute Open novamente para iniciar. Use `-Action Status` para conferir os serviços. Ausência de perfil, Docker ou imagem impede a abertura com diagnóstico curto.
+
+## Aceite em Chromium
+
+Em `src/Web`, execute `npm ci` e `npx playwright install chromium`. Volte à raiz e rode:
+
+```powershell
+pwsh -NoProfile -File ./scripts/Invoke-Homologation.ps1 -Action UiSmoke -Disposable
+```
+
+O aceite descarta containers, rede, volume, credenciais e saída temporária. Smoke, EmailSmoke e UiSmoke compartilham a porta 18443 entre si e rodam em sequência. O CI constrói a imagem no Smoke e a reutiliza nos dois testes seguintes. O UiSmoke cobre `Open -NoBrowser` em um perfil descartável e verifica a persistência após reinício da API.
+
+No painel vazio, use os seis passos da visão geral para cadastrar catálogo, publicar preços definidos pela A2, localizar clientes, criar vistorias e acompanhar pagamentos, indicações e cashback. Os dados de teste são exclusivamente fictícios. O aceite local termina antes de qualquer confirmação que dependa de um provedor. Preços oficiais, contas de provedores, comunicação externa, domínio, certificado público, retenção e implantação continuam sujeitos a decisão da A2.

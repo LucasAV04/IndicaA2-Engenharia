@@ -79,3 +79,10 @@ O Compose compila o React com npm ci e publica a aplicação e /api na origem ht
 ## Segurança da conta e relatórios
 
 O login oferece recuperação de senha. O frontend recebe os links de conta por fragmento, remove o fragmento da URL e usa o token apenas em memória. A seção Segurança da conta permite confirmar e-mail e alterar a senha. A troca encerra a sessão e retorna ao login. Em `/relatorios`, o administrador confere os filtros aplicados antes de exportar o CSV.
+
+
+## Experiência operacional e aceite
+
+O painel apresenta Primeiros passos a partir das contagens da API. Os estados visíveis são traduzidos por domínio. O menu se recolhe após navegação em tela pequena, as tabelas largas usam regiões roláveis com foco e a aplicação oferece link para pular ao conteúdo, foco de navegação e avisos de formulário. As rotas administrativas e públicas são carregadas sob demanda. O QR Code só pertence ao fluxo de pagamento.
+
+Depois de `npm ci`, instale o Chromium com `npx playwright install chromium`. Partindo da raiz, execute `pwsh -NoProfile -File ./scripts/Invoke-Homologation.ps1 -Action UiSmoke -Disposable`. Playwright e axe são dependências somente de desenvolvimento. A execução usa site compilado em HTTPS, API e MySQL descartáveis. Os diagnósticos exibem apenas o estado e a linha do teste, com vídeo, captura de tela e trace desabilitados.

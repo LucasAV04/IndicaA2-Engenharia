@@ -3,20 +3,31 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, saveSession, send } from './api'
+import { lerFragmentoPrivado, limparFragmentoPrivado } from './fragmentoPrivado'
 
 type Modo = 'solicitar' | 'redefinir' | 'confirmar'
 const titulos = { solicitar: 'Esqueci minha senha', redefinir: 'Redefinir senha', confirmar: 'Confirmar e-mail' }
 
 export function ContaPublica({ modo }: { modo: Modo }) {
-  const [token, setToken] = useState(() => modo === 'solicitar' ? '' : window.location.hash.slice(1))
+  const [token, setToken] = useState(() => modo === 'solicitar' ? '' : lerFragmentoPrivado())
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const result = useRef<HTMLParagraphElement>(null)
   const navigate = useNavigate()
 
   useLayoutEffect(() => {
-    if (modo !== 'solicitar' && window.location.hash)
-      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+    if (modo === 'solicitar') return
+    limparFragmentoPrivado()
+    const atualizar = () => {
+      const proximo = lerFragmentoPrivado()
+      limparFragmentoPrivado()
+      if (proximo) {
+        setToken(proximo)
+        setMessage('')
+      }
+    }
+    window.addEventListener('hashchange', atualizar)
+    return () => window.removeEventListener('hashchange', atualizar)
   }, [modo])
   useEffect(() => { if (message) result.current?.focus() }, [message])
 
@@ -47,7 +58,7 @@ export function ContaPublica({ modo }: { modo: Modo }) {
   }
 
   const disponivel = modo === 'solicitar' || /^[0-9a-f]{64}$/.test(token)
-  return <main className="portal"><section className="panel">
+  return <main tabIndex={-1} className="portal"><section className="panel">
     <h1>{titulos[modo]}</h1>
     {disponivel && <form onSubmit={evento => void submit(evento)}>
       {modo === 'solicitar' && <div className="field"><label htmlFor="conta-email">E-mail</label>
