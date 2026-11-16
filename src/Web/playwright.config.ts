@@ -7,7 +7,7 @@ export default defineConfig({
   reporter: [['./e2e/safe-reporter.ts']],
   outputDir: process.env.INDICAA2_UI_OUTPUT_DIR ?? '../../.homologacao-smoke/playwright',
   timeout: 65_000,
-  globalTimeout: 120_000,
+  globalTimeout: 220_000,
   use: {
     browserName: 'chromium',
     actionTimeout: 8000,

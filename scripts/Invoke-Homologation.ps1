@@ -387,6 +387,10 @@ function Invoke-UiFlow {
     } finally {
         Pop-Location
         Remove-Item Env:INDICAA2_UI_ADMIN_FILE,Env:INDICAA2_UI_PHASE,Env:INDICAA2_UI_OUTPUT_DIR,Env:INDICAA2_UI_ORIGIN -ErrorAction SilentlyContinue
+        $fixtureCliente = Join-Path $private 'cliente-ui.json'
+        if (Test-Path -LiteralPath $fixtureCliente -PathType Leaf) {
+            Remove-Item -LiteralPath $fixtureCliente -Force
+        }
         $output = Join-Path $private 'playwright'
         if (Test-Path -LiteralPath $output) {
             $resolved = (Resolve-Path -LiteralPath $output).Path

@@ -1,0 +1,48 @@
+.cliente-marca { display: inline-flex; gap: .35rem; align-items: baseline; font-weight: 650; }
+.cliente-marca strong { letter-spacing: -.055em; font-size: 1.35em; }
+.publico-cliente {
+  width: min(100% - 2rem, 42rem);
+  padding: 0;
+  margin: clamp(1rem, 5vw, 3rem) auto;
+  overflow-wrap: anywhere;
+}
+.publico-cliente > header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: .5rem;
+  color: #fff;
+  background: #0F2F4E;
+  padding: 1rem clamp(1rem, 4vw, 1.75rem);
+  border-radius: 1rem 1rem 0 0;
+}
+.publico-superficie {
+  background: #fff;
+  border: 1px solid #d9e1e8;
+  border-top: 0;
+  border-radius: 0 0 1rem 1rem;
+  padding: clamp(1rem, 5vw, 2.5rem);
+}
+.publico-superficie h1 { font-size: clamp(1.55rem, 4vw, 2.3rem); letter-spacing: -.035em; }
+.publico-superficie a, .login-cliente a { color: #0F2F4E; text-underline-offset: .18em; }
+.publico-superficie button, .login-cliente button { min-height: 44px; }
+.publico-indicacao label { margin-top: 1rem; }
+.publico-indicacao form section { background: #F1F3F5; margin-block: 1rem; padding: 1rem; border-radius: .7rem; }
+.publico-indicacao input[type=checkbox] { width: auto; margin-inline-end: .5rem; }
+.publico-pagamento { max-width: 34rem; }
+.publico-pagamento svg { width: min(100%, 240px); height: auto; display: block; }
+.publico-pagamento textarea { width: 100%; min-height: 5rem; overflow-wrap: anywhere; }
+.login-cliente { width: min(100% - 2rem, 72rem); min-height: 0; margin: clamp(1rem, 7vw, 5rem) auto; padding: 0; background: #fff; border: 1px solid #d9e1e8; border-radius: 1.15rem; }
+.login-cliente .login-intro {
+  background: radial-gradient(ellipse at top right, #3A5A78, transparent 72%), #0F2F4E;
+  border-radius: 1.1rem 0 0 1.1rem;
+  padding: clamp(1.35rem, 6vw, 4rem);
+}
+.login-cliente .login-intro .cliente-marca { margin-bottom: 1.3rem; }
+.login-cliente .login-intro h1 { font-size: clamp(1.55rem, 4vw, 3rem); letter-spacing: -.04em; }
+.login-cliente .login-intro p:last-child { display: block; }
+.login-cliente .login-form { padding: clamp(1.25rem, 5vw, 3rem); }
+@media (max-width: 760px) {
+  .login-cliente .login-intro { border-radius: 1.1rem 1.1rem 0 0; }
+}

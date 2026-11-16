@@ -8,6 +8,7 @@ import { api, readSession, saveSession } from './api'
 import type { Sessao } from './types'
 import { resources, type ResourceKey } from './resources'
 import { ErrorBox } from './components'
+import { MarcaCliente } from './PublicoCliente'
 
 const ResourcePage = lazy(() => import('./ResourcePage'))
 const DashboardPage = lazy(() => import('./DashboardPage'))
@@ -95,9 +96,9 @@ function Login({ senhaAlterada }: { senhaAlterada: boolean }) {
     try { saveSession(await api<Sessao>('/auth/login', { method: 'POST', body: JSON.stringify(values) })) }
     catch { setError(true) }
   }
-  return <main id="conteudo" tabIndex={-1} className="login"><section className="login-intro"><div className="brand">IndicA2</div><p className="eyebrow">Gestão operacional</p><h1>Indicações conectadas.<br />Operação organizada.</h1><p>Um espaço para acompanhar clientes, vistorias e pagamentos com clareza.</p></section><section className="login-form"><h2>Acesse sua conta</h2><p>Entre para acompanhar suas indicações ou administrar a operação.</p><form onSubmit={handleSubmit(login)}>
-    <div className="field"><label htmlFor="email">E-mail</label><input id="email" type="email" autoComplete="username" {...register('email')} />{errors.email && <span role="alert">{errors.email.message}</span>}</div>
-    <div className="field"><label htmlFor="senha">Senha</label><input id="senha" type="password" autoComplete="current-password" {...register('senha')} />{errors.senha && <span role="alert">{errors.senha.message}</span>}</div>
+  return <main id="conteudo" tabIndex={-1} className="login login-cliente"><section className="login-intro"><MarcaCliente /><h1>Suas indicações em um só lugar</h1><p>Acompanhe indicações, cashbacks e os dados da sua conta no IndicA2.</p></section><section className="login-form"><h2>Acesse sua conta</h2><p>Entre para acompanhar suas indicações ou administrar a operação.</p><form onSubmit={handleSubmit(login)}>
+    <div className="field"><label htmlFor="email">E-mail</label><input id="email" type="email" autoComplete="username" aria-invalid={!!errors.email} aria-describedby={errors.email ? 'login-email-erro' : undefined} {...register('email')} />{errors.email && <span id="login-email-erro" role="alert">{errors.email.message}</span>}</div>
+    <div className="field"><label htmlFor="senha">Senha</label><input id="senha" type="password" autoComplete="current-password" aria-invalid={!!errors.senha} aria-describedby={errors.senha ? 'login-senha-erro' : undefined} {...register('senha')} />{errors.senha && <span id="login-senha-erro" role="alert">{errors.senha.message}</span>}</div>
     {error && <ErrorBox message="Não foi possível entrar. Confira suas credenciais e tente novamente." />}
     <button className="primary" disabled={isSubmitting}>{isSubmitting ? 'Entrando…' : 'Entrar'}</button>
   </form><p><Link to="/esqueci-senha">Esqueci minha senha</Link></p>{senhaAlterada && <p role="status">Senha alterada. Entre novamente.</p>}<p className="muted">A sessão é encerrada ao sair ou expirar.</p></section></main>

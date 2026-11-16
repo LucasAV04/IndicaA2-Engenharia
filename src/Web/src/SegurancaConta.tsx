@@ -3,6 +3,8 @@ import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, saveSession, send } from './api'
+import { PublicoCliente } from './PublicoCliente'
+import { ErrorBox } from './components'
 import { lerFragmentoPrivado, limparFragmentoPrivado } from './fragmentoPrivado'
 
 type Modo = 'solicitar' | 'redefinir' | 'confirmar'
@@ -58,8 +60,7 @@ export function ContaPublica({ modo }: { modo: Modo }) {
   }
 
   const disponivel = modo === 'solicitar' || /^[0-9a-f]{64}$/.test(token)
-  return <main tabIndex={-1} className="portal"><section className="panel">
-    <h1>{titulos[modo]}</h1>
+  return <PublicoCliente title={titulos[modo]} categoria="Segurança da conta">
     {disponivel && <form onSubmit={evento => void submit(evento)}>
       {modo === 'solicitar' && <div className="field"><label htmlFor="conta-email">E-mail</label>
         <input name="email" id="conta-email" type="email" autoComplete="email" maxLength={254} required /></div>}
@@ -69,7 +70,7 @@ export function ContaPublica({ modo }: { modo: Modo }) {
     </form>}
     <p ref={result} tabIndex={-1} aria-live="polite">{message || (!disponivel && 'Link inválido ou indisponível.')}</p>
     <Link to="/login">Voltar ao login</Link>
-  </section></main>
+  </PublicoCliente>
 }
 
 export function SegurancaConta() {
@@ -111,6 +112,9 @@ export function SegurancaConta() {
 
   return <section className="panel">
     <h2>Segurança</h2>
+    <p>Altere sua senha para proteger a conta. Ao salvar uma nova senha, será preciso entrar novamente.</p>
+    {perfil.isPending && <p role="status">Carregando situação do e-mail…</p>}
+    {perfil.isError && <ErrorBox retry={() => void perfil.refetch()} />}
     {perfil.data && <>
       <p>{perfil.data.emailConfirmado ? 'E-mail confirmado' : 'E-mail ainda não confirmado'}</p>
       {!perfil.data.emailConfirmado && perfil.data.emailHabilitado &&

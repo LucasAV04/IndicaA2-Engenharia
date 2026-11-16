@@ -1,11 +1,21 @@
 import { randomBytes } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 const origem = process.env.INDICAA2_UI_ORIGIN ?? 'https://localhost:18443'
 const cliente = 'Cliente fictícia do aceite'
 const tipo = 'Planta fictícia do aceite'
+const clienteEmail = 'cliente-aceite@example.invalid'
+const chavePix = 'pix-cliente-aceite@example.invalid'
+const larguras = [320, 360, 390, 768, 1280, 1440]
+
+function arquivoCliente() {
+  const file = process.env.INDICAA2_UI_ADMIN_FILE
+  if (!file) throw new Error('Perfil descartável obrigatório.')
+  return join(dirname(file), 'cliente-ui.json')
+}
 
 async function admin() {
   const file = process.env.INDICAA2_UI_ADMIN_FILE
@@ -42,8 +52,8 @@ test.afterEach(({ context }) => expect(requestsExternas.get(context)).toHaveLeng
 
 test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   test.skip(process.env.INDICAA2_UI_PHASE === 'restart')
+  test.setTimeout(95_000)
   const { email, senha } = await admin()
-  const clienteEmail = 'cliente-aceite@example.invalid'
   const clienteSenha = randomBytes(24).toString('base64url')
   await page.goto('/login')
   await expect(page.getByRole('heading', { name: 'Acesse sua conta' })).toBeVisible()
@@ -132,9 +142,61 @@ test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   await expect(page).toHaveURL(/\/login$/)
   await login(page, clienteEmail, clienteSenha)
   await expect(page).toHaveURL(/\/minha-conta$/)
+  await expect(page.getByRole('heading', { name: 'Olá, ' + cliente })).toBeVisible()
+  await expect(page.getByText('Nenhuma indicação por enquanto.')).toBeVisible()
+  await expect(page.getByText('Nenhum cashback registrado.')).toBeVisible()
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: origem })
+  await page.getByRole('button', { name: 'Copiar link' }).click()
+  await expect(page.getByText('Link copiado.')).toBeVisible()
+  const linkCopiado = await page.evaluate(() => navigator.clipboard.readText())
+  expect(new URL(linkCopiado).pathname).toBe('/indicar/' + codigo)
+  const publicoCliente = await page.context().newPage()
+  await publicoCliente.goto(linkCopiado)
+  await expect(publicoCliente.getByRole('heading', { name: 'Indicar uma pessoa' })).toBeVisible()
+  for (const width of larguras) {
+    await publicoCliente.setViewportSize({ width, height: 820 })
+    await expect.poll(() => publicoCliente.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  }
+  await publicoCliente.close()
+  const menuCliente = page.getByRole('button', { name: 'Menu', exact: true })
+  await menuCliente.focus()
+  await page.keyboard.press('Enter')
+  await expect(menuCliente).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Escape')
+  await expect(menuCliente).toBeFocused()
+  await expect(menuCliente).toHaveAttribute('aria-expanded', 'false')
+  const cadastrarPix = page.getByRole('button', { name: 'Cadastrar Dados Pix' })
+  await cadastrarPix.click()
+  const dialogoPix = page.getByRole('dialog')
+  await expect(dialogoPix).toBeVisible()
+  await axe(page, 'Dados Pix em diálogo')
+  await page.keyboard.press('Escape')
+  await expect(cadastrarPix).toBeFocused()
+  await cadastrarPix.click()
+  await dialogoPix.getByLabel('Tipo de chave').selectOption('2')
+  await dialogoPix.getByLabel('Nova chave Pix').fill(chavePix)
+  await dialogoPix.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(page.getByText('Dados Pix salvos.')).toBeVisible()
+  await expect(page.getByText('••••••••', { exact: true })).toBeVisible()
+  await expect(page.getByRole('main')).not.toContainText(chavePix)
+  await expect(page.getByRole('heading', { name: 'Minhas notificações' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Segurança', exact: true })).toBeVisible()
   await axe(page, 'Minha conta móvel')
+  for (const width of larguras) {
+    await page.setViewportSize({ width, height: 820 })
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  }
+  await page.setViewportSize({ width: 1280, height: 820 })
+  await axe(page, 'Minha conta desktop')
+  await page.getByRole('link', { name: 'Segurança', exact: true }).click()
+  await expect(page.locator('#seguranca')).toBeFocused()
+  await page.reload()
+  await expect(page).toHaveURL(/\/minha-conta#seguranca$/)
+  await expect(page.getByText('••••••••', { exact: true })).toBeVisible()
   await page.goto('/relatorios')
   await expect(page).toHaveURL(/\/minha-conta$/)
+  await writeFile(arquivoCliente(), JSON.stringify({ senha: clienteSenha }), { flag: 'wx', mode: 0o600 })
   info.annotations.push({ type: 'axe', description: 'Nenhuma violação serious ou critical nas páginas verificadas.' })
 })
 
@@ -145,6 +207,76 @@ test('dados fictícios após reiniciar a API', async ({ page }) => {
   await login(page, email, senha)
   await page.getByRole('link', { name: 'Vistorias', exact: true }).click()
   await expect(page.getByRole('row').filter({ hasText: cliente })).toContainText(/250,00/)
+  await page.getByRole('button', { name: 'Sair', exact: true }).click()
+  const { senha: senhaCliente } = JSON.parse(await readFile(arquivoCliente(), 'utf8')) as { senha: string }
+  await login(page, clienteEmail, senhaCliente)
+  await expect(page).toHaveURL(/\/minha-conta$/)
+  await expect(page.getByText('••••••••', { exact: true })).toBeVisible()
+  await expect(page.getByRole('main')).not.toContainText(chavePix)
+  await page.getByRole('button', { name: 'Sair', exact: true }).click()
+  await page.goto('/minha-conta')
+  await expect(page).toHaveURL(/\/login$/)
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('indicaa2.session'))).toBeNull()
+
+  await login(page, clienteEmail, senhaCliente)
+  await expect(page).toHaveURL(/\/minha-conta$/)
+  const outraSessao = await page.context().newPage()
+  await outraSessao.goto('/login')
+  await login(outraSessao, clienteEmail, senhaCliente)
+  await expect(outraSessao).toHaveURL(/\/minha-conta$/)
+  const novaSenha = randomBytes(24).toString('base64url')
+  await page.getByLabel('Senha atual').fill(senhaCliente)
+  await page.getByLabel('Nova senha').fill(novaSenha)
+  await page.getByRole('button', { name: 'Alterar senha' }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  await outraSessao.reload()
+  await expect(outraSessao).toHaveURL(/\/login$/)
+  await outraSessao.close()
+})
+
+test('estados visuais do portal em Chromium com zoom e texto longo', async ({ page }) => {
+  test.skip(process.env.INDICAA2_UI_PHASE === 'restart')
+  const { senha } = JSON.parse(await readFile(arquivoCliente(), 'utf8')) as { senha: string }
+  const data = '2026-01-10T12:00:00Z'
+  const nome = 'Cliente fictícia ' + 'NomeExtenso'.repeat(12)
+  await page.route('**/api/minha-conta', async route => {
+    const resposta = await route.fetch()
+    await route.fulfill({ response: resposta, json: { ...await resposta.json(), nome } })
+  })
+  let liberar!: () => void
+  const aguardar = new Promise<void>(resolve => { liberar = resolve })
+  let consulta = 0
+  await page.route('**/api/minha-conta/indicacoes', async route => {
+    consulta++
+    if (consulta === 1) {
+      await aguardar
+      await route.fulfill({ status: 503, json: {} })
+      return
+    }
+    await route.fulfill({ json: [{ nome: 'PessoaFictícia'.repeat(10), telefoneMascarado: '••••00', status: 3, criadaEm: data }] })
+  })
+  await page.route('**/api/minha-conta/cashbacks', route => route.fulfill({ json: [
+    { valor: 13, status: 0, situacaoPix: null, criadoEm: data },
+    { valor: 25, status: 1, situacaoPix: 4, criadoEm: data },
+    { valor: 29, status: 2, situacaoPix: 2, criadoEm: data },
+  ] }))
+  await page.setViewportSize({ width: 640, height: 940 })
+  await page.goto('/login')
+  await login(page, clienteEmail, senha)
+  await expect(page.getByRole('heading', { name: 'Olá, ' + nome })).toBeVisible()
+  await expect(page.getByText('Carregando indicações…')).toBeVisible()
+  liberar()
+  const indicacoes = page.getByRole('region', { name: 'Minhas indicações' })
+  await indicacoes.getByRole('button', { name: 'Tentar novamente' }).click({ timeout: 20_000 })
+  await expect(indicacoes.getByText('Cancelada', { exact: true })).toBeVisible()
+  await expect(page.getByText('Falha definitiva', { exact: true })).toBeVisible()
+  await page.evaluate(() => { document.documentElement.style.zoom = '2' })
+  await expect.poll(() => page.evaluate(() => {
+    const raiz = document.documentElement
+    return raiz.scrollWidth - raiz.clientWidth
+  })).toBeLessThanOrEqual(0)
+  await axe(page, 'Portal preenchido com zoom de 200%')
+  await page.unrouteAll({ behavior: 'wait' })
 })
 
 test('as páginas cabem no viewport sem rolagem horizontal da página', async ({ page }) => {
@@ -166,6 +298,22 @@ test('as páginas cabem no viewport sem rolagem horizontal da página', async ({
         message: "Viewport de "+width+" px na rota "+tela,
       }).toBeLessThanOrEqual(width)
     }
+  }
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Sair', exact: true }).click()
+  const telasCliente = ['/login', '/esqueci-senha', '/redefinir-senha', '/confirmar-email', '/pagar']
+  for (const width of larguras) {
+    await page.setViewportSize({ width, height: 820 })
+    for (const tela of telasCliente) {
+      await page.goto(tela, { waitUntil: 'domcontentloaded' })
+      await expect(page.getByRole('main').getByRole('heading').first()).toBeVisible()
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    }
+  }
+  for (const [rota, titulo] of [['/esqueci-senha', 'Recuperação'], ['/redefinir-senha', 'Redefinição'], ['/confirmar-email', 'Confirmação'], ['/pagar', 'Pagamento']]) {
+    await page.goto(rota)
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await axe(page, titulo)
   }
   const fragmento = randomBytes(32).toString('hex')
   await page.goto('/pagar#' + fragmento)
