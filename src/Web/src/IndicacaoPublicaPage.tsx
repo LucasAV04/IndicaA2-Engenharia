@@ -57,7 +57,7 @@ function FormularioIndicacao({ codigo }: { codigo: string }) {
       reset({ nome: '', telefone: '', consentimento: false })
     } catch { setErro('Não foi possível iniciar outra indicação nesta sessão.') }
   }
-  return <main className="public-referral panel"><h1>Indicar uma pessoa</h1>
+  return <main tabIndex={-1} className="public-referral panel"><h1>Indicar uma pessoa</h1>
     {protocolo ? <section role="status"><h2>Indicação recebida</h2><p>Guarde o protocolo: <strong className="opaque-protocol">{protocolo}</strong></p><p>Nenhuma conta foi criada automaticamente.</p><button type="button" onClick={novaIndicacao}>Cadastrar outra indicação</button>{erro && <ErrorBox message={erro} />}</section>
       : query.isPending ? <p role="status">Verificando link…</p> : query.isError || !query.data?.utilizavel ? <ErrorBox message="Link indisponível." />
         : <form onSubmit={handleSubmit(enviar)}>

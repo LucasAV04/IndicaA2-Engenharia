@@ -890,3 +890,10 @@ O registro intermediário acima é superado pela validação final desta entrega
 - Migration 017 com versão de credenciais, tokens de conta e outbox de e-mail.
 - Recuperação, confirmação e alteração autenticada de senha, com revogação das sessões antigas.
 - Mailpit opt-in para homologação, relatórios administrativos e exportação CSV.
+
+
+## 2026-11-16 — Aceite operacional do MVP
+
+- Abertura simplificada com Open, atalhos Windows, orientação inicial e operação responsiva.
+- Rótulos por domínio, ajustes de acessibilidade, prevenção de duplo submit nos formulários administrativos principais, divisão do bundle e recuperação de erros de tela.
+- Aceite Chromium e axe no Compose descartável, com migrations reais e limpeza do perfil.

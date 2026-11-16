@@ -1625,3 +1625,20 @@ Restore e build .NET aprovados. As regressões direcionadas passaram em 656 caso
 No frontend, lint, TypeScript, build e 111 testes passaram. A auditoria de produção retornou zero vulnerabilidades. A instalação completa reportou 13 alertas de desenvolvimento (11 moderados e 2 altos). O build registrou avisos preexistentes de comentários do Zod e um aviso de tamanho do bundle.
 
 Os dois smokes Docker passaram. O normal confirmou backup e restauração. O de e-mail capturou três mensagens fictícias no Mailpit e verificou consumo único, revogação, relatório/CSV e ausência de repetição após reinício. Nenhuma chamada Efí, OAuth, Pix ou SMTP externo foi executada.
+
+
+## Aceite operacional do MVP
+
+Open reaproveita o Start em um perfil já preparado. Valida o Docker e as imagens locais, espera readiness e abre o navegador no Windows. Os atalhos chamam o script oficial. O dashboard usa um total agregado de usuários comuns para manter o checklist correto quando o banco contém apenas o administrador.
+
+O React carrega rotas sob demanda, captura fragmentos de conta e pagamento antes de carregar a respectiva rota e apresenta falhas inesperadas com mensagem controlada. O aceite com Chromium verifica jornadas de autenticação e cadastro, cálculo da vistoria pelo backend, CSV, link público, navegação móvel, logout, autorização e persistência após reinício. O axe inspeciona os fluxos principais. A entrega preserva migrations 001–017 e a lógica financeira.
+
+O chunk inicial medido na base era de 502,21 kB (155,30 kB gzip). Com o carregamento por rotas ficou em 425,68 kB (134,04 kB gzip), sem chunk JavaScript acima de 500 kB.
+
+### Validação local do aceite
+
+Restore e build .NET aprovados, com 691 testes direcionados, 872 testes na suíte rápida e 270 integrações MySQL em 22 classes. O frontend passou no lint, TypeScript, build e em 117 testes. A auditoria de produção retornou zero vulnerabilidades. A auditoria completa registrou 13 alertas apenas de desenvolvimento, com 11 moderados e 2 altos.
+
+O Chromium passou pela jornada operacional, pela verificação em 360, 768 e 1280 px e pela conferência de persistência após reiniciar a API. O axe encontrou zero violações sérias ou críticas nas páginas verificadas. Foram usados dados fictícios, MySQL descartável e Mailpit interno.
+
+Smoke e EmailSmoke passaram, incluindo backup e restauração e entrega fictícia no Mailpit. Open sem navegador confirmou readiness na porta 8443 com o volume persistente preservado. O descarte deixou zero containers, redes, volumes ou diretório privado do smoke.

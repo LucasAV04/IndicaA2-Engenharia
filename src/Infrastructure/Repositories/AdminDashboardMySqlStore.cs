@@ -39,9 +39,11 @@ public sealed class AdminDashboardMySqlStore(MySqlConnectionFactory factory) : I
                 (SELECT COUNT(*) FROM tipos_planta t JOIN precos_vistoria p ON p.tipo_ativo=t.id WHERE t.ativo=1) AS precificados,
                 (SELECT versao FROM precos_vistoria ORDER BY created_at DESC,id DESC LIMIT 1) AS ultima_versao,
                 (SELECT nome_tipo_planta FROM precos_vistoria ORDER BY created_at DESC,id DESC LIMIT 1) AS ultimo_tipo,
-                (SELECT COUNT(*) FROM recebimentos_pix_inbox WHERE status=3) AS recebimentos_divergentes
+                (SELECT COUNT(*) FROM recebimentos_pix_inbox WHERE status=3) AS recebimentos_divergentes,
+                (SELECT COUNT(*) FROM usuarios WHERE tipo_usuario=@cliente) AS total_clientes
             """;
         await using var command = new MySqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("@cliente", (int)TipoUsuario.Usuario);
         command.Parameters.AddWithValue("@ativo", (int)StatusUsuario.Ativo);
         command.Parameters.AddWithValue("@confirmado", (int)StatusPagamentoVistoria.Confirmado);
         command.Parameters.AddWithValue("@pendentePagamento", (int)StatusPagamentoVistoria.Pendente);
@@ -56,7 +58,7 @@ public sealed class AdminDashboardMySqlStore(MySqlConnectionFactory factory) : I
             await reader.ReadAsync(cancellationToken);
             result = new()
             {
-                TotalUsuarios = reader.GetInt64(0), UsuariosAtivos = reader.GetInt64(1),
+                TotalUsuarios = reader.GetInt64(0), TotalClientes = reader.GetInt64("total_clientes"), UsuariosAtivos = reader.GetInt64(1),
                 CobrancasPixVistoria = cobrancas, CobrancasDivergentes = cobrancas.GetValueOrDefault("DivergenciaFinanceira"), EventosDivergentes = reader.GetInt64(13),
                 TiposCadastrados = reader.GetInt64(9), TiposComPrecoAtivo = reader.GetInt64(10),
                 TiposSemConfiguracao = reader.GetInt64(9) - reader.GetInt64(10),

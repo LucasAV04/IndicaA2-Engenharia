@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, ApiError, readSession, saveSession } from './api'
 import { ErrorBox } from './components'
+import { estadosPorRelatorio, rotulo } from './estados'
 
 const tipos = ['Pagamentos recebidos', 'Cashbacks disponíveis', 'Cashbacks pagos',
   'Ordens Pix em aberto', 'Falhas financeiras', 'Cobranças divergentes', 'E-mails']
@@ -65,7 +66,7 @@ export default function RelatoriosPage() {
       setPagina(1)
     }}>
       <div className="field"><label htmlFor="rel-tipo">Tipo de relatório</label>
-        <select id="rel-tipo" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
+        <select id="rel-tipo" value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value, status: '' })}>
           {tipos.map((tipo, indice) => <option key={tipo} value={indice}>{tipo}</option>)}
         </select>
       </div>
@@ -75,8 +76,8 @@ export default function RelatoriosPage() {
       <div className="field"><label htmlFor="rel-fim">Data final (UTC)</label>
         <input id="rel-fim" type="date" value={form.fim} onChange={e => setForm({ ...form, fim: e.target.value })} />
       </div>
-      <div className="field"><label htmlFor="rel-status">Código do status</label>
-        <input id="rel-status" type="number" min="0" max="10" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} />
+      <div className="field"><label htmlFor="rel-status">Status</label>
+        <select id="rel-status" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option value="">Todos</option>{Object.entries(estadosPorRelatorio[Number(form.tipo)]).map(([codigo, nome]) => <option key={codigo} value={codigo}>{nome}</option>)}</select>
       </div>
       <div className="field"><label htmlFor="rel-tamanho">Registros por página</label>
         <input id="rel-tamanho" type="number" min="1" max="100" required value={form.tamanho} onChange={e => setForm({ ...form, tamanho: e.target.value })} />
@@ -84,21 +85,21 @@ export default function RelatoriosPage() {
       <button type="submit">Aplicar filtros</button>
     </form>
     <section className="panel" aria-label="Resultado do relatório">
-      <p>Filtros aplicados — {tipos[Number(aplicados.tipo)]}, {aplicados.inicio || 'início padrão'} a {aplicados.fim || 'hoje'}, status {aplicados.status || 'todos'}.</p>
+      <p>Filtros aplicados — {tipos[Number(aplicados.tipo)]}, {aplicados.inicio || 'início padrão'} a {aplicados.fim || 'hoje'}, status {aplicados.status ? rotulo(estadosPorRelatorio[Number(aplicados.tipo)], Number(aplicados.status)) : 'todos'}.</p>
       <button disabled={exportando || !query.data} onClick={() => void exportar()}>Exportar CSV</button>
       {erro && <p role="alert">{erro}</p>}
       {query.isPending && <p role="status">Carregando relatório…</p>}
       {query.isError && <ErrorBox message="Não foi possível consultar o relatório. Verifique os filtros." />}
       {query.data && <>
         <p role="status">{query.data.total} registros{query.data.valorTotal !== null && ' · Total ' + dinheiro.format(query.data.valorTotal)}</p>
-        <div className="table-wrap"><table>
+        {query.data.linhas.length ? <div className="table-wrap" role="region" aria-label="Tabela de resultados" tabIndex={0}><table>
           <caption>{tipos[Number(aplicados.tipo)]}</caption>
           <thead><tr><th>Referência</th><th>Data e hora</th><th>Status</th><th>Valor</th></tr></thead>
           <tbody>{query.data.linhas.map(linha => <tr key={linha.id}>
             <td>{linha.id}</td><td>{dataLocal.format(new Date(linha.dataUtc))}</td>
-            <td>{linha.status}</td><td>{linha.valor === null ? '—' : dinheiro.format(linha.valor)}</td>
+            <td><span className="badge">{rotulo(estadosPorRelatorio[Number(aplicados.tipo)], linha.status)}</span></td><td>{linha.valor === null ? '—' : dinheiro.format(linha.valor)}</td>
           </tr>)}</tbody>
-        </table></div>
+        </table></div> : <p>Nenhum registro neste período. Ajuste os filtros para consultar outras datas.</p>}
         <button disabled={pagina === 1} onClick={() => setPagina(pagina - 1)}>Anterior</button>
         <span> Página {pagina} </span>
         <button disabled={pagina * Number(aplicados.tamanho) >= query.data.total}

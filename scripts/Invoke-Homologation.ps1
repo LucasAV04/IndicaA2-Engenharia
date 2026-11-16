@@ -2,10 +2,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Init','Preflight','Build','Migrate','Start','Bootstrap','Status','Stop','Down','Backup','RestoreTest','Smoke','EmailSmoke','Cleanup')]
+    [ValidateSet('Init','Preflight','Build','Migrate','Start','Open','Bootstrap','Status','Stop','Down','Backup','RestoreTest','Smoke','EmailSmoke','UiSmoke','Cleanup')]
     [string]$Action,
     [switch]$Disposable,
-    [switch]$TrustCertificate
+    [switch]$TrustCertificate,
+    [switch]$NoBrowser,
+    [switch]$UseBuiltImage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +18,8 @@ $emptyEnv = Join-Path $private 'compose.env'
 $database = 'indicaa2_homologacao'
 $ownerLabel = "com.docker.compose.project=$project"
 $env:INDICAA2_PRIVATE_DIR = $private
+$env:INDICAA2_HOST_PORT = if ($Disposable) { '18443' } else { '8443' }
+$origin = "https://localhost:$env:INDICAA2_HOST_PORT"
 
 function Invoke-Docker {
     param([string[]]$Arguments, [int]$Timeout = 120, [string]$InputFile, [string]$OutputFile)
@@ -218,7 +222,27 @@ function Invoke-Migrations {
 
 function Start-Environment {
     Invoke-Migrations | Out-Null
-    Invoke-Compose -Arguments @('up','-d','--wait','--wait-timeout','90','api') | Out-Null
+    Invoke-Compose -Arguments @('up','-d','--no-build','--wait','--wait-timeout','90','api') | Out-Null
+}
+
+function Open-Environment {
+    if ($Disposable -and !(Test-Path -LiteralPath (Join-Path $private 'disposable-owner'))) { throw 'Perfil descartável não inicializado por este script.' }
+    foreach ($name in 'compose.env','application.json','localhost.pfx','localhost.crt','mysql-password','mysql-root-password','mysql-client.cnf','mysql-root.cnf') {
+        if (!(Test-Path -LiteralPath (Join-Path $private $name) -PathType Leaf)) {
+            throw 'Perfil local incompleto. Siga a preparação inicial no runbook.'
+        }
+    }
+    try { Invoke-Docker -Arguments @('info','--format','{{.ServerVersion}}') -Timeout 12 | Out-Null }
+    catch { throw 'Docker indisponível. Abra o Docker Desktop e aguarde o Engine.' }
+    foreach ($image in 'indicaa2-homologacao-api:local','mysql:8.0.46') {
+        try { Invoke-Docker -Arguments @('image','inspect','--format','{{.Id}}',$image) -Timeout 10 | Out-Null }
+        catch { throw "Imagem local indisponível: $image. Siga a preparação inicial no runbook." }
+    }
+    Assert-Owned
+    Start-Environment
+    Wait-Ready 200
+    if ($IsWindows -and !$NoBrowser) { Start-Process $origin }
+    "IndicA2 disponível em $origin."
 }
 
 function Invoke-Bootstrap {
@@ -236,7 +260,7 @@ function Invoke-Bootstrap {
 }
 
 function Request([string]$Path, [hashtable]$Options = @{}) {
-    Invoke-WebRequest -Uri "https://localhost:8443$Path" -SkipCertificateCheck -SkipHttpErrorCheck -TimeoutSec 6 @Options
+    Invoke-WebRequest -Uri "$origin$Path" -SkipCertificateCheck -SkipHttpErrorCheck -TimeoutSec 6 @Options
 }
 
 function Assert-Response([string]$Path, [int]$Code) {
@@ -289,14 +313,14 @@ function Test-EmailFlow($Admin, [string]$Jwt) {
         throw 'Contrato genérico de redefinição divergente.'
     }
     $reset = Wait-Mail 'Redefina sua senha'
-    $resetToken = [regex]::Match($reset.Text, 'https://localhost:8443/redefinir-senha#([0-9a-f]{64})').Groups[1].Value
+    $resetToken = [regex]::Match($reset.Text, ([regex]::Escape($origin) + '/redefinir-senha#([0-9a-f]{64})')).Groups[1].Value
     if (!$resetToken) { throw 'Link de redefinição inválido.' }
 
     if ((Request '/api/minha-conta/email/confirmacao' @{Method='Post';Headers=$auth}).StatusCode -ne 202) {
         throw 'Solicitação de confirmação falhou.'
     }
     $confirmation = Wait-Mail 'Confirme seu e-mail'
-    $confirmToken = [regex]::Match($confirmation.Text, 'https://localhost:8443/confirmar-email#([0-9a-f]{64})').Groups[1].Value
+    $confirmToken = [regex]::Match($confirmation.Text, ([regex]::Escape($origin) + '/confirmar-email#([0-9a-f]{64})')).Groups[1].Value
     if (!$confirmToken -or (Request '/api/auth/confirmar-email' @{Method='Post';Headers=@{'X-Conta-Token'=$confirmToken}}).StatusCode -ne 204) {
         throw 'Confirmação falhou.'
     }
@@ -339,13 +363,47 @@ function Test-EmailFlow($Admin, [string]$Jwt) {
     'EmailSmoke aprovado: Mailpit interno, confirmação, consumo único, revogação, jornada e relatórios.'
 }
 
+function Invoke-UiFlow {
+    $web = Join-Path $root 'src/Web'
+    $runner = Join-Path $web 'node_modules/@playwright/test/cli.js'
+    if (!(Test-Path -LiteralPath $runner)) { throw 'Instale as dependências web e o Chromium antes de executar UiSmoke.' }
+    $env:INDICAA2_UI_ADMIN_FILE = Join-Path $private 'admin.json'
+    $env:INDICAA2_UI_OUTPUT_DIR = Join-Path $private 'playwright'
+    $env:INDICAA2_UI_ORIGIN = $origin
+    Push-Location $web
+    try {
+        foreach ($phase in 'journey','restart') {
+            if ($phase -eq 'restart') {
+                Invoke-Compose -Arguments @('restart','api') | Out-Null
+                Wait-Ready 200
+            }
+            $env:INDICAA2_UI_PHASE = $phase
+            # A saída do navegador é privada, inclusive em falha de seletor.
+            $runnerOutput = & node $runner test --config playwright.config.ts 2>&1
+            $runnerCode = $LASTEXITCODE
+            $runnerOutput | Where-Object { $_ -is [string] -and $_ -match '^Chromium: (passed|failed|timedOut|interrupted) \(linha [0-9]+\)\.$' }
+            if ($runnerCode) { throw "Playwright falhou na fase $phase. A saída foi omitida para proteger credenciais." }
+        }
+    } finally {
+        Pop-Location
+        Remove-Item Env:INDICAA2_UI_ADMIN_FILE,Env:INDICAA2_UI_PHASE,Env:INDICAA2_UI_OUTPUT_DIR,Env:INDICAA2_UI_ORIGIN -ErrorAction SilentlyContinue
+        $output = Join-Path $private 'playwright'
+        if (Test-Path -LiteralPath $output) {
+            $resolved = (Resolve-Path -LiteralPath $output).Path
+            if ($resolved -cne [IO.Path]::GetFullPath($output)) { throw 'Diretório descartável inesperado.' }
+            Remove-Item -LiteralPath $resolved -Recurse -Force
+        }
+    }
+    'UiSmoke aprovado: Chromium, jornada, axe e persistência após reinício.'
+}
+
 function Invoke-Smoke {
     if (-not $Disposable) { throw 'Smoke exige -Disposable.' }
     Initialize-Private
     try {
         if ($Action -eq 'EmailSmoke') { [IO.File]::WriteAllText((Join-Path $private 'mailpit-enabled'), '') }
         Invoke-Compose -Arguments @('config','--quiet') | Out-Null
-        Invoke-Compose -Arguments @('build','--pull','--no-cache','api') -Timeout 1200 | Out-Null
+        if (!$UseBuiltImage) { Invoke-Compose -Arguments @('build','--pull','--no-cache','api') -Timeout 1200 | Out-Null }
         Invoke-Compose -Arguments @('run','--rm','--no-deps','-T','api','--preflight-homologation') | Out-Null
         Invoke-Compose -Arguments @('up','-d','--wait','--wait-timeout','90','mysql') | Out-Null
         Invoke-Compose -Arguments @('up','-d','--no-deps','api') | Out-Null
@@ -394,6 +452,12 @@ function Invoke-Smoke {
         if (-not $token) { throw 'Token administrativo ausente.' }
         if ((Request '/api/admin/dashboard' @{Headers=@{Authorization="Bearer $token"}}).StatusCode -ne 200) { throw 'Dashboard falhou.' }
         Assert-Response '/api/public/indicacoes/codigos/INVALID0' 404 | Out-Null
+
+        if ($Action -eq 'UiSmoke') {
+            & $PSCommandPath -Action Open -NoBrowser -Disposable
+            Invoke-UiFlow
+            return
+        }
 
         if ($Action -eq 'EmailSmoke') {
             $config = Invoke-Compose -Arguments @('config','--format','json') | ConvertFrom-Json
@@ -463,8 +527,9 @@ function Invoke-Smoke {
     } finally { Remove-Disposable }
 }
 
+if ($Action -eq 'Open') { Open-Environment; return }
 if ($Action -eq 'Init') { Initialize-Private; return }
-if ($Action -in 'Smoke','EmailSmoke') { Invoke-Smoke; return }
+if ($Action -in 'Smoke','EmailSmoke','UiSmoke') { Invoke-Smoke; return }
 if (-not (Test-Path -LiteralPath $emptyEnv)) { throw 'Execute Init para preparar a configuração privada.' }
 
 switch ($Action) {

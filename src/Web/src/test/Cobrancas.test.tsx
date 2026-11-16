@@ -62,7 +62,7 @@ it('auditoria é carregada somente por solicitação', async () => {
   await mount(); await screen.findByText('Ativa')
   expect(requests.some(x => x.path.endsWith('/auditoria'))).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: 'Ver auditoria' }))
-  expect(await screen.findByText(/ativa —/)).toBeInTheDocument()
+  expect(await screen.findByText(/Criar cobrança —/)).toBeInTheDocument()
 })
 it('erro de auditoria não remove lista nem mostra erro interno', async () => {
   historyError = true; await mount(); await screen.findByText('Ativa')

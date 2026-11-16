@@ -5,7 +5,7 @@ x-application: &application
   environment:
     ASPNETCORE_ENVIRONMENT: Homologation
     ASPNETCORE_HTTP_PORTS: ""
-    PublicWeb__BaseUrl: https://localhost:8443
+    PublicWeb__BaseUrl: https://localhost:${INDICAA2_HOST_PORT:-8443}
     AllowedHosts: localhost
     Jwt__Issuer: IndicaA2-Homologation
     Jwt__Audience: IndicaA2-Homologation
@@ -73,7 +73,7 @@ services:
     build:
       context: .
     networks: [private, loopback]
-    ports: ["127.0.0.1:8443:8443"]
+    ports: ["127.0.0.1:${INDICAA2_HOST_PORT:-8443}:8443"]
     depends_on:
       mysql:
         condition: service_healthy

@@ -1,20 +1,31 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { money, utcDate } from './format'
+import { lerFragmentoPrivado, limparFragmentoPrivado } from './fragmentoPrivado'
 
 type Publica = { valor: number; status: number; venceEm: string | null; pixCopiaECola: string | null; confirmada: boolean }
 const estados = ['Preparando cobrança', 'Preparando cobrança', 'Aguardando pagamento', 'Aguardando conciliação', 'Conferindo recebimento', 'Pagamento confirmado', 'Cobrança expirada', 'Remoção pendente', 'Cobrança removida', 'Cobrança indisponível', 'Conferência administrativa necessária']
 export default function PagarPage() {
-  const token = useRef<string | null>(null)
+  const [token, setToken] = useState(lerFragmentoPrivado)
   const [data, setData] = useState<Publica | null>(null)
   const [error, setError] = useState<'transitorio' | 'terminal' | null>(null)
   const [copiado, setCopiado] = useState(false)
-  useEffect(() => {
-    if (token.current === null) {
-      token.current = window.location.hash.slice(1)
-      window.history.replaceState(null, '', window.location.pathname)
+  useLayoutEffect(() => {
+    limparFragmentoPrivado()
+    const atualizar = () => {
+      const proximo = lerFragmentoPrivado()
+      limparFragmentoPrivado()
+      if (!proximo || proximo === token) return
+      setData(null)
+      setError(null)
+      setCopiado(false)
+      setToken(proximo)
     }
-    if (!/^[a-fA-F0-9]{64}$/.test(token.current)) return
+    window.addEventListener('hashchange', atualizar)
+    return () => window.removeEventListener('hashchange', atualizar)
+  }, [token])
+  useEffect(() => {
+    if (!/^[a-fA-F0-9]{64}$/.test(token)) return
     let disposed = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let controller: AbortController | undefined
@@ -28,7 +39,7 @@ export default function PagarPage() {
       timeout = setTimeout(() => controller?.abort(), 15000)
       let retryAfter = 0
       try {
-        const response = await fetch('/api/public/cobranca-pix-vistoria', { headers: { Authorization: 'PaymentLink ' + token.current }, signal: controller.signal, cache: 'no-store', referrerPolicy: 'no-referrer' })
+        const response = await fetch('/api/public/cobranca-pix-vistoria', { headers: { Authorization: 'PaymentLink ' + token }, signal: controller.signal, cache: 'no-store', referrerPolicy: 'no-referrer' })
         if (disposed) return
         if (!response.ok && response.status !== 429 && response.status < 500) {
           setError('terminal'); setData(null); return
@@ -56,12 +67,12 @@ export default function PagarPage() {
     }
     void consultar()
     return () => { disposed = true; controller?.abort(); clearTimeout(timer); clearTimeout(timeout) }
-  }, [])
+  }, [token])
   async function copiar() {
     if (!data?.pixCopiaECola) return
     try { await navigator.clipboard.writeText(data.pixCopiaECola); setCopiado(true) } catch { setCopiado(false) }
   }
-  return <main className="panel"><h1>Pagamento de vistoria</h1><p>A2 Engenharia & Diagnóstico</p>
+  return <main tabIndex={-1} className="portal panel"><h1>Pagamento de vistoria</h1><p>A2 Engenharia & Diagnóstico</p>
     {error && <p role="alert">{error === 'transitorio' ? 'Atualização temporariamente indisponível. A consulta será retomada automaticamente.' : 'Não foi possível consultar este link. Solicite orientação à A2.'}</p>}
     {!data ? <p role="status">Consulte um link de pagamento válido fornecido pela A2.</p> : <>
       <h2>{money(data.valor)}</h2><p>Vencimento: {utcDate(data.venceEm)}</p><p role="status">{estados[data.status] || 'Conferência necessária'}</p>

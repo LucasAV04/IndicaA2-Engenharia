@@ -16,6 +16,7 @@ beforeEach(() => {
   saveSession({ accessToken: 'token-ficticio', usuarioId, nome: 'Admin', email: 'admin@example.invalid', tipoUsuario: 2, expiresAtUtc: '2099-01-01T00:00:00Z' })
   data = { '/api/tipos-planta': [tipo], '/api/precos-vistoria': [preco], [`/api/precos-vistoria/por-tipo/${tipoId}/historico`]: [preco], '/api/usuarios': [{ id: usuarioId, nome: 'Cliente fictício' }], '/api/vistorias': [] }
   errors = {}; calls = []
+  vi.stubGlobal('confirm', vi.fn(() => true))
   vi.stubGlobal('fetch', vi.fn(async (path: string, init: RequestInit = {}) => {
     const method = init.method || 'GET', body = init.body ? JSON.parse(String(init.body)) : {}
     calls.push({ path, method, body })
@@ -33,7 +34,7 @@ it('preserva quatro casas do preço na exibição', async () => {
 
 it('campos do catálogo são acessíveis por teclado e label', async () => {
   mount('/tipos-planta')
-  await userEvent.click(screen.getByRole('button', { name: 'Novo tipo' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Novo tipo' }))
   screen.getByLabelText('Nome do tipo').focus()
   await userEvent.keyboard('Nome fictício')
   expect(screen.getByLabelText('Nome do tipo')).toHaveValue('Nome fictício')
@@ -47,7 +48,7 @@ async function abrirPagamento() {
     { id: usuarioId, tipoPlanta: 'Histórica', status: 0, precificacao: null, legado: true },
   ]
   const client = mount('/pagamentos-vistoria')
-  await userEvent.click(screen.getByRole('button', { name: 'Novo pagamento' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Novo pagamento' }))
   await screen.findByLabelText('Vistoria')
   return client
 }
@@ -100,7 +101,7 @@ async function historico() { mount('/precos-vistoria'); await userEvent.click(aw
 
 it('rotas e menus de catálogo e preços', async () => { mount('/tipos-planta'); expect(await screen.findByText(tipo.nome)).toBeInTheDocument(); expect(screen.getByRole('link', { name: 'Tabela de preços' })).toHaveAttribute('href', '/precos-vistoria') })
 it('catálogo vazio orienta cadastro', async () => { data['/api/tipos-planta'] = []; mount('/tipos-planta'); expect(await screen.findByText(/Cadastre o primeiro tipo/)).toBeInTheDocument() })
-it('cadastra tipo com nome normalizado', async () => { mount('/tipos-planta'); await userEvent.click(screen.getByRole('button', { name: 'Novo tipo' })); await userEvent.type(screen.getByLabelText('Nome do tipo'), '  Novo fictício  '); await userEvent.click(screen.getByRole('button', { name: 'Salvar tipo' })); await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.body.nome === 'Novo fictício')).toBe(true)) })
+it('cadastra tipo com nome normalizado', async () => { mount('/tipos-planta'); await userEvent.click(await screen.findByRole('button', { name: 'Novo tipo' })); await userEvent.type(screen.getByLabelText('Nome do tipo'), '  Novo fictício  '); await userEvent.click(screen.getByRole('button', { name: 'Salvar tipo' })); await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.body.nome === 'Novo fictício')).toBe(true)) })
 it('renomeia sem exclusão física', async () => { mount('/tipos-planta'); await userEvent.click(await screen.findByRole('button', { name: /Renomear/ })); const input = screen.getByLabelText('Nome do tipo'); await userEvent.clear(input); await userEvent.type(input, 'Renomeado'); await userEvent.click(screen.getByRole('button', { name: 'Salvar tipo' })); await waitFor(() => expect(calls.some(c => c.method === 'PUT')).toBe(true)); expect(calls.some(c => c.method === 'DELETE')).toBe(false) })
 it('conflito ao desativar orienta remover preço ativo', async () => { errors[`/api/tipos-planta/${tipoId}/desativar`] = 409; mount('/tipos-planta'); await userEvent.click(await screen.findByRole('button', { name: /Desativar Planta/ })); await userEvent.click(screen.getByRole('button', { name: 'Confirmar desativação' })); expect(await screen.findByRole('alert')).toHaveTextContent('preço ativo'); expect(document.body).not.toHaveTextContent('SEGREDO_FICTICIO') })
 it('mostra lista ativa e histórico imutável', async () => { await historico(); expect(screen.getByText(/Versões históricas não podem/)).toBeInTheDocument(); expect(screen.getByText(/versão 1:/)).toBeInTheDocument() })
@@ -115,5 +116,5 @@ it('nova vistoria sem campo manual e com catálogo ativo', async () => { data['/
 it('vistoria envia ID área pacote sem valores calculados e preserva horário', async () => { mount('/vistorias'); await userEvent.click(screen.getByRole('button', { name: 'Nova vistoria' })); await screen.findByLabelText('Tipo de planta'); await userEvent.selectOptions(screen.getByLabelText('Cliente'), usuarioId); await userEvent.selectOptions(screen.getByLabelText('Tipo de planta'), tipoId); fireEvent.change(screen.getByLabelText('Área (m²)'), { target: { value: '10.25' } }); fireEvent.change(screen.getByLabelText('Data agendada'), { target: { value: '2026-09-23T14:30' } }); await waitFor(() => expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled()); await userEvent.click(screen.getByRole('button', { name: 'Salvar' })); await waitFor(() => expect(calls.find(c => c.path === '/api/vistorias' && c.method === 'POST')?.body).toEqual({ usuarioId, tipoPlantaId: tipoId, areaM2: '10.25', pacote: 0, dataAgendada: '2026-09-23T14:30' })) })
 it('mudança de área refaz somente simulação', async () => { mount('/precos-vistoria'); await screen.findByRole('button', { name: /Histórico e preços/ }); await userEvent.selectOptions(screen.getByLabelText('Tipo para simulação'), tipoId); fireEvent.change(screen.getByLabelText('Área para simulação (m²)'), { target: { value: '10' } }); await screen.findByText(/Simulação do backend/); const antes = calls.length; fireEvent.change(screen.getByLabelText('Área para simulação (m²)'), { target: { value: '11' } }); await waitFor(() => expect(calls.length).toBeGreaterThan(antes)); expect(calls.slice(antes).every(c => c.path.endsWith('/simular'))).toBe(true) })
 it('falha do histórico não bloqueia catálogo ou simulação', async () => { errors[`/api/precos-vistoria/por-tipo/${tipoId}/historico`] = 500; mount('/precos-vistoria'); await userEvent.click(await screen.findByRole('button', { name: /Histórico e preços/ })); expect(await screen.findByRole('alert')).toBeInTheDocument(); expect(screen.getByLabelText('Área para simulação (m²)')).toBeInTheDocument() })
-it('cache de módulos independentes não é invalidado', async () => { const client = mount('/tipos-planta'); const spy = vi.spyOn(client, 'invalidateQueries'); await userEvent.click(screen.getByRole('button', { name: 'Novo tipo' })); await userEvent.type(screen.getByLabelText('Nome do tipo'), 'Novo'); await userEvent.click(screen.getByRole('button', { name: 'Salvar tipo' })); await waitFor(() => expect(spy).toHaveBeenCalledTimes(2)); expect(spy.mock.calls.map(c => c[0]?.queryKey)).toEqual([['tipos-planta'], ['dashboard']]) })
+it('cache de módulos independentes não é invalidado', async () => { const client = mount('/tipos-planta'); const spy = vi.spyOn(client, 'invalidateQueries'); await userEvent.click(await screen.findByRole('button', { name: 'Novo tipo' })); await userEvent.type(screen.getByLabelText('Nome do tipo'), 'Novo'); await userEvent.click(screen.getByRole('button', { name: 'Salvar tipo' })); await waitFor(() => expect(spy).toHaveBeenCalledTimes(2)); expect(spy.mock.calls.map(c => c[0]?.queryKey)).toEqual([['tipos-planta'], ['dashboard']]) })
 it('catálogo vazio bloqueia criação com orientação', async () => { data['/api/tipos-planta'] = []; mount('/vistorias'); await userEvent.click(screen.getByRole('button', { name: 'Nova vistoria' })); expect(await screen.findByText(/Cadastre o primeiro tipo ativo/)).toBeInTheDocument() })
