@@ -905,3 +905,7 @@ O registro intermediário acima é superado pela validação final desta entrega
 - Dados Pix em diálogo com chave mascarada, proteção contra envio duplicado e retorno de foco. Notificações e segurança acessíveis pela navegação da cliente.
 - Identidade A2 aplicada a login, indicação pública, pagamento e fluxos de conta, sem dependências adicionais ou alterações financeiras.
 - Aceite Chromium ampliado para persistência do Pix mascarado, autenticação da cliente, navegação, acessibilidade e reflow.
+
+## Centralização do login
+
+A altura mínima da viewport no próprio cartão, somada à margem vertical externa, podia causar rolagem desnecessária. O contêiner agora centraliza o cartão dentro da viewport e inclui o espaçamento nessa altura. A marca A2 Engenharia ganhou destaque somente no login.

@@ -95,3 +95,9 @@ Entre em `/login` com uma conta de cliente para abrir `/minha-conta`. O cabeçal
 O link público pode ser copiado ou compartilhado pela função nativa do dispositivo, quando disponível. Se a cópia falhar, o campo seleciona o link para cópia manual. Cada cashback exibe seu estado e o da ordem Pix. O resumo soma os valores persistidos classificados como pendentes, disponíveis e pagos, excluindo cancelados e estados desconhecidos. O formulário de Dados Pix apresenta a máscara devolvida pela API e nunca preenche a chave anterior.
 
 Login, indicação pública, pagamento e recuperação, redefinição e confirmação da conta compartilham a identidade local da A2. O portal mantém seu chunk separado. O logout encerra a sessão no navegador e a troca de senha invalida as sessões anteriores no servidor.
+
+### Layout do login
+
+A margem vertical do cartão se somava à altura mínima da viewport e podia gerar rolagem com espaço sobrando. Agora a página usa `100dvh` com fallback em `100vh` e inclui o espaçamento no contêiner. O cartão mantém até 72rem, duas colunas acima de 760px e uma coluna nas telas menores. A marca do login usa `clamp()`, com A2 entre 2 e 3rem e Engenharia entre 1 e 1,25rem.
+
+O aceite Chromium verifica 1920 × 991, 1920 × 1080, 1366 × 768, 1280 × 720, 768 × 1024, 390 × 844, 360 × 800 e 320 × 568. Em viewport baixa e com zoom de 200%, a rolagem permite alcançar o botão Entrar e o link de recuperação pelo teclado.

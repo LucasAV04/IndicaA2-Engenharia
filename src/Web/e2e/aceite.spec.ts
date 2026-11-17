@@ -50,6 +50,58 @@ test.beforeEach(async ({ context }) => {
 
 test.afterEach(({ context }) => expect(requestsExternas.get(context)).toHaveLength(0))
 
+test('login centralizado com reflow em telas baixas e zoom', async ({ page }) => {
+  test.skip(process.env.INDICAA2_UI_PHASE === 'restart')
+  const tamanhos = [[1920, 991], [1920, 1080], [1366, 768], [1280, 720],
+    [768, 1024], [390, 844], [360, 800], [320, 568]]
+  await page.goto('/login')
+  const cartao = page.locator('.login-card')
+  const entrar = page.getByRole('button', { name: 'Entrar', exact: true })
+  const recuperar = page.getByRole('link', { name: 'Esqueci minha senha' })
+  await expect(cartao.getByText('A2', { exact: true })).toBeVisible()
+  await expect(cartao.getByText('Engenharia', { exact: true })).toBeVisible()
+  for (const [width, height] of tamanhos) {
+    await page.setViewportSize({ width, height })
+    const medidas = await cartao.evaluate(el => {
+      const r = el.getBoundingClientRect()
+      const raiz = document.documentElement
+      return {
+        horizontal: raiz.scrollWidth - raiz.clientWidth,
+        vertical: raiz.scrollHeight - raiz.clientHeight,
+        centroX: (r.left + r.right - raiz.clientWidth) / 2,
+        centroY: (r.top + r.bottom - raiz.clientHeight) / 2,
+        topo: r.top,
+        colunas: getComputedStyle(el).gridTemplateColumns.split(' ').length,
+      }
+    })
+    expect(medidas.horizontal).toBeLessThanOrEqual(0)
+    expect(Math.abs(medidas.centroX)).toBeLessThanOrEqual(1)
+    expect(medidas.topo).toBeGreaterThan(0)
+    expect(medidas.colunas).toBe(width > 760 ? 2 : 1)
+    if (width >= 768) expect(medidas.vertical).toBeLessThanOrEqual(0)
+    if (medidas.vertical <= 0) expect(Math.abs(medidas.centroY)).toBeLessThanOrEqual(1)
+  }
+
+  await page.setViewportSize({ width: 640, height: 420 })
+  await page.evaluate(() => { document.documentElement.style.zoom = '2' })
+  const dimensoes = await page.evaluate(() => {
+    const raiz = document.documentElement
+    return { zoom: getComputedStyle(raiz).zoom, horizontal: raiz.scrollWidth - raiz.clientWidth, vertical: raiz.scrollHeight - raiz.clientHeight }
+  })
+  expect(dimensoes.zoom).toBe('2')
+  expect(dimensoes.horizontal).toBeLessThanOrEqual(0)
+  expect(dimensoes.vertical).toBeGreaterThan(0)
+  await page.getByLabel('Senha', { exact: true }).focus()
+  await page.keyboard.press('Tab')
+  await expect(entrar).toBeFocused()
+  await expect(entrar).toBeInViewport()
+  await page.keyboard.press('Tab')
+  await expect(recuperar).toBeFocused()
+  await expect(recuperar).toBeInViewport()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('heading', { name: 'Esqueci minha senha' })).toBeVisible()
+})
+
 test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   test.skip(process.env.INDICAA2_UI_PHASE === 'restart')
   test.setTimeout(95_000)
@@ -229,6 +281,7 @@ test('dados fictícios após reiniciar a API', async ({ page }) => {
   await page.getByLabel('Nova senha').fill(novaSenha)
   await page.getByRole('button', { name: 'Alterar senha' }).click()
   await expect(page).toHaveURL(/\/login$/)
+  await expect(page.getByText('Senha alterada. Entre novamente.')).toBeVisible()
   await outraSessao.reload()
   await expect(outraSessao).toHaveURL(/\/login$/)
   await outraSessao.close()

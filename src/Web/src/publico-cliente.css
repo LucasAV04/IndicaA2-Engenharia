@@ -25,24 +25,50 @@
   padding: clamp(1rem, 5vw, 2.5rem);
 }
 .publico-superficie h1 { font-size: clamp(1.55rem, 4vw, 2.3rem); letter-spacing: -.035em; }
-.publico-superficie a, .login-cliente a { color: #0F2F4E; text-underline-offset: .18em; }
-.publico-superficie button, .login-cliente button { min-height: 44px; }
+.publico-superficie a, .login-card a { color: #0F2F4E; text-underline-offset: .18em; }
+.publico-superficie button, .login-card button { min-height: 44px; }
 .publico-indicacao label { margin-top: 1rem; }
 .publico-indicacao form section { background: #F1F3F5; margin-block: 1rem; padding: 1rem; border-radius: .7rem; }
 .publico-indicacao input[type=checkbox] { width: auto; margin-inline-end: .5rem; }
 .publico-pagamento { max-width: 34rem; }
 .publico-pagamento svg { width: min(100%, 240px); height: auto; display: block; }
 .publico-pagamento textarea { width: 100%; min-height: 5rem; overflow-wrap: anywhere; }
-.login-cliente { width: min(100% - 2rem, 72rem); min-height: 0; margin: clamp(1rem, 7vw, 5rem) auto; padding: 0; background: #fff; border: 1px solid #d9e1e8; border-radius: 1.15rem; }
-.login-cliente .login-intro {
+.login-page {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(1rem, 3vh, 2rem) 1rem;
+}
+.login-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  width: 100%;
+  max-width: 72rem;
+  margin: auto;
+  background: #fff;
+  border: 1px solid #d9e1e8;
+  border-radius: 1.15rem;
+}
+.login-intro {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: #fff;
   background: radial-gradient(ellipse at top right, #3A5A78, transparent 72%), #0F2F4E;
   border-radius: 1.1rem 0 0 1.1rem;
   padding: clamp(1.35rem, 6vw, 4rem);
 }
-.login-cliente .login-intro .cliente-marca { margin-bottom: 1.3rem; }
-.login-cliente .login-intro h1 { font-size: clamp(1.55rem, 4vw, 3rem); letter-spacing: -.04em; }
-.login-cliente .login-intro p:last-child { display: block; }
-.login-cliente .login-form { padding: clamp(1.25rem, 5vw, 3rem); }
+.login-intro .cliente-marca { gap: .55rem; margin-bottom: 1.15rem; }
+.login-intro .cliente-marca strong { font-size: clamp(2rem, 1.65rem + 1.1vw, 3rem); line-height: 1; }
+.login-intro .cliente-marca span { font-size: clamp(1rem, .9rem + .35vw, 1.25rem); }
+.login-intro h1 { font-size: clamp(1.55rem, 4vw, 3rem); letter-spacing: -.04em; }
+.login-intro p { color: #d4dee7; max-width: 430px; }
+.login-form { align-self: center; width: 100%; max-width: 470px; margin-inline: auto; padding: clamp(1.25rem, 5vw, 3rem); }
+.login-form h2 { font-size: 1.7rem; }
+.login-form .primary { width: 100%; margin: 1rem 0; }
 @media (max-width: 760px) {
-  .login-cliente .login-intro { border-radius: 1.1rem 1.1rem 0 0; }
+  .login-card { grid-template-columns: minmax(0, 1fr); }
+  .login-intro { border-radius: 1.1rem 1.1rem 0 0; }
 }
