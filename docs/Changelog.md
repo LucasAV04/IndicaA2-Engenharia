@@ -897,3 +897,11 @@ O registro intermediário acima é superado pela validação final desta entrega
 - Abertura simplificada com Open, atalhos Windows, orientação inicial e operação responsiva.
 - Rótulos por domínio, ajustes de acessibilidade, prevenção de duplo submit nos formulários administrativos principais, divisão do bundle e recuperação de erros de tela.
 - Aceite Chromium e axe no Compose descartável, com migrations reais e limpeza do perfil.
+
+
+## Experiência da cliente
+
+- Portal com cabeçalho próprio, resumo de indicações e valores por estado, compartilhamento e listas acessíveis.
+- Dados Pix em diálogo com chave mascarada, proteção contra envio duplicado e retorno de foco. Notificações e segurança acessíveis pela navegação da cliente.
+- Identidade A2 aplicada a login, indicação pública, pagamento e fluxos de conta, sem dependências adicionais ou alterações financeiras.
+- Aceite Chromium ampliado para persistência do Pix mascarado, autenticação da cliente, navegação, acessibilidade e reflow.

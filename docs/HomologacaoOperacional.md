@@ -91,3 +91,10 @@ pwsh -NoProfile -File ./scripts/Invoke-Homologation.ps1 -Action UiSmoke -Disposa
 O aceite descarta containers, rede, volume, credenciais e saída temporária. Smoke, EmailSmoke e UiSmoke compartilham a porta 18443 entre si e rodam em sequência. O CI constrói a imagem no Smoke e a reutiliza nos dois testes seguintes. O UiSmoke cobre `Open -NoBrowser` em um perfil descartável e verifica a persistência após reinício da API.
 
 No painel vazio, use os seis passos da visão geral para cadastrar catálogo, publicar preços definidos pela A2, localizar clientes, criar vistorias e acompanhar pagamentos, indicações e cashback. Os dados de teste são exclusivamente fictícios. O aceite local termina antes de qualquer confirmação que dependa de um provedor. Preços oficiais, contas de provedores, comunicação externa, domínio, certificado público, retenção e implantação continuam sujeitos a decisão da A2.
+
+
+### Aceite da área da cliente
+
+O `UiSmoke -Disposable -UseBuiltImage` usa a aplicação compilada e o MySQL descartável. O Chromium confere código e link de indicação, cópia e abertura do link, menu por teclado, cadastro fictício de Dados Pix, máscara após recarga e reinício da API, notificações, segurança e acesso bloqueado a relatórios administrativos. A senha temporária da cliente é usada entre fases em arquivo do perfil descartável, removido no `finally`. A saída continua sanitizada e screenshots, vídeos e traces ficam desativados.
+
+A matriz cobre 320, 360, 390, 768, 1280 e 1440 px e verifica que a página não precisa de rolagem horizontal. O axe verifica login, indicação pública, pagamento, fluxos públicos de conta, portal móvel e desktop e diálogo Pix. O caso preenchido usa dados fictícios interceptados no navegador para avaliar estados, textos longos e reflow com zoom.

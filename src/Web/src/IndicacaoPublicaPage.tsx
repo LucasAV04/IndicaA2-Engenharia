@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ErrorBox } from './components'
+import { PublicoCliente } from './PublicoCliente'
 
 const schema = z.object({ nome: z.string().trim().min(2).max(150), telefone: z.string().trim().min(10).max(30), consentimento: z.boolean().refine(v => v, 'O consentimento é obrigatório.') })
 const termo = '2026-10-01'
@@ -57,15 +58,15 @@ function FormularioIndicacao({ codigo }: { codigo: string }) {
       reset({ nome: '', telefone: '', consentimento: false })
     } catch { setErro('Não foi possível iniciar outra indicação nesta sessão.') }
   }
-  return <main tabIndex={-1} className="public-referral panel"><h1>Indicar uma pessoa</h1>
+  return <PublicoCliente title="Indicar uma pessoa" categoria="Programa de indicações" variante="indicacao">
     {protocolo ? <section role="status"><h2>Indicação recebida</h2><p>Guarde o protocolo: <strong className="opaque-protocol">{protocolo}</strong></p><p>Nenhuma conta foi criada automaticamente.</p><button type="button" onClick={novaIndicacao}>Cadastrar outra indicação</button>{erro && <ErrorBox message={erro} />}</section>
       : query.isPending ? <p role="status">Verificando link…</p> : query.isError || !query.data?.utilizavel ? <ErrorBox message="Link indisponível." />
         : <form onSubmit={handleSubmit(enviar)}>
-          <label htmlFor="indicada-nome">Nome da pessoa indicada</label><input id="indicada-nome" autoComplete="off" maxLength={150} {...register('nome')} />{errors.nome && <p role="alert">Informe um nome válido.</p>}
-          <label htmlFor="indicada-telefone">Telefone</label><input id="indicada-telefone" type="tel" autoComplete="off" maxLength={30} {...register('telefone')} />{errors.telefone && <p role="alert">Informe um telefone válido.</p>}
+          <label htmlFor="indicada-nome">Nome da pessoa indicada</label><input id="indicada-nome" autoComplete="off" maxLength={150} aria-invalid={!!errors.nome} aria-describedby={errors.nome ? 'indicada-nome-erro' : undefined} {...register('nome')} />{errors.nome && <p id="indicada-nome-erro" role="alert">Informe um nome válido.</p>}
+          <label htmlFor="indicada-telefone">Telefone</label><input id="indicada-telefone" type="tel" autoComplete="off" maxLength={30} aria-invalid={!!errors.telefone} aria-describedby={errors.telefone ? 'indicada-telefone-erro' : undefined} {...register('telefone')} />{errors.telefone && <p id="indicada-telefone-erro" role="alert">Informe um telefone válido.</p>}
           <section aria-label="Consentimento e privacidade"><h2>Consentimento e privacidade</h2><p>O nome e telefone informados serão usados pela A2 para atender esta indicação e acompanhar a vistoria. Não cadastre dados sem autorização da pessoa indicada. Este formulário não cria conta nem dispara mensagens externas.</p><p>Versão do termo: {termo}</p>
-            <label htmlFor="consentimento"><input id="consentimento" type="checkbox" {...register('consentimento')} />Confirmo a autorização para compartilhar estes dados e aceito seu uso para atender a indicação.</label>{errors.consentimento && <p role="alert">{errors.consentimento.message}</p>}
+            <label htmlFor="consentimento"><input id="consentimento" type="checkbox" aria-invalid={!!errors.consentimento} aria-describedby={errors.consentimento ? 'indicada-consentimento-erro' : undefined} {...register('consentimento')} />Confirmo a autorização para compartilhar estes dados e aceito seu uso para atender a indicação.</label>{errors.consentimento && <p id="indicada-consentimento-erro" role="alert">{errors.consentimento.message}</p>}
           </section>{erro && <ErrorBox message={erro} />}<button className="primary" disabled={isSubmitting}>{isSubmitting ? 'Enviando…' : 'Enviar indicação'}</button>
         </form>}
-  </main>
+  </PublicoCliente>
 }

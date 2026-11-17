@@ -1642,3 +1642,20 @@ Restore e build .NET aprovados, com 691 testes direcionados, 872 testes na suít
 O Chromium passou pela jornada operacional, pela verificação em 360, 768 e 1280 px e pela conferência de persistência após reiniciar a API. O axe encontrou zero violações sérias ou críticas nas páginas verificadas. Foram usados dados fictícios, MySQL descartável e Mailpit interno.
 
 Smoke e EmailSmoke passaram, incluindo backup e restauração e entrega fictícia no Mailpit. Open sem navegador confirmou readiness na porta 8443 com o volume persistente preservado. O descarte deixou zero containers, redes, volumes ou diretório privado do smoke.
+
+
+## Experiência da cliente
+
+A visão geral, o cartão de indicação, o resumo e as listas usam os contratos vigentes de Minha conta. O estado registrado de um cashback e o estado da ordem Pix aparecem juntos, com explicações independentes. O total pago inclui somente cashback com estado persistido Pago. O portal não deduz conversão, andamento de vistoria ou etapas intermediárias que o contrato da indicação não devolve.
+
+Dados Pix abre um diálogo com campo de senha vazio e exige uma nova chave. A interface usa a máscara retornada pelo servidor. As telas públicas mantêm a captura e a remoção de fragmentos, e os formulários de autenticação mantêm mensagens controladas. Nenhum endpoint, enum financeiro, worker, migration ou dependência de produção foi alterado.
+
+O Playwright cobre a jornada real com uma cliente fictícia, inclusive cópia do link, Dados Pix mascarados, recarga, reinício da API, logout e invalidação de uma sessão anterior por troca de senha. Cenários de erro, nomes longos e vários estados de cashback têm fixtures visuais separadas, sem transações financeiras.
+
+### Bundle e validação
+
+O maior chunk continua sendo o JavaScript inicial. Ele passou de 425,68 kB para 426,24 kB (gzip de 134,04 para 134,18 kB). O chunk JavaScript de `/minha-conta` passou de 3,25 kB para 12,55 kB (gzip de 1,23 para 4,07 kB). O CSS do portal carrega com a rota e tem 4,52 kB (1,40 kB gzip). O build não gerou source maps.
+
+As regressões passaram em 290 testes .NET direcionados, 872 na suíte rápida e 270 integrações MySQL. O frontend passou no lint, TypeScript, build e em 124 testes. A auditoria de produção registrou zero vulnerabilidades. A instalação completa registrou 13 alertas de desenvolvimento (11 moderados e 2 altos).
+
+Smoke, EmailSmoke e UiSmoke passaram. O navegador verificou os seis viewports e o reflow com zoom de 200%, sem violações axe sérias ou críticas nas páginas verificadas. O descarte deixou zero containers, redes, volumes ou diretório privado de teste e preservou o perfil persistente. As integrações Efí, OAuth, Pix e SMTP externo não foram chamadas.

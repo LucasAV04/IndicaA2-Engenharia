@@ -86,3 +86,12 @@ O login oferece recuperação de senha. O frontend recebe os links de conta por 
 O painel apresenta Primeiros passos a partir das contagens da API. Os estados visíveis são traduzidos por domínio. O menu se recolhe após navegação em tela pequena, as tabelas largas usam regiões roláveis com foco e a aplicação oferece link para pular ao conteúdo, foco de navegação e avisos de formulário. As rotas administrativas e públicas são carregadas sob demanda. O QR Code só pertence ao fluxo de pagamento.
 
 Depois de `npm ci`, instale o Chromium com `npx playwright install chromium`. Partindo da raiz, execute `pwsh -NoProfile -File ./scripts/Invoke-Homologation.ps1 -Action UiSmoke -Disposable`. Playwright e axe são dependências somente de desenvolvimento. A execução usa site compilado em HTTPS, API e MySQL descartáveis. Os diagnósticos exibem apenas o estado e a linha do teste, com vídeo, captura de tela e trace desabilitados.
+
+
+### Área da cliente
+
+Entre em `/login` com uma conta de cliente para abrir `/minha-conta`. O cabeçalho próprio agrupa Visão geral, Indicações, Cashbacks, Dados Pix, Notificações e Segurança. Os links preservam a seção na URL. No celular, Menu abre as opções, e Escape fecha e volta o foco ao botão.
+
+O link público pode ser copiado ou compartilhado pela função nativa do dispositivo, quando disponível. Se a cópia falhar, o campo seleciona o link para cópia manual. Cada cashback exibe seu estado e o da ordem Pix. O resumo soma os valores persistidos classificados como pendentes, disponíveis e pagos, excluindo cancelados e estados desconhecidos. O formulário de Dados Pix apresenta a máscara devolvida pela API e nunca preenche a chave anterior.
+
+Login, indicação pública, pagamento e recuperação, redefinição e confirmação da conta compartilham a identidade local da A2. O portal mantém seu chunk separado. O logout encerra a sessão no navegador e a troca de senha invalida as sessões anteriores no servidor.

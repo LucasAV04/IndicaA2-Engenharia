@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -12,13 +12,18 @@ type Request = { path: string; method: string; body: Record<string, unknown> | n
 let requests: Request[]
 let dados: Record<string, unknown>
 let statusPost: number
+let respostas: Record<string, () => Response | Promise<Response>>
 const resposta = (body: unknown, status = 200) => new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 beforeEach(() => {
-  saveSession(null); sessionStorage.clear(); requests = []; statusPost = 200
+  saveSession(null); sessionStorage.clear(); requests = []; statusPost = 200; respostas = {}
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', '') }
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute('open') }
   dados = { '/api/public/indicacoes/codigos/ABCD1234': { utilizavel: true }, '/api/minha-conta': { nome: 'Cliente fictícia', codigo: 'ABCD1234', link: 'https://example.invalid/indicar/ABCD1234' }, '/api/minha-conta/indicacoes': [{ nome: 'Pessoa', telefoneMascarado: '••••00', status: 4, criadaEm: '2026-10-01T12:00:00Z' }], '/api/minha-conta/cashbacks': [{ valor: 100.01, status: 2, situacaoPix: 2 }], '/api/minha-conta/dados-pix': { tipoChavePix: 2, chaveMascarada: '••••••••' }, '/api/notificacoes': [{ id: 'aviso-1', tipo: 4, criadaEm: '2026-10-01T12:00:00Z', lidaEm: null }] }
   vi.stubGlobal('fetch', vi.fn(async (path: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET'; requests.push({ path, method, body: init.body ? JSON.parse(String(init.body)) : null, headers: init.headers })
     if (path === '/api/public/indicacoes' && method === 'POST') return resposta(statusPost === 200 ? { protocolo: 'a'.repeat(64) } : { detail: 'SEGREDO_FICTICIO_NAO_EXIBIR' }, statusPost)
+    const personalizada = respostas[method + ' ' + path]
+    if (personalizada) return personalizada()
     if (method !== 'GET') return resposta(null, 204)
     return resposta(dados[path] ?? [])
   }))
@@ -119,14 +124,14 @@ it('códigos diferentes não compartilham chave nem protocolo', async () => {
   expect(a.chave).not.toBe(b.chave)
 })
 it('portal exibe apenas listas próprias e máscaras sem menu administrativo', async () => {
-  montar('/minha-conta', sessao); await screen.findByText(/Pessoa • ••••00/)
+  montar('/minha-conta', sessao); await screen.findByText('••••00')
   expect(screen.getByText('••••••••')).toBeInTheDocument()
   expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument()
   expect(requests.every(r => r.path.startsWith('/api/minha-conta') || r.path === '/api/notificacoes')).toBe(true)
   expect(document.body).toHaveTextContent('Cashback pago')
 })
 it('cópia utiliza link retornado pelo servidor', async () => {
-  const user = userEvent.setup(); montar('/minha-conta', sessao); await screen.findByText('Código: ABCD1234')
+  const user = userEvent.setup(); montar('/minha-conta', sessao); await screen.findByDisplayValue('https://example.invalid/indicar/ABCD1234')
   const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
   await user.click(screen.getByRole('button', { name: 'Copiar link' })); expect(copy).toHaveBeenCalledWith('https://example.invalid/indicar/ABCD1234')
   expect(await screen.findByText('Link copiado.')).toBeInTheDocument()
@@ -146,10 +151,135 @@ it('notificação marca somente a referência autenticada', async () => {
   expect(requests.filter(r => r.path === '/api/minha-conta/cashbacks')).toHaveLength(1)
 })
 it('troca de sessão remove cache e estado da pessoa anterior', async () => {
-  const { cache } = montar('/minha-conta', sessao); await screen.findByText(/Pessoa • ••••00/)
+  const { cache } = montar('/minha-conta', sessao); await screen.findByText('••••00')
   dados['/api/minha-conta/indicacoes'] = []; dados['/api/minha-conta'] = { nome: 'Outra cliente', codigo: 'EFGH5678', link: 'https://example.invalid/indicar/EFGH5678' }
   await act(async () => saveSession({ ...sessao, usuarioId: 'usuario-b' }))
-  await screen.findByText('Olá, Outra cliente'); expect(screen.queryByText(/Pessoa • ••••00/)).not.toBeInTheDocument()
+  await screen.findByText('Olá, Outra cliente'); expect(screen.queryByText('••••00')).not.toBeInTheDocument()
   expect(cache.getQueryCache().getAll().some(q => q.queryKey.includes('usuario-a'))).toBe(false)
   fireEvent.click(screen.getByRole('button', { name: 'Sair' })); await screen.findByRole('button', { name: 'Entrar' }); expect(cache.getQueryCache().getAll()).toHaveLength(0)
+})
+
+it('portal vazio oferece acesso ao compartilhamento e cadastro da chave', async () => {
+  dados['/api/minha-conta/indicacoes'] = []
+  dados['/api/minha-conta/cashbacks'] = []
+  dados['/api/minha-conta/dados-pix'] = null
+  respostas['GET /api/minha-conta/dados-pix'] = () => resposta(null, 204)
+  dados['/api/notificacoes'] = []
+  montar('/minha-conta', sessao)
+  expect(await screen.findByText('Nenhuma indicação por enquanto.')).toBeVisible()
+  expect(screen.getByRole('link', { name: 'Ir para meu link' })).toHaveAttribute('href', '#compartilhar')
+  expect(screen.getByText('Nenhum cashback registrado.')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Cadastrar Dados Pix' })).toBeVisible()
+  expect(screen.getByText('Nenhuma notificação.')).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Marcar todas como lidas' })).not.toBeInTheDocument()
+})
+
+it('resumo usa os estados persistidos e exclui cancelados e estados desconhecidos', async () => {
+  dados['/api/minha-conta/cashbacks'] = [
+    { valor: 11, status: 0, situacaoPix: null },
+    { valor: 14, status: 1, situacaoPix: 3 },
+    { valor: 41, status: 2, situacaoPix: 2 },
+    { valor: 80, status: 3, situacaoPix: 5 },
+    { valor: 90, status: 99, situacaoPix: 99 },
+  ]
+  montar('/minha-conta', sessao)
+  const resumo = within(await screen.findByRole('region', { name: 'Seu resumo' }))
+  const valor = (nome: string) => resumo.getByText(nome).nextElementSibling
+  await waitFor(() => expect(valor('Valor pendente')).toHaveTextContent(/R\$\s*11,00/))
+  expect(valor('Valor disponível')).toHaveTextContent(/R\$\s*14,00/)
+  expect(valor('Valor pago')).toHaveTextContent(/R\$\s*41,00/)
+  expect(valor('Indicações registradas')).toHaveTextContent('1')
+  const lista = within(screen.getByRole('region', { name: 'Meus cashbacks' }))
+  expect(lista.getByText('Falhou')).toHaveClass('atencao')
+  expect(lista.getAllByText('Cancelado')).toHaveLength(2)
+  expect(lista.getAllByText('Estado não reconhecido')).toHaveLength(2)
+  expect(lista.getByText('Sem ordem Pix')).toBeVisible()
+})
+
+it('mostra carregamento e permite nova tentativa após erro de consulta', async () => {
+  let resolver!: (response: Response) => void
+  const primeiraConsulta = new Promise<Response>(resolve => { resolver = resolve })
+  respostas['GET /api/minha-conta/indicacoes'] = vi.fn()
+    .mockReturnValueOnce(primeiraConsulta).mockImplementation(() => resposta([]))
+  montar('/minha-conta', sessao)
+  expect(await screen.findByText('Carregando indicações…')).toBeVisible()
+  resolver(resposta({ detail: 'CONTEUDO_PRIVADO' }, 500))
+  const secao = within(screen.getByRole('region', { name: 'Minhas indicações' }))
+  await userEvent.click(await secao.findByRole('button', { name: 'Tentar novamente' }))
+  expect(await secao.findByText('Nenhuma indicação por enquanto.')).toBeVisible()
+  expect(document.body).not.toHaveTextContent('CONTEUDO_PRIVADO')
+})
+
+it('permite copiar manualmente quando o Clipboard API falha e omite share indisponível', async () => {
+  const user = userEvent.setup()
+  vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('bloqueado'))
+  montar('/minha-conta', sessao)
+  await user.click(await screen.findByRole('button', { name: 'Copiar link' }))
+  expect(await screen.findByText(/Link selecionado/)).toBeVisible()
+  const link = screen.getByLabelText('Link público de indicação') as HTMLInputElement
+  expect(link).toHaveFocus()
+  expect(link.selectionEnd).toBe(link.value.length)
+  expect(screen.queryByRole('button', { name: 'Compartilhar' })).not.toBeInTheDocument()
+})
+
+it('compartilha por ação explícita quando o dispositivo oferece share', async () => {
+  const share = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'share', { configurable: true, value: share })
+  try {
+    montar('/minha-conta', sessao)
+    const botao = await screen.findByRole('button', { name: 'Compartilhar' })
+    expect(share).not.toHaveBeenCalled()
+    await userEvent.click(botao)
+    expect(share).toHaveBeenCalledWith(expect.objectContaining({ url: dadosLink }))
+    expect(await screen.findByText('Link compartilhado.')).toBeVisible()
+  } finally {
+    Reflect.deleteProperty(navigator, 'share')
+  }
+})
+
+const dadosLink = 'https://example.invalid/indicar/ABCD1234'
+
+it('restaura o foco ao cancelar Dados Pix e bloqueia novo envio durante a gravação', async () => {
+  const user = userEvent.setup()
+  let resolver!: (response: Response) => void
+  respostas['PUT /api/minha-conta/dados-pix'] = () => new Promise(resolve => { resolver = resolve })
+  montar('/minha-conta', sessao)
+  const abrir = await screen.findByRole('button', { name: 'Atualizar Dados Pix' })
+  await user.click(abrir)
+  const dialogo = screen.getByRole('dialog')
+  expect(dialogo).toContainElement(document.activeElement as HTMLElement)
+  await user.click(within(dialogo).getByRole('button', { name: 'Cancelar' }))
+  expect(abrir).toHaveFocus()
+  await user.click(abrir)
+  await user.selectOptions(screen.getByLabelText('Tipo de chave'), '2')
+  await user.type(screen.getByLabelText('Nova chave Pix'), 'pix-teste@example.invalid')
+  await user.dblClick(screen.getByRole('button', { name: 'Salvar' }))
+  expect(requests.filter(r => r.method === 'PUT')).toHaveLength(1)
+  expect(screen.getByRole('button', { name: 'Salvando…' })).toBeDisabled()
+  resolver(resposta(null, 204))
+  expect(await screen.findByText('Dados Pix salvos.')).toBeVisible()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  expect(document.body).not.toHaveTextContent(/pix-teste@example.invalid|jwt-ficticio/)
+})
+
+it('navega pelo menu da cliente com teclado e restaura o foco ao fechar', async () => {
+  const user = userEvent.setup()
+  const nome = 'Cliente ' + 'MuitoLongo'.repeat(15)
+  dados['/api/minha-conta'] = { nome, codigo: 'ABCD1234', link: dadosLink }
+  montar('/minha-conta', sessao)
+  expect(await screen.findByRole('heading', { name: 'Olá, ' + nome })).toBeVisible()
+  const menu = screen.getByRole('button', { name: 'Menu' })
+  menu.focus()
+  await user.keyboard('{Enter}')
+  expect(menu).toHaveAttribute('aria-expanded', 'true')
+  const seguranca = within(screen.getByRole('navigation', { name: 'Navegação da cliente' })).getByRole('link', { name: 'Segurança' })
+  seguranca.focus()
+  await user.keyboard('{Escape}')
+  expect(menu).toHaveFocus()
+  expect(menu).toHaveAttribute('aria-expanded', 'false')
+  await user.keyboard('{Enter}')
+  seguranca.focus()
+  await user.keyboard('{Enter}')
+  expect(document.getElementById('seguranca')).toHaveFocus()
+  expect(menu).toHaveAttribute('aria-expanded', 'false')
 })

@@ -1,30 +1,54 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api, readSession, saveSession } from './api'
+import { api, readSession } from './api'
 import { ErrorBox } from './components'
-import { money, utcDate } from './format'
-import { estadosIndicacao, estadosCashback, estadosPix, rotulo } from './estados'
-import OperationForm from './OperationForm'
+import { PortalHeader, ResumoPortal, CartaoIndicacao, ListaIndicacoes, ListaCashbacks } from './PortalCliente'
+import type { Perfil, Indicacao, Cashback } from './PortalCliente'
+import { DadosPixPortal } from './DadosPixPortal'
 import NotificacoesPanel from './NotificacoesPanel'
 import { SegurancaConta } from './SegurancaConta'
+import './portal-cliente.css'
 
-type Perfil = { nome: string; codigo: string; link: string }
-type Indicacao = { nome: string; telefoneMascarado: string; status: number; criadaEm: string }
-type Cashback = { valor: number; status: number; situacaoPix: number | null; criadoEm: string }
 export default function MinhaContaPage() {
-  const usuario = readSession()?.usuarioId ?? ''
-  const [copiado, setCopiado] = useState(false)
-  const [editar, setEditar] = useState(false)
+  const sessao = readSession()
+  const usuario = sessao?.usuarioId ?? ''
   const perfil = useQuery({ queryKey: ['portal', usuario, 'perfil'], queryFn: () => api<Perfil>('/minha-conta') })
   const indicacoes = useQuery({ queryKey: ['portal', usuario, 'indicacoes'], queryFn: () => api<Indicacao[]>('/minha-conta/indicacoes') })
   const cashbacks = useQuery({ queryKey: ['portal', usuario, 'cashbacks'], queryFn: () => api<Cashback[]>('/minha-conta/cashbacks') })
-  const dados = useQuery({ queryKey: ['portal', usuario, 'dados-pix'], queryFn: () => api<{ tipoChavePix: number; chaveMascarada: string } | null>('/minha-conta/dados-pix') })
-  return <main tabIndex={-1} className="portal"><header className="page-heading"><h1>Minha conta</h1><button onClick={() => saveSession(null)}>Sair</button></header>
-    <section className="panel"><h2>Meu link de indicação</h2>{perfil.isPending ? <p role="status">Carregando perfil…</p> : perfil.isError ? <ErrorBox retry={() => void perfil.refetch()} /> : <><p>Olá, {perfil.data.nome}</p><p>Código: {perfil.data.codigo}</p><p className="opaque-protocol">{perfil.data.link}</p><button onClick={() => { void navigator.clipboard.writeText(perfil.data.link).then(() => setCopiado(true)).catch(() => setCopiado(false)) }}>Copiar link</button>{copiado && <p role="status">Link copiado.</p>}</>}</section>
-    <section className="panel"><h2>Minhas indicações</h2>{indicacoes.isPending ? <p role="status">Carregando indicações…</p> : indicacoes.isError ? <ErrorBox retry={() => void indicacoes.refetch()} /> : !indicacoes.data.length ? <p>Nenhuma indicação.</p> : <ul>{indicacoes.data.map((i, index) => <li key={index}>{i.nome} • {i.telefoneMascarado} • {rotulo(estadosIndicacao, i.status)} • {utcDate(i.criadaEm)}</li>)}</ul>}</section>
-    <section className="panel"><h2>Meus cashbacks</h2>{cashbacks.isPending ? <p role="status">Carregando cashbacks…</p> : cashbacks.isError ? <ErrorBox retry={() => void cashbacks.refetch()} /> : !cashbacks.data.length ? <p>Nenhum cashback.</p> : <ul>{cashbacks.data.map((c, index) => <li key={index}>{money(c.valor)} • {rotulo(estadosCashback, c.status)} • Pix: {c.situacaoPix === null ? 'Aguardando preparação' : rotulo(estadosPix, c.situacaoPix)}</li>)}</ul>}</section>
-    <section className="panel"><h2>Meus Dados Pix</h2>{dados.isPending ? <p role="status">Carregando Dados Pix…</p> : dados.isError ? <ErrorBox retry={() => void dados.refetch()} /> : <><p>{dados.data?.chaveMascarada ?? 'Cadastre seus Dados Pix para receber cashback.'}</p><button onClick={() => setEditar(true)}>{dados.data ? 'Atualizar Dados Pix' : 'Cadastrar Dados Pix'}</button></>}
-      {editar && <OperationForm lists={{}} invalidateKeys={[[ 'portal', usuario, 'dados-pix' ]]} done={() => setEditar(false)} operation={{ label: 'Salvar Dados Pix', method: 'PUT', path: () => '/minha-conta/dados-pix', fields: [{ name: 'tipoChavePix', label: 'Tipo de chave', options: ['CPF', 'CNPJ', 'E-mail', 'Telefone', 'Aleatória'] }, { name: 'chavePix', label: 'Nova chave Pix', type: 'password' }] }} />}
-    </section><SegurancaConta /><NotificacoesPanel />
-  </main>
+
+  return <div className="cliente">
+    <PortalHeader nome={perfil.data?.nome ?? sessao?.nome} />
+    <main id="conteudo" tabIndex={-1} className="cliente-conteudo">
+      <section id="visao-geral" className="cliente-hero" tabIndex={-1} aria-labelledby="cliente-titulo">
+        <p className="cliente-selo">Programa de indicações</p>
+        <h1 id="cliente-titulo">{perfil.data ? 'Olá, ' + perfil.data.nome : 'Minha conta'}</h1>
+        <p>Compartilhe seu link com quem precisa de uma vistoria e acompanhe as indicações por aqui. O cashback só é pago após as confirmações do programa e do Pix.</p>
+        <a href="#compartilhar">Compartilhar minha indicação <span aria-hidden="true">↘</span></a>
+      </section>
+      <ResumoPortal indicacoes={indicacoes.data} cashbacks={cashbacks.data} />
+      <section id="compartilhar" className="cliente-card cliente-compartilhar" tabIndex={-1} aria-labelledby="titulo-link">
+        <h2 id="titulo-link">Meu link de indicação</h2>
+        <p>Quem abrir o link poderá cadastrar uma indicação vinculada ao seu código.</p>
+        {perfil.isPending ? <p role="status">Carregando perfil…</p> : perfil.isError
+          ? <ErrorBox retry={() => void perfil.refetch()} /> : <CartaoIndicacao perfil={perfil.data} />}
+      </section>
+      <section id="indicacoes" className="cliente-card" tabIndex={-1} aria-labelledby="titulo-indicacoes">
+        <h2 id="titulo-indicacoes">Minhas indicações</h2>
+        <p>Acompanhe os registros associados ao seu link.</p>
+        {indicacoes.isPending ? <p role="status">Carregando indicações…</p> : indicacoes.isError
+          ? <ErrorBox retry={() => void indicacoes.refetch()} /> : <ListaIndicacoes itens={indicacoes.data} />}
+      </section>
+      <section id="cashbacks" className="cliente-card" tabIndex={-1} aria-labelledby="titulo-cashbacks">
+        <h2 id="titulo-cashbacks">Meus cashbacks</h2>
+        <p>Confira o valor registrado e, separadamente, a situação da ordem Pix.</p>
+        {cashbacks.isPending ? <p role="status">Carregando cashbacks…</p> : cashbacks.isError
+          ? <ErrorBox retry={() => void cashbacks.refetch()} /> : <ListaCashbacks itens={cashbacks.data} />}
+      </section>
+      <div className="cliente-servicos">
+        <DadosPixPortal usuario={usuario} />
+        <div id="notificacoes" tabIndex={-1}><NotificacoesPanel /></div>
+      </div>
+      <div id="seguranca" tabIndex={-1}><SegurancaConta /></div>
+    </main>
+    <footer className="cliente-rodape">A2 Engenharia · IndicA2</footer>
+  </div>
 }

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { money, utcDate } from './format'
+import { PublicoCliente } from './PublicoCliente'
 import { lerFragmentoPrivado, limparFragmentoPrivado } from './fragmentoPrivado'
 
 type Publica = { valor: number; status: number; venceEm: string | null; pixCopiaECola: string | null; confirmada: boolean }
@@ -72,7 +73,7 @@ export default function PagarPage() {
     if (!data?.pixCopiaECola) return
     try { await navigator.clipboard.writeText(data.pixCopiaECola); setCopiado(true) } catch { setCopiado(false) }
   }
-  return <main tabIndex={-1} className="portal panel"><h1>Pagamento de vistoria</h1><p>A2 Engenharia & Diagnóstico</p>
+  return <PublicoCliente title="Pagamento de vistoria" categoria="Consulta de pagamento" variante="pagamento">
     {error && <p role="alert">{error === 'transitorio' ? 'Atualização temporariamente indisponível. A consulta será retomada automaticamente.' : 'Não foi possível consultar este link. Solicite orientação à A2.'}</p>}
     {!data ? <p role="status">Consulte um link de pagamento válido fornecido pela A2.</p> : <>
       <h2>{money(data.valor)}</h2><p>Vencimento: {utcDate(data.venceEm)}</p><p role="status">{estados[data.status] || 'Conferência necessária'}</p>
@@ -80,5 +81,5 @@ export default function PagarPage() {
         <label htmlFor="codigoPix">Pix copia e cola</label><textarea id="codigoPix" readOnly value={data.pixCopiaECola} />
         <button onClick={() => void copiar()}>Copiar código Pix</button><p aria-live="polite">{copiado ? 'Código copiado.' : ''}</p></>}
     </>}
-  </main>
+  </PublicoCliente>
 }
