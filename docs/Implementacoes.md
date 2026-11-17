@@ -1659,3 +1659,14 @@ O maior chunk continua sendo o JavaScript inicial. Ele passou de 425,68 kB para 
 As regressões passaram em 290 testes .NET direcionados, 872 na suíte rápida e 270 integrações MySQL. O frontend passou no lint, TypeScript, build e em 124 testes. A auditoria de produção registrou zero vulnerabilidades. A instalação completa registrou 13 alertas de desenvolvimento (11 moderados e 2 altos).
 
 Smoke, EmailSmoke e UiSmoke passaram. O navegador verificou os seis viewports e o reflow com zoom de 200%, sem violações axe sérias ou críticas nas páginas verificadas. O descarte deixou zero containers, redes, volumes ou diretório privado de teste e preservou o perfil persistente. As integrações Efí, OAuth, Pix e SMTP externo não foram chamadas.
+
+
+## Identidade visual oficial da A2
+
+O frontend usa um componente tipado para usar a composição horizontal, vertical ou símbolo. O contraste vem da variante oficial fornecida para cada fundo. O painel administrativo mantém “Administração” em texto separado e alterna a composição por CSS nativo nas telas estreitas. O portal usa a variante horizontal clara. Login, indicação pública, pagamento, recuperação, redefinição e confirmação usam a horizontal escura. O cabeçalho da indicação também permanece no estado em que o protocolo é exibido.
+
+Os PNGs originais recebidos medem 2397 × 1330 px e foram preservados byte a byte. As cópias Web removem apenas margem transparente excedente, conservam respiro e usam dimensões proporcionais. As variantes horizontais oferecem 384 px e 768 px conforme a densidade. O símbolo oficial origina os favicons locais. A versão vertical clara fica disponível para uso futuro, e `Logo com Trinca.jpeg` fica fora da aplicação por conter fundo e decoração incorporados.
+
+O JavaScript inicial passou de 426,28 para 427,09 kB (gzip de 134,18 para 134,55 kB). O CSS inicial passou de 9,90 para 9,04 kB (gzip de 3,00 para 2,84 kB). Os PNGs são arquivos separados. O navegador carrega apenas a variante selecionada, e os originais não entram em `dist`.
+
+Restore e build .NET passaram, com 872 testes rápidos aprovados. O frontend passou em lint, TypeScript, build e 127 testes. A auditoria de produção retornou zero vulnerabilidades. Smoke e UiSmoke passaram, com favicon local verificado também no Vite de desenvolvimento. O Chromium validou os oito viewports do login, teclado, zoom de 200% e zero violações axe sérias ou críticas nas telas verificadas. O descarte deixou zero recursos temporários. A CSP continua bloqueando a sondagem opcional de JIT do Zod, e o aceite identifica esse diagnóstico conhecido separadamente.

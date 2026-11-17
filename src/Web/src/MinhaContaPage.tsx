@@ -4,6 +4,7 @@ import { ErrorBox } from './components'
 import { PortalHeader, ResumoPortal, CartaoIndicacao, ListaIndicacoes, ListaCashbacks } from './PortalCliente'
 import type { Perfil, Indicacao, Cashback } from './PortalCliente'
 import { DadosPixPortal } from './DadosPixPortal'
+import MarcaA2 from './MarcaA2'
 import NotificacoesPanel from './NotificacoesPanel'
 import { SegurancaConta } from './SegurancaConta'
 import './portal-cliente.css'
@@ -49,6 +50,6 @@ export default function MinhaContaPage() {
       </div>
       <div id="seguranca" tabIndex={-1}><SegurancaConta /></div>
     </main>
-    <footer className="cliente-rodape">A2 Engenharia · IndicA2</footer>
+    <footer className="cliente-rodape"><MarcaA2 formato="horizontal" fundo="claro" className="marca-a2-rodape" decorativa /><span>IndicA2</span></footer>
   </div>
 }

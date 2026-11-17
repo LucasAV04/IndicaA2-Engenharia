@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { saveSession } from './api'
 import { money, utcDate } from './format'
-import { MarcaCliente } from './PublicoCliente'
+import MarcaA2 from './MarcaA2'
 
 export type Perfil = { nome: string; codigo: string; link: string }
 export type Indicacao = { nome: string; telefoneMascarado: string; status: number; criadaEm: string }
@@ -31,7 +31,7 @@ export function PortalHeader({ nome }: { nome?: string }) {
     }
   }}>
     <div className="cliente-header-interior">
-      <div className="cliente-identidade"><MarcaCliente /><span>Área da cliente</span></div>
+      <div className="cliente-identidade"><MarcaA2 formato="horizontal" fundo="claro" className="marca-a2-cliente" /><span>Área da cliente</span></div>
       <div className="cliente-acoes">
         {nome && <strong>{nome}</strong>}
         <button type="button" ref={botao} className="cliente-menu" aria-expanded={aberto} aria-controls="cliente-navegacao" onClick={() => setAberto(!aberto)}>Menu</button>

@@ -1,0 +1,32 @@
+.marca-a2 {
+  display: block;
+  width: var(--marca-largura, 10rem);
+  max-width: 100%;
+}
+.marca-a2 img {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+.marca-a2-login {
+  --marca-largura: clamp(10rem, 23vw, 17rem);
+  margin-bottom: 1rem;
+}
+.marca-a2-admin { --marca-largura: 6.5rem; }
+.marca-a2-cliente, .marca-a2-publica { --marca-largura: clamp(8rem, 20vw, 11rem); }
+.marca-a2-rodape { --marca-largura: 7rem; }
+.admin-identidade { padding: 0 .8rem 1.35rem; }
+.admin-identidade > span {
+  display: block;
+  margin-top: .5rem;
+  color: #bccad8;
+  font-size: .7rem;
+  font-weight: 650;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.cliente-rodape { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+@media (max-width: 780px) {
+  .marca-a2-admin { --marca-largura: 10rem; }
+}
