@@ -59,6 +59,17 @@ function mount(path = '/', authenticated = true) {
 async function fill(label: string, value: string) { await userEvent.type(screen.getByLabelText(label, { exact: true }), value) }
 
 describe('Sessão administrativa', () => {
+  it('separa a viewport do cartão e exibe a marca fora dos títulos', () => {
+    mount('/login', false)
+    const pagina = screen.getByRole('main')
+    const cartao = pagina.querySelector(':scope > .login-card')
+    expect(pagina).toHaveClass('login-page')
+    expect(cartao).toContainElement(screen.getByText('A2', { exact: true }))
+    expect(cartao).toContainElement(screen.getByText('Engenharia', { exact: true }))
+    expect(screen.queryByRole('heading', { name: /A2 Engenharia/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument()
+  })
+
   it('login válido envia credenciais e abre painel de administrador', async () => {
     mount('/login', false)
     await fill('E-mail', 'admin@example.invalid'); await fill('Senha', 'ficticia')
