@@ -64,10 +64,26 @@ describe('Sessão administrativa', () => {
     const pagina = screen.getByRole('main')
     const cartao = pagina.querySelector(':scope > .login-card')
     expect(pagina).toHaveClass('login-page')
-    expect(cartao).toContainElement(screen.getByText('A2', { exact: true }))
-    expect(cartao).toContainElement(screen.getByText('Engenharia', { exact: true }))
+    const marca = screen.getByRole('img', { name: 'A2 Engenharia & Diagnóstico' })
+    expect(cartao).toContainElement(marca)
+    expect(marca).toHaveAttribute('src', expect.stringContaining('horizontal-fundo-escuro'))
     expect(screen.queryByRole('heading', { name: /A2 Engenharia/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument()
+  })
+
+  it('usa a marca vertical na sidebar e preserva Administração como texto', () => {
+    mount('/')
+    const sidebar = within(screen.getByRole('complementary'))
+    const marca = sidebar.getByRole('img', { name: 'A2 Engenharia & Diagnóstico' })
+    expect(marca).toHaveAttribute('src', expect.stringContaining('vertical-fundo-escuro'))
+    expect(sidebar.getByText('Administração', { exact: true })).toBeVisible()
+  })
+
+  it('usa a marca escura nas páginas públicas sem duplicar texto', async () => {
+    mount('/esqueci-senha', false)
+    const marca = await screen.findByRole('img', { name: 'A2 Engenharia & Diagnóstico' })
+    expect(marca).toHaveAttribute('src', expect.stringContaining('horizontal-fundo-escuro'))
+    expect(screen.queryByText('Engenharia', { exact: true })).not.toBeInTheDocument()
   })
 
   it('login válido envia credenciais e abre painel de administrador', async () => {
@@ -90,6 +106,11 @@ describe('Sessão administrativa', () => {
   it('usuário comum autenticado vai ao portal sem consultar administração', async () => {
     saveSession({ ...session, tipoUsuario: 1 }); mount('/', false)
     expect(await screen.findByRole('heading', { name: 'Minha conta' })).toBeInTheDocument()
+    const marca = screen.getByRole('img', { name: 'A2 Engenharia & Diagnóstico' })
+    expect(marca).toHaveAttribute('src', expect.stringContaining('horizontal-fundo-claro'))
+    const decorativa = within(screen.getByRole('contentinfo')).getByAltText('')
+    expect(decorativa).toHaveAttribute('src', expect.stringContaining('horizontal-fundo-claro'))
+    expect(screen.getAllByRole('img', { name: 'A2 Engenharia & Diagnóstico' })).toHaveLength(1)
     expect(requests.every(r => r.path.startsWith('/api/minha-conta') || r.path === '/api/notificacoes')).toBe(true)
     expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument()
   })

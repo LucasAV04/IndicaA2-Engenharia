@@ -36,8 +36,42 @@ async function axe(page: Page, tela: string) {
   expect(violations.filter(v => v.impact === 'serious' || v.impact === 'critical').map(v => v.id), tela).toEqual([])
 }
 
+async function conferirMarca(page: Page, variante: string) {
+  const imagem = page.getByRole('img', { name: 'A2 Engenharia & Diagnóstico', exact: true })
+  await expect(imagem).toBeVisible()
+  const resultado = await imagem.evaluate(async (img: HTMLImageElement) => {
+    await img.decode()
+    const url = new URL(img.currentSrc)
+    return { mesmaOrigem: url.origin === window.location.origin, caminho: url.pathname, largura: img.naturalWidth }
+  })
+  expect(resultado.mesmaOrigem).toBe(true)
+  expect(resultado.caminho).toContain(variante)
+  expect(resultado.largura).toBeGreaterThan(0)
+}
+
+const falhasNavegador = new WeakMap<BrowserContext, string[]>()
 const requestsExternas = new WeakMap<BrowserContext, string[]>()
-test.beforeEach(async ({ context }) => {
+test.beforeEach(async ({ context, page }) => {
+  const falhas: string[] = []
+  falhasNavegador.set(context, falhas)
+  const ouvir = (tab: Page) => {
+    tab.on('pageerror', () => falhas.push('erro de execução'))
+    tab.on('console', mensagem => {
+      if (mensagem.type() !== 'error') return
+      const texto = mensagem.text().trim()
+      // A política de produção bloqueia a sondagem opcional de eval do Zod, que segue sem JIT.
+      const sondagemZod = texto === "Note that 'script-src' was not explicitly set, so 'default-src' is used as a fallback."
+        || (texto.includes("Evaluating a string as JavaScript violates") && texto.includes("'unsafe-eval'"))
+      // A jornada exercita respostas HTTP de erro deliberadas. Ativos são conferidos abaixo.
+      if (!sondagemZod && !texto.startsWith('Failed to load resource:')) falhas.push('erro no console')
+    })
+  }
+  ouvir(page)
+  context.on('page', ouvir)
+  context.on('response', resposta => {
+    if (resposta.status() >= 400 && ['image', 'stylesheet', 'script'].includes(resposta.request().resourceType()))
+      falhas.push('falha ao servir ativo')
+  })
   const externas: string[] = []
   requestsExternas.set(context, externas)
   await context.route('**/*', route => {
@@ -48,7 +82,10 @@ test.beforeEach(async ({ context }) => {
 
 })
 
-test.afterEach(({ context }) => expect(requestsExternas.get(context)).toHaveLength(0))
+test.afterEach(({ context }) => {
+  expect(requestsExternas.get(context)).toHaveLength(0)
+  expect(falhasNavegador.get(context)).toEqual([])
+})
 
 test('login centralizado com reflow em telas baixas e zoom', async ({ page }) => {
   test.skip(process.env.INDICAA2_UI_PHASE === 'restart')
@@ -58,8 +95,16 @@ test('login centralizado com reflow em telas baixas e zoom', async ({ page }) =>
   const cartao = page.locator('.login-card')
   const entrar = page.getByRole('button', { name: 'Entrar', exact: true })
   const recuperar = page.getByRole('link', { name: 'Esqueci minha senha' })
-  await expect(cartao.getByText('A2', { exact: true })).toBeVisible()
-  await expect(cartao.getByText('Engenharia', { exact: true })).toBeVisible()
+  await conferirMarca(page, 'horizontal-fundo-escuro')
+  const icones = await page.locator('link[rel="icon"]').evaluateAll(elementos =>
+    elementos.map(elemento => ({ href: (elemento as HTMLLinkElement).href, tamanho: elemento.getAttribute('sizes') })))
+  expect(icones.map(icone => icone.tamanho)).toEqual(['32x32', '192x192'])
+  for (const icone of icones) {
+    expect(new URL(icone.href).origin).toBe(origem)
+    const resposta = await page.request.get(icone.href)
+    expect(resposta.ok()).toBe(true)
+    expect(resposta.headers()['content-type']).toContain('image/png')
+  }
   for (const [width, height] of tamanhos) {
     await page.setViewportSize({ width, height })
     const medidas = await cartao.evaluate(el => {
@@ -116,6 +161,20 @@ test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   await expect(page.getByRole('heading', { name: 'Primeiros passos' })).toBeVisible()
   const passos = page.getByRole('region', { name: 'Primeiros passos' })
   await expect(passos.getByText('Pendente', { exact: true })).toHaveCount(6)
+  await conferirMarca(page, 'vertical-fundo-escuro')
+  await expect(page.getByText('Administração', { exact: true })).toBeVisible()
+  const desktop = page.viewportSize()!
+  await page.setViewportSize({ width: 320, height: 568 })
+  const menuAdmin = page.getByRole('button', { name: 'Alternar navegação' })
+  await menuAdmin.focus()
+  await page.keyboard.press('Enter')
+  await conferirMarca(page, 'horizontal-fundo-escuro')
+  await expect(page.getByRole('link', { name: 'Visão geral', exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
+  await page.getByRole('link', { name: 'Visão geral', exact: true }).focus()
+  await page.keyboard.press('Escape')
+  await expect(menuAdmin).toBeFocused()
+  await page.setViewportSize(desktop)
   await axe(page, 'Visão geral')
   const documentos = await page.evaluate(() => performance.timeOrigin)
 
@@ -173,6 +232,7 @@ test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   await publica.setViewportSize({ width: 360, height: 780 })
   await publica.goto('/indicar/' + codigo)
   await expect(publica.getByLabel('Nome da pessoa indicada')).toBeVisible()
+  await conferirMarca(publica, 'horizontal-fundo-escuro')
   await axe(publica, 'Indicação pública móvel')
   await publica.close()
 
@@ -234,6 +294,7 @@ test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   await expect(page.getByRole('main')).not.toContainText(chavePix)
   await expect(page.getByRole('heading', { name: 'Minhas notificações' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Segurança', exact: true })).toBeVisible()
+  await conferirMarca(page, 'horizontal-fundo-claro')
   await axe(page, 'Minha conta móvel')
   for (const width of larguras) {
     await page.setViewportSize({ width, height: 820 })
@@ -245,6 +306,7 @@ test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   await expect(page.locator('#seguranca')).toBeFocused()
   await page.reload()
   await expect(page).toHaveURL(/\/minha-conta#seguranca$/)
+  await conferirMarca(page, 'horizontal-fundo-claro')
   await expect(page.getByText('••••••••', { exact: true })).toBeVisible()
   await page.goto('/relatorios')
   await expect(page).toHaveURL(/\/minha-conta$/)
@@ -257,12 +319,15 @@ test('dados fictícios após reiniciar a API', async ({ page }) => {
   const { email, senha } = await admin()
   await page.goto('/login')
   await login(page, email, senha)
+  await expect(page.getByRole('heading', { name: 'Resumo operacional' })).toBeVisible()
+  await conferirMarca(page, 'vertical-fundo-escuro')
   await page.getByRole('link', { name: 'Vistorias', exact: true }).click()
   await expect(page.getByRole('row').filter({ hasText: cliente })).toContainText(/250,00/)
   await page.getByRole('button', { name: 'Sair', exact: true }).click()
   const { senha: senhaCliente } = JSON.parse(await readFile(arquivoCliente(), 'utf8')) as { senha: string }
   await login(page, clienteEmail, senhaCliente)
   await expect(page).toHaveURL(/\/minha-conta$/)
+  await conferirMarca(page, 'horizontal-fundo-claro')
   await expect(page.getByText('••••••••', { exact: true })).toBeVisible()
   await expect(page.getByRole('main')).not.toContainText(chavePix)
   await page.getByRole('button', { name: 'Sair', exact: true }).click()
@@ -366,6 +431,7 @@ test('as páginas cabem no viewport sem rolagem horizontal da página', async ({
   for (const [rota, titulo] of [['/esqueci-senha', 'Recuperação'], ['/redefinir-senha', 'Redefinição'], ['/confirmar-email', 'Confirmação'], ['/pagar', 'Pagamento']]) {
     await page.goto(rota)
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await conferirMarca(page, 'horizontal-fundo-escuro')
     await axe(page, titulo)
   }
   const fragmento = randomBytes(32).toString('hex')

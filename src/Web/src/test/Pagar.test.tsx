@@ -26,7 +26,10 @@ it('remove fragmento e envia token somente no header sem armazenamento', async (
 it('QR é SVG local e valor é exibido em BRL', async () => {
   const { container } = await montar()
   expect(container.querySelector('svg')).not.toBeNull()
-  expect(container.querySelector('img')).toBeNull()
+  const imagens = container.querySelectorAll('img')
+  expect(imagens).toHaveLength(1)
+  expect(imagens[0]).toHaveAccessibleName('A2 Engenharia & Diagnóstico')
+  expect(imagens[0]).toHaveAttribute('src', expect.stringMatching(/^\/.*horizontal-fundo-escuro/))
   expect(screen.getByRole('heading', { level: 2 }).textContent).toMatch(/R\$\s*12,34/)
   expect(screen.getByLabelText('Pix copia e cola')).toHaveAttribute('readonly')
   expect(fetchMock).toHaveBeenCalledTimes(1)

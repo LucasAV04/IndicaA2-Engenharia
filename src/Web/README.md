@@ -98,6 +98,21 @@ Login, indicação pública, pagamento e recuperação, redefinição e confirma
 
 ### Layout do login
 
-A margem vertical do cartão se somava à altura mínima da viewport e podia gerar rolagem com espaço sobrando. Agora a página usa `100dvh` com fallback em `100vh` e inclui o espaçamento no contêiner. O cartão mantém até 72rem, duas colunas acima de 760px e uma coluna nas telas menores. A marca do login usa `clamp()`, com A2 entre 2 e 3rem e Engenharia entre 1 e 1,25rem.
+A margem vertical do cartão se somava à altura mínima da viewport e podia gerar rolagem com espaço sobrando. Agora a página usa `100dvh` com fallback em `100vh` e inclui o espaçamento no contêiner. O cartão mantém até 72rem, duas colunas acima de 760px e uma coluna nas telas menores. A imagem oficial do login usa largura responsiva entre 10 e 17rem.
 
 O aceite Chromium verifica 1920 × 991, 1920 × 1080, 1366 × 768, 1280 × 720, 768 × 1024, 390 × 844, 360 × 800 e 320 × 568. Em viewport baixa e com zoom de 200%, a rolagem permite alcançar o botão Entrar e o link de recuperação pelo teclado.
+
+
+### Marca oficial da A2
+
+`MarcaA2` usa PNGs locais de `src/assets/brand`. O componente escolhe a composição e o fundo, reserva as dimensões intrínsecas e usa “A2 Engenharia & Diagnóstico” como texto alternativo padrão. Imagens repetidas que só decoram a página recebem texto alternativo vazio.
+
+| Variante | Aplicação |
+| --- | --- |
+| Horizontal para fundo claro | Cabeçalho e rodapé da cliente, estado de acesso negado |
+| Horizontal para fundo escuro | Login, cabeçalhos públicos e sidebar administrativa em telas estreitas |
+| Vertical para fundo escuro | Sidebar administrativa no desktop |
+| Vertical para fundo claro | Disponível para futuras superfícies claras |
+| Símbolo oficial | Disponível no componente e usado como origem dos favicons PNG de 32 e 192 px |
+
+O título da aplicação permanece `IndicA2 • Administração`. A imagem com trinca fica fora do frontend porque contém fundo e decoração incorporados. Os cinco PNGs originais permanecem em `src/assets/brand/originais`, fora do bundle de produção.

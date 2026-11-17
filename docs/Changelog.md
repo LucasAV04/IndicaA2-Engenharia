@@ -909,3 +909,8 @@ O registro intermediário acima é superado pela validação final desta entrega
 ## Centralização do login
 
 A altura mínima da viewport no próprio cartão, somada à margem vertical externa, podia causar rolagem desnecessária. O contêiner agora centraliza o cartão dentro da viewport e inclui o espaçamento nessa altura. A marca A2 Engenharia ganhou destaque somente no login.
+
+
+## Identidade visual oficial da A2
+
+As marcas tipográficas deram lugar aos PNGs oficiais no login, no portal, na administração e nos cabeçalhos públicos. A sidebar mantém “Administração” em texto e escolhe a composição horizontal em telas estreitas. A aplicação passou a usar favicons locais derivados do símbolo oficial.

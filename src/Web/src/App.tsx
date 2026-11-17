@@ -8,7 +8,8 @@ import { api, readSession, saveSession } from './api'
 import type { Sessao } from './types'
 import { resources, type ResourceKey } from './resources'
 import { ErrorBox } from './components'
-import { MarcaCliente } from './PublicoCliente'
+import MarcaA2 from './MarcaA2'
+import './login.css'
 
 const ResourcePage = lazy(() => import('./ResourcePage'))
 const DashboardPage = lazy(() => import('./DashboardPage'))
@@ -53,7 +54,7 @@ export default function App() {
     <Route path="/indicar/:codigo" element={<IndicacaoPublicaPage />} />
     <Route path="/minha-conta" element={session ? <MinhaContaPage key={session.usuarioId} /> : <Navigate to="/login" replace />} />
     <Route path="/login" element={session ? <Navigate to={session.tipoUsuario === 2 ? '/' : '/minha-conta'} replace /> : <Login senhaAlterada={senhaAlterada} /> } />
-    <Route path="/acesso-negado" element={session ? <div className="access-denied"><h1>Acesso negado</h1><p>Este painel é exclusivo de administradores.</p><button onClick={() => saveSession(null)}>Sair</button></div> : <Navigate to="/login" replace />} />
+    <Route path="/acesso-negado" element={session ? <div className="access-denied"><MarcaA2 formato="horizontal" fundo="claro" /><h1>Acesso negado</h1><p>Este painel é exclusivo de administradores.</p><button onClick={() => saveSession(null)}>Sair</button></div> : <Navigate to="/login" replace />} />
     <Route element={!session ? <Navigate to="/login" replace /> : session.tipoUsuario !== 2 ? <Navigate to="/minha-conta" replace /> : <Layout session={session} />}>
       <Route index element={<DashboardPage />} />
       <Route path="/relatorios" element={<RelatoriosPage />} />
@@ -78,11 +79,11 @@ function Layout({ session }: { session: Sessao }) {
     previousPath.current = pathname
   }, [pathname])
   return <div className="shell"><aside id="menu-principal" onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); toggle.current?.focus() } }} className={open ? 'sidebar open' : 'sidebar'}>
-    <div className="brand">IndicA2<span>ADMINISTRAÇÃO</span></div><nav aria-label="Principal"><NavLink to="/" end onClick={() => setOpen(false)}>Visão geral</NavLink>{Object.entries(resources).map(([key, value]) => <NavLink key={key} to={'/' + key} onClick={() => setOpen(false)}>{value.title}</NavLink>)}</nav>
+    <div className="admin-identidade"><MarcaA2 formato="vertical" fundo="escuro" compacto="(max-width: 780px)" className="marca-a2-admin" /><span>Administração</span></div><nav aria-label="Principal"><NavLink to="/" end onClick={() => setOpen(false)}>Visão geral</NavLink>{Object.entries(resources).map(([key, value]) => <NavLink key={key} to={'/' + key} onClick={() => setOpen(false)}>{value.title}</NavLink>)}</nav>
     <nav aria-label="Configuração de preços"><NavLink to="/tipos-planta" onClick={() => setOpen(false)}>Tipos de planta</NavLink><NavLink to="/precos-vistoria" onClick={() => setOpen(false)}>Tabela de preços</NavLink></nav>
     <nav aria-label="Recebimentos"><NavLink to="/cobrancas-pix-vistoria" onClick={() => setOpen(false)}>Cobranças Pix de vistoria</NavLink></nav>
     <nav aria-label="Jornada"><NavLink to="/alertas" onClick={() => setOpen(false)}>Alertas internos</NavLink><NavLink to="/relatorios" onClick={() => setOpen(false)}>Relatórios</NavLink></nav>
-    <div className="sidebar-note">Painel operacional<br />A2 Engenharia & Diagnóstico</div></aside>
+    <div className="sidebar-note">Painel operacional</div></aside>
     <div className="workspace"><header className="topbar"><button ref={toggle} className="menu" aria-controls="menu-principal" aria-expanded={open} aria-label="Alternar navegação" onClick={() => setOpen(!open)}>☰ Menu</button><span className="muted">Área administrativa</span><div className="identity"><strong>{session.nome}</strong><small>{session.email}</small></div><button onClick={() => saveSession(null)}>Sair</button></header>
     {fetching > 0 && <div role="status" className="global-loading" aria-label="Atualizando dados" />}
     <main id="conteudo" tabIndex={-1} ref={main}><Suspense fallback={loading}><Outlet /></Suspense></main><footer>IndicA2 • Gestão de indicações e vistorias</footer></div></div>
@@ -96,7 +97,7 @@ function Login({ senhaAlterada }: { senhaAlterada: boolean }) {
     try { saveSession(await api<Sessao>('/auth/login', { method: 'POST', body: JSON.stringify(values) })) }
     catch { setError(true) }
   }
-  return <main id="conteudo" tabIndex={-1} className="login-page"><div className="login-card"><section className="login-intro"><MarcaCliente /><h1>Suas indicações em um só lugar</h1><p>Acompanhe indicações, cashbacks e os dados da sua conta no IndicA2.</p></section><section className="login-form"><h2>Acesse sua conta</h2><p>Entre para acompanhar suas indicações ou administrar a operação.</p><form onSubmit={handleSubmit(login)}>
+  return <main id="conteudo" tabIndex={-1} className="login-page"><div className="login-card"><section className="login-intro"><MarcaA2 formato="horizontal" fundo="escuro" className="marca-a2-login" /><h1>Suas indicações em um só lugar</h1><p>Acompanhe indicações, cashbacks e os dados da sua conta no IndicA2.</p></section><section className="login-form"><h2>Acesse sua conta</h2><p>Entre para acompanhar suas indicações ou administrar a operação.</p><form onSubmit={handleSubmit(login)}>
     <div className="field"><label htmlFor="email">E-mail</label><input id="email" type="email" autoComplete="username" aria-invalid={!!errors.email} aria-describedby={errors.email ? 'login-email-erro' : undefined} {...register('email')} />{errors.email && <span id="login-email-erro" role="alert">{errors.email.message}</span>}</div>
     <div className="field"><label htmlFor="senha">Senha</label><input id="senha" type="password" autoComplete="current-password" aria-invalid={!!errors.senha} aria-describedby={errors.senha ? 'login-senha-erro' : undefined} {...register('senha')} />{errors.senha && <span id="login-senha-erro" role="alert">{errors.senha.message}</span>}</div>
     {error && <ErrorBox message="Não foi possível entrar. Confira suas credenciais e tente novamente." />}

@@ -98,3 +98,8 @@ No painel vazio, use os seis passos da visão geral para cadastrar catálogo, pu
 O `UiSmoke -Disposable -UseBuiltImage` usa a aplicação compilada e o MySQL descartável. O Chromium confere código e link de indicação, cópia e abertura do link, menu por teclado, cadastro fictício de Dados Pix, máscara após recarga e reinício da API, notificações, segurança e acesso bloqueado a relatórios administrativos. A senha temporária da cliente é usada entre fases em arquivo do perfil descartável, removido no `finally`. A saída continua sanitizada e screenshots, vídeos e traces ficam desativados.
 
 A matriz cobre 320, 360, 390, 768, 1280 e 1440 px e verifica que a página não precisa de rolagem horizontal. O axe verifica login, indicação pública, pagamento, fluxos públicos de conta, portal móvel e desktop e diálogo Pix. O caso preenchido usa dados fictícios interceptados no navegador para avaliar estados, textos longos e reflow com zoom.
+
+
+### Marca oficial no aceite
+
+O UiSmoke verifica se o Chromium decodifica a variante correta de origem local no login, nas áreas administrativa e da cliente e nas páginas públicas. Ele abre a sidebar compacta pelo teclado, verifica os favicons PNG, repete a verificação após recarregar a SPA e após reiniciar a API e falha diante de ativos ausentes ou erros de execução. Análises axe continuam cobrindo login, painel, portal, indicação e recuperação. O smoke não publica capturas nem traces.
