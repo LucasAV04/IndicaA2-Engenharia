@@ -1695,3 +1695,11 @@ A vistoria usa `datetime-local` e envia o valor ISO civil sem fuso. Filtros usam
 Restore e build .NET aprovados. A suíte rápida passou em 880 testes e os filtros direcionados passaram em 373. O script oficial com preflight passou em 271 testes no MySQL descartável. Lint, build e 149 testes frontend passaram. A auditoria de produção retornou zero vulnerabilidades. Os testes direcionados de datas passaram em America/Sao_Paulo e Asia/Tokyo.
 
 Smoke, UiSmoke e EmailSmoke passaram. A jornada no Chromium mostrou o vínculo e o agendamento às 19:00, confirmou a persistência da leitura e não encontrou violações axe sérias ou críticas nas telas verificadas. O descarte deixou zero containers, redes e volumes do projeto de smoke. Não houve chamada real a Efí, OAuth, Pix ou SMTP externo.
+
+## Prefixo fixo nos campos de telefone
+
+O formulário Novo usuário abre com valor vazio e sem placeholder. A sequência de zeros aparece apenas quando fornecida como entrada, e permanece inválida. O componente mostra +55 fora do campo editável e associa a informação do país à descrição acessível. A máscara mantém o DDD 55 e reconhece código do país por formato e comprimento. Números excedentes e estrangeiros permanecem disponíveis para correção.
+
+Novos contatos e alterações enviam 55 + DDD + número em dígitos. O campo opcional vazio envia null. A edição mantém contatos antigos que não foram alterados e sinaliza legados fora do formato. O backend conserva a validação independente e o suporte a números nacionais já aceitos. A validação de formato não verifica existência ou titularidade.
+
+Validação local: lint, 161 testes frontend, build de produção, 163 testes .NET direcionados e 886 testes da suíte rápida aprovados. No Chromium, os campos foram verificados em 320, 390 e 1366 px e com zoom de 200%. O axe não registrou violações sérias ou críticas nas telas inspecionadas. O UiSmoke descartável passou e encerrou com zero containers, redes e volumes do projeto.

@@ -119,7 +119,7 @@ O título da aplicação permanece `IndicA2 • Administração`. A imagem com t
 
 ## Campos e notificações
 
-Telefone aceita digitação, colagem e edição em formato nacional, com DDD e prefixo +55 opcional. A API recebe dígitos e mantém o prefixo quando fornecido. O telefone da pessoa indicada desativa autofill para evitar atribuir os dados de quem preenche o formulário. Login usa autocomplete de usuário, e cadastro e recuperação usam autocomplete de e-mail. E-mails passam por trim e validação até 254 caracteres, com suporte a +. Dados Pix usam seu contrato próprio.
+O campo de contato mostra +55 separado do número nacional editável. Aceita digitação e colagem com DDD, inclusive com o código 55. Contatos novos ou alterados válidos são enviados como 55 + DDD + número, somente dígitos. Telefone opcional vazio é enviado como null. Um contato legado inalterado mantém seu valor original. Um legado sem formato reconhecido aparece sem prefixo para permitir conferência ou substituição. O telefone da pessoa indicada desativa autofill para evitar atribuir os dados de quem preenche o formulário. Login usa autocomplete de usuário, e cadastro e recuperação usam autocomplete de e-mail. E-mails passam por trim e validação até 254 caracteres, com suporte a +. Dados Pix usam seu contrato próprio.
 
 Agendamento usa controle nativo e mantém o horário civil. Datas de relatório são filtros UTC de calendário, e os instantes exibidos usam o fuso do navegador. Ao editar, a interface preserva telefone e e-mail antigos quando o valor não foi alterado.
 
