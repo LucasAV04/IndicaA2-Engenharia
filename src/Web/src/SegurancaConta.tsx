@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, saveSession, send } from './api'
 import { PublicoCliente } from './PublicoCliente'
 import { ErrorBox } from './components'
+import { emailSchema, limiteEmail } from './campos'
 import { lerFragmentoPrivado, limparFragmentoPrivado } from './fragmentoPrivado'
 
 type Modo = 'solicitar' | 'redefinir' | 'confirmar'
@@ -40,7 +41,12 @@ export function ContaPublica({ modo }: { modo: Modo }) {
     setMessage('')
     try {
       if (modo === 'solicitar') {
-        await send('/auth/esqueci-senha', 'POST', { email: form.get('email') })
+        const email = emailSchema.safeParse(form.get('email'))
+        if (!email.success) {
+          setMessage(email.error.issues[0].message)
+          return
+        }
+        await send('/auth/esqueci-senha', 'POST', { email: email.data })
         setMessage('Se o endereço puder receber instruções, enviaremos um e-mail.')
       } else {
         await api('/auth/' + (modo === 'redefinir' ? 'redefinir-senha' : 'confirmar-email'), {
@@ -61,14 +67,14 @@ export function ContaPublica({ modo }: { modo: Modo }) {
 
   const disponivel = modo === 'solicitar' || /^[0-9a-f]{64}$/.test(token)
   return <PublicoCliente title={titulos[modo]} categoria="Segurança da conta">
-    {disponivel && <form onSubmit={evento => void submit(evento)}>
+    {disponivel && <form noValidate={modo === 'solicitar'} onSubmit={evento => void submit(evento)}>
       {modo === 'solicitar' && <div className="field"><label htmlFor="conta-email">E-mail</label>
-        <input name="email" id="conta-email" type="email" autoComplete="email" maxLength={254} required /></div>}
+        <input name="email" id="conta-email" type="email" autoComplete="email" maxLength={limiteEmail} aria-describedby="conta-resultado" required /></div>}
       {modo === 'redefinir' && <div className="field"><label htmlFor="conta-senha">Nova senha</label>
         <input name="senha" id="conta-senha" type="password" autoComplete="new-password" minLength={8} maxLength={72} required /></div>}
       <button type="submit" disabled={busy}>{modo === 'solicitar' ? 'Solicitar instruções' : titulos[modo]}</button>
     </form>}
-    <p ref={result} tabIndex={-1} aria-live="polite">{message || (!disponivel && 'Link inválido ou indisponível.')}</p>
+    <p id="conta-resultado" ref={result} tabIndex={-1} aria-live="polite">{message || (!disponivel && 'Link inválido ou indisponível.')}</p>
     <Link to="/login">Voltar ao login</Link>
   </PublicoCliente>
 }

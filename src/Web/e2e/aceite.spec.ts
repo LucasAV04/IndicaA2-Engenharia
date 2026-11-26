@@ -5,7 +5,8 @@ import { test, expect, type BrowserContext, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 const origem = process.env.INDICAA2_UI_ORIGIN ?? 'https://localhost:18443'
-const cliente = 'Cliente fictícia do aceite'
+const cliente = 'Maria Indicadora Teste'
+const indicada = 'Ana Indicada Teste'
 const tipo = 'Planta fictícia do aceite'
 const clienteEmail = 'cliente-aceite@example.invalid'
 const chavePix = 'pix-cliente-aceite@example.invalid'
@@ -149,7 +150,7 @@ test('login centralizado com reflow em telas baixas e zoom', async ({ page }) =>
 
 test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   test.skip(process.env.INDICAA2_UI_PHASE === 'restart')
-  test.setTimeout(95_000)
+  test.setTimeout(130_000)
   const { email, senha } = await admin()
   const clienteSenha = randomBytes(24).toString('base64url')
   await page.goto('/login')
@@ -183,11 +184,35 @@ test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   const novo = page.getByRole('dialog')
   await novo.getByLabel('Nome', { exact: true }).fill(cliente)
   await novo.getByLabel('E-mail', { exact: true }).fill(clienteEmail)
+  await novo.getByLabel('Telefone', { exact: true }).fill('79999999999')
+  await expect(novo.getByLabel('Telefone', { exact: true })).toHaveValue('(79) 99999-9999')
   await novo.getByLabel('Senha inicial', { exact: true }).fill(clienteSenha)
   await novo.getByRole('button', { name: 'Salvar', exact: true }).click()
   await expect(page.getByRole('row').filter({ hasText: clienteEmail })).toBeVisible()
   const codigo = await page.getByRole('row').filter({ hasText: clienteEmail }).getByRole('cell').nth(3).innerText()
   expect(codigo).toMatch(/^[A-Z0-9]{8}$/)
+
+  await page.getByRole('link', { name: 'Indicações', exact: true }).click()
+  await page.getByRole('button', { name: 'Nova indicação' }).click()
+  await novo.getByLabel('Código de indicação').fill(codigo)
+  await novo.getByLabel('Nome da pessoa indicada').fill(indicada)
+  await novo.getByLabel('Telefone da pessoa indicada').fill('(79) 3333-4444')
+  await novo.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(page.getByRole('row').filter({ hasText: indicada })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Usuários', exact: true }).click()
+  await page.getByRole('button', { name: 'Novo usuário' }).click()
+  await novo.getByLabel('Nome', { exact: true }).fill(indicada)
+  await novo.getByLabel('E-mail', { exact: true }).fill('ana+aceite@example.invalid')
+  await novo.getByLabel('Senha inicial').fill(randomBytes(24).toString('base64url'))
+  await novo.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(page.getByRole('row').filter({ hasText: indicada })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Indicações', exact: true }).click()
+  await page.getByRole('row').filter({ hasText: indicada }).getByRole('button', { name: 'Vincular usuário' }).click()
+  await novo.getByLabel('Usuário indicado').selectOption({ label: indicada + ' • ana+aceite@example.invalid' })
+  await novo.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(novo).toHaveCount(0)
 
   await page.getByRole('link', { name: 'Tipos de planta', exact: true }).click()
   await page.getByRole('button', { name: 'Novo tipo' }).click()
@@ -213,6 +238,24 @@ test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   const registro = page.getByRole('row').filter({ hasText: cliente })
   await expect(registro).toContainText(/250,00/)
   await expect(registro).toContainText('Agendada')
+
+  await page.getByRole('button', { name: 'Nova vistoria' }).click()
+  await vistoria.getByLabel('Cliente', { exact: true }).selectOption({ label: indicada })
+  await vistoria.getByLabel('Tipo de planta', { exact: true }).selectOption({ label: tipo })
+  await vistoria.getByLabel('Área (m²)').fill('25')
+  await vistoria.getByLabel('Data agendada').fill('2026-11-28T19:00')
+  await expect(vistoria.getByText(/250,00/).first()).toBeVisible()
+  await vistoria.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(page.getByRole('row').filter({ hasText: indicada })).toContainText('28/11/2026 às 19:00')
+  await page.getByRole('link', { name: 'Indicações', exact: true }).click()
+  const linhaIndicada = page.getByRole('row').filter({ hasText: indicada })
+  await linhaIndicada.getByRole('button', { name: 'Vincular vistoria' }).click()
+  const opcaoVistoria = novo.getByRole('option', { name: new RegExp(indicada + '.*19:00') })
+  const vistoriaId = await opcaoVistoria.getAttribute('value')
+  if (!vistoriaId) throw new Error('Vistoria de aceite indisponível.')
+  await novo.getByLabel('Vistoria').selectOption(vistoriaId)
+  await novo.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(linhaIndicada).toContainText('Vistoria vinculada')
 
   await page.getByRole('link', { name: 'Relatórios', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Relatórios' })).toBeVisible()
@@ -255,7 +298,14 @@ test('jornada operacional real e acessibilidade', async ({ page }, info) => {
   await login(page, clienteEmail, clienteSenha)
   await expect(page).toHaveURL(/\/minha-conta$/)
   await expect(page.getByRole('heading', { name: 'Olá, ' + cliente })).toBeVisible()
-  await expect(page.getByText('Nenhuma indicação por enquanto.')).toBeVisible()
+  const aviso = page.locator('.notificacoes li').filter({ hasText: 'A indicação de Ana foi vinculada a uma vistoria.' })
+  await expect(aviso.getByText('Agendamento atual: 28/11/2026 às 19:00')).toBeVisible()
+  await expect(aviso.getByText('Não lida', { exact: true })).toBeVisible()
+  await aviso.getByRole('button', { name: 'Marcar como lida' }).click()
+  await expect(aviso.getByText('Lida', { exact: true })).toBeVisible()
+  await page.reload()
+  await expect(aviso.getByText('Lida', { exact: true })).toBeVisible()
+  await expect(aviso.getByRole('link', { name: 'Ver minhas indicações' })).toHaveAttribute('href', '#indicacoes')
   await expect(page.getByText('Nenhum cashback registrado.')).toBeVisible()
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: origem })
   await page.getByRole('button', { name: 'Copiar link' }).click()

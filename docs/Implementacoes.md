@@ -1670,3 +1670,28 @@ Os PNGs originais recebidos medem 2397 × 1330 px e foram preservados byte a byt
 O JavaScript inicial passou de 426,28 para 427,09 kB (gzip de 134,18 para 134,55 kB). O CSS inicial passou de 9,90 para 9,04 kB (gzip de 3,00 para 2,84 kB). Os PNGs são arquivos separados. O navegador carrega apenas a variante selecionada, e os originais não entram em `dist`.
 
 Restore e build .NET passaram, com 872 testes rápidos aprovados. O frontend passou em lint, TypeScript, build e 127 testes. A auditoria de produção retornou zero vulnerabilidades. Smoke e UiSmoke passaram, com favicon local verificado também no Vite de desenvolvimento. O Chromium validou os oito viewports do login, teclado, zoom de 200% e zero violações axe sérias ou críticas nas telas verificadas. O descarte deixou zero recursos temporários. A CSP continua bloqueando a sondagem opcional de JIT do Zod, e o aceite identifica esse diagnóstico conhecido separadamente.
+
+## Notificações contextualizadas e campos padronizados
+
+A lista anterior renderizava um rótulo por tipo apesar de cada evento guardar uma referência. A leitura agora projeta contexto opcional em uma única consulta parametrizada, com junções externas e limite de 100 notificações. O escopo do destinatário restringe a seleção e as relações projetadas. A ausência do registro relacionado mantém a notificação visível com a descrição controlada do evento. Nenhuma mensagem ou PII adicional é gravada. A migration 016, a deduplicação, a entrega, a atomicidade e o estado de leitura existente são reaproveitados.
+
+| Tipo | Gatilho e destinatários | Título e descrição | Contexto e destino |
+| --- | --- | --- | --- |
+| 0 | Criação para proprietária ou vínculo para indicadora | Vistoria cadastrada ou Vistoria vinculada | Agendamento atual quando autorizado. Indicadora vê primeiro nome da sua indicada e pode abrir Minhas indicações. Sem referência, Atualização de vistoria. |
+| 1 | Confirmação do pagamento da vistoria para proprietária e indicadora | Pagamento confirmado | Agendamento atual da vistoria própria ou da indicação autorizada. Primeiro nome e acesso às indicações para indicadora. |
+| 2 | Falta de Dados Pix na preparação para beneficiária e administração | Dados Pix necessários | Primeiro nome quando a relação está disponível. Cliente abre seus Dados Pix e administração abre Cashbacks. |
+| 3 | Disponibilização de cashback para indicadora | Cashback disponível | Primeiro nome da indicação própria e acesso aos cashbacks pessoais. |
+| 4 | Liquidação confirmada para indicadora, indicada e administração | Cashback pago | Primeiro nome somente para indicadora e administração. Indicada recebe o evento sem dados de terceiros. Atalho aos cashbacks somente quando pertinente. |
+| 5 | Falha financeira para administração | Falha financeira | Primeiro nome quando disponível e acesso aos cashbacks administrativos. |
+| 6 | Bloqueio ou divergência de cobrança para administração | Cobrança Pix em revisão | Contexto atual da vistoria e indicação, quando disponível, e acesso às cobranças administrativas. |
+| Desconhecido | Tipo legado ou ainda não reconhecido | Notificação | Detalhes indisponíveis e sem atalho. |
+
+A conclusão não gera um tipo autônomo. A disponibilização de cashback e a confirmação de pagamento têm seus próprios gatilhos e textos. O agendamento atual é horário civil da vistoria, não um snapshot do evento. A lista mostra a contagem exibida e a contagem integral, e Marcar todas inclui notificações fora da lista.
+
+Telefone nacional usa máscara de 10 ou 11 dígitos com DDD. O contrato envia somente dígitos e preserva o prefixo 55 quando fornecido. Países diferentes de +55 e números incompletos são rejeitados. A API usa a mesma regra estrutural em usuário e indicação. Dados Pix continuam com validação própria. Novos e-mails têm validação de formato e limite de 254 caracteres. O frontend remove espaços externos e preserva o sinal + e a capitalização, e a normalização de identidade continua no backend. Em edição, o valor antigo inalterado é reenviado como veio da API.
+
+A vistoria usa `datetime-local` e envia o valor ISO civil sem fuso. Filtros usam datas ISO de calendário e preservam a semântica UTC do relatório. Datas de auditoria representam instantes e são exibidas no fuso local do navegador. A interface formata datas e horários em português.
+
+Restore e build .NET aprovados. A suíte rápida passou em 880 testes e os filtros direcionados passaram em 373. O script oficial com preflight passou em 271 testes no MySQL descartável. Lint, build e 149 testes frontend passaram. A auditoria de produção retornou zero vulnerabilidades. Os testes direcionados de datas passaram em America/Sao_Paulo e Asia/Tokyo.
+
+Smoke, UiSmoke e EmailSmoke passaram. A jornada no Chromium mostrou o vínculo e o agendamento às 19:00, confirmou a persistência da leitura e não encontrou violações axe sérias ou críticas nas telas verificadas. O descarte deixou zero containers, redes e volumes do projeto de smoke. Não houve chamada real a Efí, OAuth, Pix ou SMTP externo.

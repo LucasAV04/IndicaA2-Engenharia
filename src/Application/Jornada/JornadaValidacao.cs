@@ -19,11 +19,7 @@ public static partial class JornadaValidacao
         ArgumentNullException.ThrowIfNull(request);
         var nome=request.Nome?.Trim() ?? "";
         if(nome.Length is < 2 or > 150 || nome.Any(char.IsControl)) throw new ArgumentException("Confira os campos informados.");
-        var bruto=request.Telefone ?? "";
-        if(bruto.Length>30 || bruto.Any(c=>!char.IsAsciiDigit(c) && !"+ ()-.".Contains(c))) throw new ArgumentException("Telefone inválido.");
-        var telefone=new string(bruto.Where(char.IsAsciiDigit).ToArray());
-        if(telefone.Length is not (10 or 11 or 12 or 13)) throw new ArgumentException("Telefone inválido.");
-        if(telefone.Length>=12 && !telefone.StartsWith("55",StringComparison.Ordinal)) throw new ArgumentException("Telefone inválido.");
+        var telefone = TelefoneBrasileiro.Normalizar(request.Telefone)!;
         if(!request.Consentimento || request.VersaoTermo!=VersaoTermo) throw new DomainException("Aceite o termo vigente para continuar.");
         return request with { Codigo=Codigo(request.Codigo),Nome=nome,Telefone=telefone };
     }

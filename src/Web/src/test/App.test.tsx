@@ -86,6 +86,19 @@ describe('Sessão administrativa', () => {
     expect(screen.queryByText('Engenharia', { exact: true })).not.toBeInTheDocument()
   })
 
+  it('preserva telefone antigo quando a edição não altera o contato', async () => {
+    data['/api/usuarios'] = [{ ...usuario, telefone: 'ramal antigo 37' }]
+    mount('/usuarios')
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByLabelText('Telefone')).toHaveValue('ramal antigo 37')
+    expect(dialog.getByText(/Valor antigo preservado/)).toBeVisible()
+    await userEvent.click(dialog.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(requests.find(r => r.method === 'PUT')?.body).toMatchObject({
+      telefone: 'ramal antigo 37', email: usuario.email,
+    }))
+  })
+
   it('login válido envia credenciais e abre painel de administrador', async () => {
     mount('/login', false)
     await fill('E-mail', 'admin@example.invalid'); await fill('Senha', 'ficticia')
@@ -111,7 +124,7 @@ describe('Sessão administrativa', () => {
     const decorativa = within(screen.getByRole('contentinfo')).getByAltText('')
     expect(decorativa).toHaveAttribute('src', expect.stringContaining('horizontal-fundo-claro'))
     expect(screen.getAllByRole('img', { name: 'A2 Engenharia & Diagnóstico' })).toHaveLength(1)
-    expect(requests.every(r => r.path.startsWith('/api/minha-conta') || r.path === '/api/notificacoes')).toBe(true)
+    expect(requests.every(r => r.path.startsWith('/api/minha-conta') || r.path.startsWith('/api/notificacoes'))).toBe(true)
     expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument()
   })
   it('rota protegida sem sessão volta ao login', () => {
@@ -191,7 +204,7 @@ describe('Fluxos administrativos via HTTP', () => {
   it('exibe horário de negócio retornado sem deslocar 14:30', async () => {
     data['/api/vistorias'] = [{ ...base, usuarioId: usuario.id, dataAgendada: '2026-09-22T14:30:00' }]
     mount('/vistorias')
-    expect(await screen.findByText('22/09/2026, 14:30')).toBeInTheDocument()
+    expect(await screen.findByText('22/09/2026 às 14:30')).toBeInTheDocument()
   })
   it('edita usuário sem consultar recursos não relacionados mesmo com Pix indisponível', async () => {
     errors['/api/pagamentos-pix'] = 500
@@ -302,7 +315,7 @@ describe('Fluxos administrativos via HTTP', () => {
   it('formata moeda, percentual e datas em pt-BR', () => {
     expect(money(1234.56)).toMatch(/1\.234,56/)
     expect(utcDate('2026-09-01T12:00:00Z')).toMatch(/01\/09\/2026/)
-    expect(businessDate('2026-09-22T14:30:00')).toBe('22/09/2026, 14:30')
+    expect(businessDate('2026-09-22T14:30:00')).toBe('22/09/2026 às 14:30')
   })
   it('formulário valida campos obrigatórios antes de enviar', async () => {
     mount('/usuarios'); await userEvent.click(screen.getByRole('button', { name: 'Novo usuário' }))

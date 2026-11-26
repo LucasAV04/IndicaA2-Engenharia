@@ -23,8 +23,49 @@ public sealed class JornadaConsultaMySqlStore(MySqlConnectionFactory factory) : 
         "SELECT c.valor,c.status,p.status pix_status,c.created_at FROM cashbacks c LEFT JOIN pagamentos_pix p ON p.cashback_id=c.id AND p.usuario_beneficiario_id=c.usuario_indicador_id WHERE c.usuario_indicador_id=@usuario ORDER BY c.created_at DESC,c.id",
         r=>new CashbackPortal(r.GetDecimal(0),(StatusCashback)r.GetInt32(1),r.IsDBNull(2)?null:(StatusPagamentoPix)r.GetInt32(2),Data(r,"created_at")!.Value),ct,("usuario",usuarioId));
     public Task<IReadOnlyList<NotificacaoResponse>> NotificacoesAsync(Guid usuarioId,bool administrador,CancellationToken ct)=>LerLista(
-        "SELECT id,tipo,created_at,lida_em FROM notificacoes_internas WHERE escopo=@escopo AND (usuario_id=@usuario OR (@escopo=1 AND usuario_id IS NULL)) ORDER BY created_at DESC,id LIMIT 100",
-        r=>new NotificacaoResponse(r.ObterGuid("id"),(TipoNotificacao)r.GetInt32("tipo"),Data(r,"created_at")!.Value,Data(r,"lida_em")),ct,("usuario",usuarioId),("escopo",administrador?1:0));
+        """
+        SELECT n.id,n.tipo,n.created_at,n.lida_em,
+               i.nome_indicada,
+               v.data_agendada,
+               COALESCE(v.usuario_id = @usuario, FALSE) AS vistoria_propria
+        FROM (
+            SELECT id,tipo,referencia_id,created_at,lida_em
+            FROM notificacoes_internas
+            WHERE escopo=@escopo AND (usuario_id=@usuario OR (@escopo=1 AND usuario_id IS NULL))
+            ORDER BY created_at DESC,id LIMIT 100
+        ) n
+        LEFT JOIN cobrancas_pix_vistoria cp ON n.tipo=6 AND @escopo=1 AND cp.id=n.referencia_id
+        LEFT JOIN pagamentos_vistoria p ON p.id=CASE WHEN n.tipo=1 THEN n.referencia_id ELSE cp.pagamento_vistoria_id END
+        LEFT JOIN cashbacks c ON n.tipo IN (2,3,4,5) AND c.id=n.referencia_id
+            AND (@escopo=1 OR c.usuario_indicador_id=@usuario)
+        LEFT JOIN vistorias v ON v.id=CASE WHEN n.tipo=0 THEN n.referencia_id ELSE p.vistoria_id END
+            AND (@escopo=1 OR v.usuario_id=@usuario OR EXISTS (
+                SELECT 1 FROM indicacoes propria
+                WHERE propria.vistoria_id=v.id AND propria.usuario_indicador_id=@usuario
+            ))
+        LEFT JOIN indicacoes i ON i.id=CASE WHEN c.id IS NOT NULL THEN c.indicacao_id ELSE (
+                SELECT vinculada.id FROM indicacoes vinculada WHERE vinculada.vistoria_id=v.id
+            ) END
+            AND (@escopo=1 OR i.usuario_indicador_id=@usuario)
+        ORDER BY n.created_at DESC,n.id
+        """,
+        MapearNotificacao,ct,("usuario",usuarioId),("escopo",administrador?1:0));
+
+    private static NotificacaoResponse MapearNotificacao(MySqlDataReader r)
+    {
+        var ordinalNome = r.GetOrdinal("nome_indicada");
+        var ordinalData = r.GetOrdinal("data_agendada");
+        var nome = r.IsDBNull(ordinalNome) ? null : JornadaValidacao.PrimeiroNome(r.GetString(ordinalNome));
+        // O campo de nome pode conter texto legado que não é um nome.
+        if (nome is not null && (nome.Length > 40 || nome.Any(c =>
+            !char.IsLetter(c) && c is not ('-' or '\'' or '’')))) nome = null;
+        DateTime? agendamento = r.IsDBNull(ordinalData) ? null
+            : DateTime.SpecifyKind(r.GetDateTime(ordinalData), DateTimeKind.Unspecified);
+        var propria = r.GetBoolean("vistoria_propria");
+        var contexto = nome is null && agendamento is null ? null : new ContextoNotificacao(nome, agendamento, propria);
+        return new NotificacaoResponse(r.ObterGuid("id"), (TipoNotificacao)r.GetInt32("tipo"),
+            Data(r,"created_at")!.Value, Data(r,"lida_em"), contexto);
+    }
     public async Task<long> NaoLidasAsync(Guid usuarioId,bool administrador,CancellationToken ct)
     {
         await using var c=factory.Create(); await c.OpenAsync(ct);

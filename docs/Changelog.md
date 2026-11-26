@@ -914,3 +914,7 @@ A altura mínima da viewport no próprio cartão, somada à margem vertical exte
 ## Identidade visual oficial da A2
 
 As marcas tipográficas deram lugar aos PNGs oficiais no login, no portal, na administração e nos cabeçalhos públicos. A sidebar mantém “Administração” em texto e escolhe a composição horizontal em telas estreitas. A aplicação passou a usar favicons locais derivados do símbolo oficial.
+
+## Notificações e formulários
+
+Notificações passaram a exibir títulos, contexto autorizado, horário, estado de leitura e atalhos internos. Os formulários de usuário e indicação formatam telefones brasileiros. Login, recuperação, cadastro e edição usam validação de e-mail em português. Vistorias preservam horário civil, e relatórios validam e exibem datas de calendário em português.
