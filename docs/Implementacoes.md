@@ -1670,3 +1670,9 @@ Os PNGs originais recebidos medem 2397 × 1330 px e foram preservados byte a byt
 O JavaScript inicial passou de 426,28 para 427,09 kB (gzip de 134,18 para 134,55 kB). O CSS inicial passou de 9,90 para 9,04 kB (gzip de 3,00 para 2,84 kB). Os PNGs são arquivos separados. O navegador carrega apenas a variante selecionada, e os originais não entram em `dist`.
 
 Restore e build .NET passaram, com 872 testes rápidos aprovados. O frontend passou em lint, TypeScript, build e 127 testes. A auditoria de produção retornou zero vulnerabilidades. Smoke e UiSmoke passaram, com favicon local verificado também no Vite de desenvolvimento. O Chromium validou os oito viewports do login, teclado, zoom de 200% e zero violações axe sérias ou críticas nas telas verificadas. O descarte deixou zero recursos temporários. A CSP continua bloqueando a sondagem opcional de JIT do Zod, e o aceite identifica esse diagnóstico conhecido separadamente.
+
+## Limpeza de CSS e documentação de e-mail
+
+Removidos exclusivamente os seletores órfãos `.public-referral`, com preservação de `.portal` e `.opaque-protocol`. Os READMEs distinguem e-mails de conta, notificações internas e os eventos elegíveis da jornada encaminhados à outbox. Provedor e configuração SMTP externos e ativação em produção são pendências operacionais.
+
+Lint, build e 127 testes frontend aprovados. O Chromium verificou as páginas públicas, o protocolo longo e o fallback isolado em 320 × 568 e 1366 × 768. O UiSmoke descartável aprovou a jornada, o portal, axe e a persistência após reinício, com zero containers, redes ou volumes descartáveis restantes.

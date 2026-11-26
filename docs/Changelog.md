@@ -914,3 +914,8 @@ A altura mínima da viewport no próprio cartão, somada à margem vertical exte
 ## Identidade visual oficial da A2
 
 As marcas tipográficas deram lugar aos PNGs oficiais no login, no portal, na administração e nos cabeçalhos públicos. A sidebar mantém “Administração” em texto e escolhe a composição horizontal em telas estreitas. A aplicação passou a usar favicons locais derivados do símbolo oficial.
+
+## Limpeza de CSS e documentação de e-mail
+
+- Removido `.public-referral`, preservando `.portal` e `.opaque-protocol`.
+- Esclarecidos os fluxos de conta, os eventos elegíveis da jornada e as condições para envio de e-mail em produção.
