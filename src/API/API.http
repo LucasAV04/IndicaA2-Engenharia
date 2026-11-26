@@ -35,6 +35,7 @@ Content-Type: application/json
 { "tipoChavePix": 2, "chavePix": "ficticio@example.invalid" }
 
 ### Notificações próprias
+# contexto é opcional. primeiroNome identifica a indicação autorizada e agendamentoAtual é o horário civil atual.
 GET {{API_HostAddress}}/api/notificacoes
 Authorization: Bearer {{AccessToken}}
 
@@ -55,6 +56,7 @@ GET {{API_HostAddress}}/api/admin/jornada/indicadores
 Authorization: Bearer {{AccessToken}}
 
 ### Alertas administrativos
+# Usa o mesmo DTO restrito e pode incluir contexto de cobranças.
 GET {{API_HostAddress}}/api/admin/jornada/notificacoes
 Authorization: Bearer {{AccessToken}}
 

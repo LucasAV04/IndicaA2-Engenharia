@@ -116,3 +116,11 @@ O aceite Chromium verifica 1920 × 991, 1920 × 1080, 1366 × 768, 1280 × 720, 
 | Símbolo oficial | Disponível no componente e usado como origem dos favicons PNG de 32 e 192 px |
 
 O título da aplicação permanece `IndicA2 • Administração`. A imagem com trinca fica fora do frontend porque contém fundo e decoração incorporados. Os cinco PNGs originais permanecem em `src/assets/brand/originais`, fora do bundle de produção.
+
+## Campos e notificações
+
+Telefone aceita digitação, colagem e edição em formato nacional, com DDD e prefixo +55 opcional. A API recebe dígitos e mantém o prefixo quando fornecido. O telefone da pessoa indicada desativa autofill para evitar atribuir os dados de quem preenche o formulário. Login usa autocomplete de usuário, e cadastro e recuperação usam autocomplete de e-mail. E-mails passam por trim e validação até 254 caracteres, com suporte a +. Dados Pix usam seu contrato próprio.
+
+Agendamento usa controle nativo e mantém o horário civil. Datas de relatório são filtros UTC de calendário, e os instantes exibidos usam o fuso do navegador. Ao editar, a interface preserva telefone e e-mail antigos quando o valor não foi alterado.
+
+Notificações mostram o estado de leitura em texto, explicam o alcance da leitura em lote e usam rotas internas conhecidas. O contexto atual pode estar ausente em registros antigos.

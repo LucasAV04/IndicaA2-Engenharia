@@ -3,6 +3,7 @@ import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigat
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { emailSchema, limiteEmail } from './campos'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { api, readSession, saveSession } from './api'
 import type { Sessao } from './types'
@@ -88,7 +89,7 @@ function Layout({ session }: { session: Sessao }) {
     {fetching > 0 && <div role="status" className="global-loading" aria-label="Atualizando dados" />}
     <main id="conteudo" tabIndex={-1} ref={main}><Suspense fallback={loading}><Outlet /></Suspense></main><footer>IndicA2 • Gestão de indicações e vistorias</footer></div></div>
 }
-const loginSchema = z.object({ email: z.string().email('Informe um e-mail válido.'), senha: z.string().min(1, 'Informe sua senha.') })
+const loginSchema = z.object({ email: emailSchema, senha: z.string().min(1, 'Informe sua senha.') })
 function Login({ senhaAlterada }: { senhaAlterada: boolean }) {
   const [error, setError] = useState(false)
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof loginSchema>>({ resolver: zodResolver(loginSchema) })
@@ -97,8 +98,8 @@ function Login({ senhaAlterada }: { senhaAlterada: boolean }) {
     try { saveSession(await api<Sessao>('/auth/login', { method: 'POST', body: JSON.stringify(values) })) }
     catch { setError(true) }
   }
-  return <main id="conteudo" tabIndex={-1} className="login-page"><div className="login-card"><section className="login-intro"><MarcaA2 formato="horizontal" fundo="escuro" className="marca-a2-login" /><h1>Suas indicações em um só lugar</h1><p>Acompanhe indicações, cashbacks e os dados da sua conta no IndicA2.</p></section><section className="login-form"><h2>Acesse sua conta</h2><p>Entre para acompanhar suas indicações ou administrar a operação.</p><form onSubmit={handleSubmit(login)}>
-    <div className="field"><label htmlFor="email">E-mail</label><input id="email" type="email" autoComplete="username" aria-invalid={!!errors.email} aria-describedby={errors.email ? 'login-email-erro' : undefined} {...register('email')} />{errors.email && <span id="login-email-erro" role="alert">{errors.email.message}</span>}</div>
+  return <main id="conteudo" tabIndex={-1} className="login-page"><div className="login-card"><section className="login-intro"><MarcaA2 formato="horizontal" fundo="escuro" className="marca-a2-login" /><h1>Suas indicações em um só lugar</h1><p>Acompanhe indicações, cashbacks e os dados da sua conta no IndicA2.</p></section><section className="login-form"><h2>Acesse sua conta</h2><p>Entre para acompanhar suas indicações ou administrar a operação.</p><form noValidate onSubmit={handleSubmit(login)}>
+    <div className="field"><label htmlFor="email">E-mail</label><input id="email" type="email" autoComplete="username" maxLength={limiteEmail} aria-invalid={!!errors.email} aria-describedby={errors.email ? 'login-email-erro' : undefined} {...register('email')} />{errors.email && <span id="login-email-erro" role="alert">{errors.email.message}</span>}</div>
     <div className="field"><label htmlFor="senha">Senha</label><input id="senha" type="password" autoComplete="current-password" aria-invalid={!!errors.senha} aria-describedby={errors.senha ? 'login-senha-erro' : undefined} {...register('senha')} />{errors.senha && <span id="login-senha-erro" role="alert">{errors.senha.message}</span>}</div>
     {error && <ErrorBox message="Não foi possível entrar. Confira suas credenciais e tente novamente." />}
     <button className="primary" disabled={isSubmitting}>{isSubmitting ? 'Entrando…' : 'Entrar'}</button>
