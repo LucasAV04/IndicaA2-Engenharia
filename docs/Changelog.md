@@ -926,3 +926,8 @@ Notificações passaram a exibir títulos, contexto autorizado, horário, estado
 ## Prefixo fixo em telefones brasileiros
 
 Os telefones de contato mostram +55 separado do número editável. A interface distingue vazio obrigatório, número incompleto, DDD inválido, formato inválido e código estrangeiro. Cadastro e edição usam a representação canônica para números novos ou alterados.
+
+## Limpeza de CSS e documentação de e-mail
+
+- Removido `.public-referral`, preservando `.portal` e `.opaque-protocol`.
+- Esclarecidos os fluxos de conta, os eventos elegíveis da jornada e as condições para envio de e-mail em produção.

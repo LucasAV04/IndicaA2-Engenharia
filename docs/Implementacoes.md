@@ -1709,3 +1709,9 @@ Validação local: lint, 161 testes frontend, build de produção, 163 testes .N
 No CI do PR #47, a linha 49 falhou em conferirMarca. Em Chromium, foi reproduzido que decode() pode confirmar a imagem vertical anterior enquanto a horizontal carrega após reduzir o viewport. A falha interrompeu a jornada antes da gravação de cliente-ui.json, portanto o teste de estados visuais falhou na leitura da linha 407. O aceite agora aguarda a variante esperada concluir o carregamento e mantém as verificações de decodificação, origem, caminho e largura. O diagnóstico sanitizado e a validação de telefone foram preservados.
 
 Validação local: UiSmoke descartável passou nas fases da jornada e após reinício, com zero containers, redes e volumes descartáveis. Lint, build e 164 testes frontend passaram. O build .NET, os 50 testes direcionados e os 888 testes da suíte rápida passaram.
+
+## Limpeza de CSS e documentação de e-mail
+
+Removidos exclusivamente os seletores órfãos `.public-referral`, com preservação de `.portal` e `.opaque-protocol`. Os READMEs distinguem e-mails de conta, notificações internas e os eventos elegíveis da jornada encaminhados à outbox. Provedor e configuração SMTP externos e ativação em produção são pendências operacionais.
+
+Lint, build e 127 testes frontend aprovados. O Chromium verificou as páginas públicas, o protocolo longo e o fallback isolado em 320 × 568 e 1366 × 768. O UiSmoke descartável aprovou a jornada, o portal, axe e a persistência após reinício, com zero containers, redes ou volumes descartáveis restantes.
