@@ -1703,3 +1703,9 @@ O formulário Novo usuário abre com valor vazio e sem placeholder. A sequência
 Novos contatos e alterações enviam 55 + DDD + número em dígitos. O campo opcional vazio envia null. A edição mantém contatos antigos que não foram alterados e sinaliza legados fora do formato. O backend conserva a validação independente e o suporte a números nacionais já aceitos. A validação de formato não verifica existência ou titularidade.
 
 Validação local: lint, 161 testes frontend, build de produção, 163 testes .NET direcionados e 886 testes da suíte rápida aprovados. No Chromium, os campos foram verificados em 320, 390 e 1366 px e com zoom de 200%. O axe não registrou violações sérias ou críticas nas telas inspecionadas. O UiSmoke descartável passou e encerrou com zero containers, redes e volumes do projeto.
+
+### Sincronização da marca responsiva no UiSmoke
+
+No CI do PR #47, a linha 49 falhou em conferirMarca. Em Chromium, foi reproduzido que decode() pode confirmar a imagem vertical anterior enquanto a horizontal carrega após reduzir o viewport. A falha interrompeu a jornada antes da gravação de cliente-ui.json, portanto o teste de estados visuais falhou na leitura da linha 407. O aceite agora aguarda a variante esperada concluir o carregamento e mantém as verificações de decodificação, origem, caminho e largura. O diagnóstico sanitizado e a validação de telefone foram preservados.
+
+Validação local: UiSmoke descartável passou nas fases da jornada e após reinício, com zero containers, redes e volumes descartáveis. Lint, build e 164 testes frontend passaram. O build .NET, os 50 testes direcionados e os 888 testes da suíte rápida passaram.

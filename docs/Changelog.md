@@ -1,5 +1,9 @@
 # Changelog
 
+## Correção do UiSmoke no PR #47
+
+- O aceite Chromium aguarda a imagem da marca correspondente ao viewport antes de confirmar a decodificação.
+
 ## 2026-11-14 — Correção de segurança do Zod (PR #39)
 
 - Zod declarado em ^4.6.6 e resolvido para 4.6.7 pelo npm. Auditoria de produção com zero vulnerabilidades.

@@ -40,6 +40,10 @@ async function axe(page: Page, tela: string) {
 async function conferirMarca(page: Page, variante: string) {
   const imagem = page.getByRole('img', { name: 'A2 Engenharia & Diagnóstico', exact: true })
   await expect(imagem).toBeVisible()
+  // Após redimensionar, a imagem anterior pode continuar decodificada enquanto a nova carrega.
+  await expect.poll(() => imagem.evaluate((img: HTMLImageElement, variante) =>
+    img.complete && img.currentSrc !== '' && new URL(img.currentSrc).pathname.includes(variante), variante),
+  ).toBe(true)
   const resultado = await imagem.evaluate(async (img: HTMLImageElement) => {
     await img.decode()
     const url = new URL(img.currentSrc)
