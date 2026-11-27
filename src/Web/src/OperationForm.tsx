@@ -8,7 +8,7 @@ import type { Operation, ResourceKey } from './resources'
 import { optionLabel } from './resources'
 import { send, ApiError } from './api'
 import { ErrorBox } from './components'
-import { emailSchema, limiteEmail, mascararTelefone, mensagemTelefone, telefoneCanonico } from './campos'
+import { emailSchema, limiteEmail, mascararTelefone, schemaTelefone, telefoneCanonico } from './campos'
 import TelefoneInput from './TelefoneInput'
 
 export default function OperationForm({ operation, row, lists, invalidateKeys, done }: { operation: Operation; row?: Registro; lists: Partial<Record<ResourceKey, Registro[]>>; invalidateKeys: readonly (readonly string[])[]; done: () => void }) {
@@ -20,8 +20,7 @@ export default function OperationForm({ operation, row, lists, invalidateKeys, d
     if (!f.optional) value = value.min(1, 'Campo obrigatório.')
     if (f.type === 'email') return [f.name, value.refine(v => (f.optional && !v)
       || (!!row && v === original(f.name).trim()) || emailSchema.safeParse(v).success, 'Informe um e-mail válido com até 254 caracteres.')]
-    if (f.type === 'tel') return [f.name, value.refine(v => (f.optional && !v)
-      || (!!row && v === mascararTelefone(original(f.name)).trim()) || telefoneCanonico(v) !== null, mensagemTelefone)]
+    if (f.type === 'tel') return [f.name, schemaTelefone(f.optional, row ? mascararTelefone(original(f.name)).trim() : undefined)]
     if (f.name === 'senha') value = value.min(8, 'Use pelo menos oito caracteres.')
     return [f.name, f.type === 'number' ? value.refine(v => Number.isFinite(Number(v)) && Number(v) >= (f.min || 0), 'Informe um valor positivo.') : value]
   })))
@@ -41,7 +40,8 @@ export default function OperationForm({ operation, row, lists, invalidateKeys, d
         if (field?.type === 'email' && row && value === original(key).trim()) return [key, original(key)]
         return [key, field?.options || field?.type === 'number' ? Number(value) : value]
       }))
-      return send(operation.path(row, values), operation.method, operation.body ? operation.body(values, row) : fields.length ? data : undefined)
+      const telefone = typeof data.telefone === 'string' ? data.telefone : null
+      return send(operation.path(row, values), operation.method, operation.body ? operation.body(values, row, telefone) : fields.length ? data : undefined)
     },
     onSuccess: async () => { await Promise.all(invalidateKeys.map(queryKey => client.invalidateQueries({ queryKey }))); done() },
   })
@@ -53,7 +53,8 @@ export default function OperationForm({ operation, row, lists, invalidateKeys, d
         {f.options?.map((v, i) => <option key={i} value={i}>{v}</option>)}
         {f.source && lists[f.source]?.filter(v => f.onlyStatus === undefined || v.status === f.onlyStatus).map(v => <option key={v.id} value={v.id}>{optionLabel(f.source!, v, lists)}</option>)}
       </select> : f.type === 'tel'
-        ? <TelefoneInput id={f.name} campo={register(f.name)} obrigatorio={!f.optional} erro={!!errors[f.name]} terceiro={f.name === 'telefoneIndicada'} />
+        ? <TelefoneInput id={f.name} campo={register(f.name)} obrigatorio={!f.optional} erro={!!errors[f.name]} terceiro={f.name === 'telefoneIndicada'}
+            legado={row && original(f.name) && !telefoneCanonico(original(f.name)) ? original(f.name) : undefined} />
         : <input id={f.name} type={f.type || 'text'} step={f.type === 'number' ? '0.01' : undefined} autoComplete={f.type === 'password' ? 'new-password' : f.type === 'email' ? 'email' : 'off'} maxLength={f.type === 'email' ? limiteEmail : undefined} required={!f.optional} aria-invalid={Boolean(errors[f.name])} aria-describedby={errors[f.name] ? f.name + '-erro' : undefined} {...register(f.name)} />}
       {row && original(f.name) && (f.type === 'tel' && !telefoneCanonico(original(f.name))
         || f.type === 'email' && !emailSchema.safeParse(original(f.name)).success)

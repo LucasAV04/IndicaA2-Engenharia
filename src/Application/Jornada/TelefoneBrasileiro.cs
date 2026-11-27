@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Application.Jornada;
 
 public static class TelefoneBrasileiro
@@ -12,7 +14,10 @@ public static class TelefoneBrasileiro
             throw new ArgumentException("Telefone inválido.");
 
         var digitos = new string(texto.Where(char.IsAsciiDigit).ToArray());
-        var temPais = digitos.Length is 12 or 13 && digitos.StartsWith("55", StringComparison.Ordinal);
+        // O formato legado com país entre parênteses tem um DDD separado.
+        var paisEntreParenteses = Regex.IsMatch(texto, @"^\(55\) *(?:\([0-9]{2}\)|[0-9]{2} +)");
+        var temPais = digitos.Length is 12 or 13 && digitos.StartsWith("55", StringComparison.Ordinal)
+            && (texto.StartsWith('+') || texto.StartsWith("55", StringComparison.Ordinal) || paisEntreParenteses);
         var nacional = temPais ? digitos[2..] : digitos;
         if ((texto.StartsWith('+') && !temPais) || nacional.Length is not (10 or 11)
             || nacional[0] == '0' || nacional[1] == '0')

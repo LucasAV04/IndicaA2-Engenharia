@@ -1,5 +1,9 @@
 # Changelog
 
+## Correção do UiSmoke no PR #47
+
+- O aceite Chromium aguarda a imagem da marca correspondente ao viewport antes de confirmar a decodificação.
+
 ## 2026-11-14 — Correção de segurança do Zod (PR #39)
 
 - Zod declarado em ^4.6.6 e resolvido para 4.6.7 pelo npm. Auditoria de produção com zero vulnerabilidades.
@@ -918,3 +922,7 @@ As marcas tipográficas deram lugar aos PNGs oficiais no login, no portal, na ad
 ## Notificações e formulários
 
 Notificações passaram a exibir títulos, contexto autorizado, horário, estado de leitura e atalhos internos. Os formulários de usuário e indicação formatam telefones brasileiros. Login, recuperação, cadastro e edição usam validação de e-mail em português. Vistorias preservam horário civil, e relatórios validam e exibem datas de calendário em português.
+
+## Prefixo fixo em telefones brasileiros
+
+Os telefones de contato mostram +55 separado do número editável. A interface distingue vazio obrigatório, número incompleto, DDD inválido, formato inválido e código estrangeiro. Cadastro e edição usam a representação canônica para números novos ou alterados.

@@ -86,6 +86,58 @@ describe('Sessão administrativa', () => {
     expect(screen.queryByText('Engenharia', { exact: true })).not.toBeInTheDocument()
   })
 
+  it.each([
+    ['', null],
+    ['+55 (79) 99999-9999', '5579999999999'],
+    ['557933334444', '557933334444'],
+  ])('envia telefone opcional ou canônico no cadastro com %s', async (entrada, esperado) => {
+    mount('/usuarios')
+    await userEvent.click(await screen.findByRole('button', { name: 'Novo usuário' }))
+    const dialog = within(screen.getByRole('dialog'))
+    const campo = dialog.getByLabelText('Telefone')
+    expect(campo).toHaveValue('')
+    expect(dialog.getByText('+55', { exact: true })).toBeVisible()
+    await userEvent.type(dialog.getByLabelText('Nome', { exact: true }), 'Usuário fictício')
+    await userEvent.type(dialog.getByLabelText('E-mail'), 'usuario@example.invalid')
+    await userEvent.type(dialog.getByLabelText('Senha inicial'), 'senha-ficticia')
+    if (entrada) {
+      const user = userEvent.setup()
+      await user.click(campo)
+      await user.paste(entrada)
+    }
+    await userEvent.click(dialog.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(requests.find(r => r.method === 'POST')?.body).toMatchObject({ telefone: esperado }))
+  })
+
+  it('edita um telefone nacional e envia o novo contato com código do país', async () => {
+    data['/api/usuarios'] = [{ ...usuario, telefone: '55999999999' }]
+    mount('/usuarios')
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    const dialog = within(screen.getByRole('dialog'))
+    const campo = dialog.getByLabelText('Telefone')
+    expect(campo).toHaveValue('(55) 99999-9999')
+    fireEvent.change(campo, { target: { value: '7933334444' } })
+    await userEvent.click(dialog.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(requests.find(r => r.method === 'PUT')?.body).toMatchObject({ telefone: '557933334444' }))
+  })
+
+  it('bloqueia colagem de apenas +55 e aceita limpar o telefone explicitamente', async () => {
+    data['/api/usuarios'] = [{ ...usuario, telefone: '55999999999' }]
+    const user = userEvent.setup()
+    mount('/usuarios')
+    await user.click(await screen.findByRole('button', { name: 'Editar' }))
+    const dialog = within(screen.getByRole('dialog'))
+    const campo = dialog.getByLabelText('Telefone')
+    await user.clear(campo)
+    await user.paste('+55')
+    await user.click(dialog.getByRole('button', { name: 'Salvar' }))
+    expect(await dialog.findByText('Complete o telefone com DDD.')).toBeVisible()
+    expect(requests.some(r => r.method === 'PUT')).toBe(false)
+    await user.clear(campo)
+    await user.click(dialog.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(requests.find(r => r.method === 'PUT')?.body).toMatchObject({ telefone: null }))
+  })
+
   it('preserva telefone antigo quando a edição não altera o contato', async () => {
     data['/api/usuarios'] = [{ ...usuario, telefone: 'ramal antigo 37' }]
     mount('/usuarios')
@@ -272,7 +324,7 @@ describe('Fluxos administrativos via HTTP', () => {
     await fill('Código de indicação', 'ABC12345'); await fill('Nome da pessoa indicada', 'Pessoa Fictícia'); await fill('Telefone da pessoa indicada', '11999999999')
     await userEvent.click(screen.getByRole('button', { name: 'Salvar' }))
     await waitFor(() => expect(requests.find(r => r.method === 'POST')?.path).toBe('/api/indicacoes/por-codigo'))
-    expect(requests.find(r => r.method === 'POST')?.body).toMatchObject({ codigoIndicacao: 'ABC12345' })
+    expect(requests.find(r => r.method === 'POST')?.body).toMatchObject({ codigoIndicacao: 'ABC12345', telefoneIndicada: '5511999999999' })
   })
   it.each([
     ['/vistorias', { ...base, usuarioId: 'user-1', pacote: 0, areaM2: 50, tipoPlanta: 'Apartamento' }, 'Realizar', '/api/vistorias/registro-1/realizar'],
