@@ -121,6 +121,23 @@ describe('Sessão administrativa', () => {
     await waitFor(() => expect(requests.find(r => r.method === 'PUT')?.body).toMatchObject({ telefone: '557933334444' }))
   })
 
+  it('bloqueia colagem de apenas +55 e aceita limpar o telefone explicitamente', async () => {
+    data['/api/usuarios'] = [{ ...usuario, telefone: '55999999999' }]
+    const user = userEvent.setup()
+    mount('/usuarios')
+    await user.click(await screen.findByRole('button', { name: 'Editar' }))
+    const dialog = within(screen.getByRole('dialog'))
+    const campo = dialog.getByLabelText('Telefone')
+    await user.clear(campo)
+    await user.paste('+55')
+    await user.click(dialog.getByRole('button', { name: 'Salvar' }))
+    expect(await dialog.findByText('Complete o telefone com DDD.')).toBeVisible()
+    expect(requests.some(r => r.method === 'PUT')).toBe(false)
+    await user.clear(campo)
+    await user.click(dialog.getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => expect(requests.find(r => r.method === 'PUT')?.body).toMatchObject({ telefone: null }))
+  })
+
   it('preserva telefone antigo quando a edição não altera o contato', async () => {
     data['/api/usuarios'] = [{ ...usuario, telefone: 'ramal antigo 37' }]
     mount('/usuarios')

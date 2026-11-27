@@ -10,10 +10,10 @@ export function separarTelefone(valor: string) {
   const digitos = texto.replace(/\D/g, '')
   const internacional = texto.startsWith('+')
   const estrangeiro = internacional && !digitos.startsWith(paisBrasil)
-  // Uma entrada nacional já mascarada começa com parêntese. Seu DDD 55
-  // continua sendo DDD mesmo quando ainda há dígitos excedentes.
+  // O formato legado com país entre parênteses tem um DDD separado.
+  const paisEntreParenteses = /^\(55\) *(?:\([0-9]{2}\)|[0-9]{2} +)/.test(texto)
   const pais = !estrangeiro && (internacional
-    || (texto.startsWith(paisBrasil) && (digitos.length === 12 || digitos.length === 13))) ? 2 : 0
+    || ((texto.startsWith(paisBrasil) || paisEntreParenteses) && (digitos.length === 12 || digitos.length === 13))) ? 2 : 0
   return { nacional: digitos.slice(pais), pais, estrangeiro, formatoValido: texto.length <= 30 && caracteresTelefone.test(texto) }
 }
 
@@ -34,7 +34,7 @@ export function telefoneCanonico(valor: string) {
 export function mascararTelefone(valor: string, duranteEdicao = false) {
   const { nacional, estrangeiro, formatoValido } = separarTelefone(valor)
   if (estrangeiro || !formatoValido || nacional.length > 11 || (!duranteEdicao && erroTelefone(valor))) return valor
-  if (!nacional) return ''
+  if (!nacional) return valor
   if (nacional.length <= 2) return '(' + nacional
   const corte = nacional.length === 11 ? 7 : 6
   return '(' + nacional.slice(0, 2) + ') ' + nacional.slice(2, corte)

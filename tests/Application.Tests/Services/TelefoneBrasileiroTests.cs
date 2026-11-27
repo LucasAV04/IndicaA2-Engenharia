@@ -8,6 +8,8 @@ public sealed class TelefoneBrasileiroTests
     [Theory]
     [InlineData("(79) 99999-9999", "79999999999")]
     [InlineData("5579999999999", "5579999999999")]
+    [InlineData("(55) 79 99999-9999", "5579999999999")]
+    [InlineData("(55) (79) 3333-4444", "557933334444")]
     [InlineData("55999999999", "55999999999")]
     [InlineData("7933334444", "7933334444")]
     [InlineData("+55 (79) 3333-4444", "557933334444")]
