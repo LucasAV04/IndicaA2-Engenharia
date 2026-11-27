@@ -82,11 +82,71 @@ public sealed class JornadaMySqlIntegrationTests(MySqlIntegrationFixture fixture
         var repository=new IndicacaoMySqlRepository(fixture.ConnectionFactory);
         await repository.AdicionarAsync(c.Indicacao);await repository.AtualizarAsync(c.Indicacao);
         Assert.Single(await Consulta.NotificacoesAsync(c.Vistoria.UsuarioId,false,default),n=>n.Tipo==TipoNotificacao.VistoriaVinculada);
-        Assert.Single(await Consulta.NotificacoesAsync(c.Indicador.Id,false,default),n=>n.Tipo==TipoNotificacao.VistoriaVinculada);
+        var aviso = Assert.Single(await Consulta.NotificacoesAsync(c.Indicador.Id,false,default),
+            n => n.Tipo == TipoNotificacao.VistoriaVinculada);
+        Assert.Equal("Pessoa", aviso.Contexto?.PrimeiroNome);
+        Assert.Equal(c.Vistoria.DataAgendada.ToString("yyyy-MM-ddTHH:mm"),
+            aviso.Contexto?.AgendamentoAtual?.ToString("yyyy-MM-ddTHH:mm"));
+        await using var conexao = fixture.ConnectionFactory.Create();
+        await conexao.OpenAsync();
+        using var atualizarNome = new MySqlCommand("UPDATE indicacoes SET nome_indicada=@nome WHERE id=@id", conexao);
+        atualizarNome.Parameters.AddWithValue("@nome", "nome+legado@example.invalid");
+        atualizarNome.Parameters.AddWithValue("@id", c.Indicacao.Id.ToString());
+        await atualizarNome.ExecuteNonQueryAsync();
+        Assert.Null(Assert.Single(await Consulta.NotificacoesAsync(c.Indicador.Id, false, default)).Contexto?.PrimeiroNome);
         using var snapshots=new ProcessamentoPixCenario(fixture);
         var referencias=await snapshots.SnapshotAsync("SELECT referencia_id FROM notificacoes_internas ORDER BY id");
         Assert.DoesNotContain(c.Indicacao.Id.ToString(),referencias,StringComparison.OrdinalIgnoreCase);
         Assert.Equal(2,await Quantidade("notificacoes_internas"));
+    }
+
+    [MySqlIntegrationFact]
+    public async Task NotificacoesProjetamContextoAtualSemExporDadosAoDestinatarioErrado()
+    {
+        var c = await Preparar();
+        var outro = IntegrationTestData.CriarUsuario();
+        await new UsuarioMySqlRepository(fixture.ConnectionFactory).AdicionarAsync(outro);
+        await using var conexao = fixture.ConnectionFactory.Create();
+        await conexao.OpenAsync();
+        using var inserir = new MySqlCommand("""
+            INSERT INTO notificacoes_internas (id,tipo,escopo,usuario_id,referencia_id,evento_chave,created_at)
+            VALUES (@id,0,0,@usuario,@ref,@id,UTC_TIMESTAMP(6))
+            """, conexao);
+        inserir.Parameters.AddWithValue("@id", Guid.NewGuid().ToString());
+        inserir.Parameters.AddWithValue("@usuario", outro.Id.ToString());
+        inserir.Parameters.AddWithValue("@ref", c.Vistoria.Id.ToString());
+        await inserir.ExecuteNonQueryAsync();
+
+        var propria = Assert.Single(await Consulta.NotificacoesAsync(c.Vistoria.UsuarioId, false, default));
+        Assert.True(propria.Contexto!.VistoriaPropria);
+        Assert.Null(propria.Contexto.PrimeiroNome);
+        Assert.Equal(DateTimeKind.Unspecified, propria.Contexto.AgendamentoAtual!.Value.Kind);
+        var alheia = Assert.Single(await Consulta.NotificacoesAsync(outro.Id, false, default));
+        Assert.Null(alheia.Contexto);
+        Assert.False(await Consulta.LerAsync(outro.Id, false, propria.Id, DateTime.UtcNow, default));
+        var leitura = DateTime.UtcNow;
+        Assert.True(await Consulta.LerAsync(c.Vistoria.UsuarioId, false, propria.Id, leitura, default));
+        var primeira = Assert.Single(await Consulta.NotificacoesAsync(c.Vistoria.UsuarioId, false, default)).LidaEm;
+        Assert.True(await Consulta.LerAsync(c.Vistoria.UsuarioId, false, propria.Id, leitura.AddHours(1), default));
+        Assert.Equal(primeira, Assert.Single(await Consulta.NotificacoesAsync(c.Vistoria.UsuarioId, false, default)).LidaEm);
+        Assert.Equal(0L, await Consulta.NaoLidasAsync(c.Vistoria.UsuarioId, false, default));
+        Assert.True(await Consulta.LerAsync(outro.Id, false, null, leitura, default));
+        Assert.Equal(0L, await Consulta.NaoLidasAsync(outro.Id, false, default));
+
+        using var historico = new MySqlCommand("""
+            INSERT INTO notificacoes_internas (id,tipo,escopo,usuario_id,referencia_id,evento_chave,created_at)
+            WITH RECURSIVE dias AS (SELECT 1 AS dia UNION ALL SELECT dia+1 FROM dias WHERE dia<101)
+            SELECT UUID(),1,0,@usuario,UUID(),UUID(),DATE_ADD('2025-01-01', INTERVAL dia DAY) FROM dias
+            """, conexao);
+        historico.Parameters.AddWithValue("@usuario", outro.Id.ToString());
+        Assert.Equal(101, await historico.ExecuteNonQueryAsync());
+        var recentes = await Consulta.NotificacoesAsync(outro.Id, false, default);
+        Assert.Equal(100, recentes.Count);
+        Assert.Equal(recentes.OrderByDescending(n => n.CriadaEm).Select(n => n.Id), recentes.Select(n => n.Id));
+        Assert.All(recentes, n => Assert.Null(n.Contexto));
+        Assert.Equal(101L, await Consulta.NaoLidasAsync(outro.Id, false, default));
+        Assert.True(await Consulta.LerAsync(outro.Id, false, null, leitura, default));
+        Assert.Equal(0L, await Consulta.NaoLidasAsync(outro.Id, false, default));
     }
 
     [MySqlIntegrationFact]
@@ -159,6 +219,10 @@ public sealed class JornadaMySqlIntegrationTests(MySqlIntegrationFixture fixture
         var c=await Preparar(dados:false);await Financeiro.ConcluirVistoriaAsync(c.Vistoria.Id,default);
         var cb=await Cashback();Assert.Equal(StatusCashback.Disponivel,cb.Status);Assert.Equal(0,await Quantidade("pagamentos_pix"));
         Assert.Contains(await Consulta.NotificacoesAsync(c.Indicador.Id,false,default),n=>n.Tipo==TipoNotificacao.DadosPixNecessarios);
+        var alerta = Assert.Single(await Consulta.NotificacoesAsync(Guid.NewGuid(), true, default),
+            n => n.Tipo == TipoNotificacao.DadosPixNecessarios);
+        Assert.Equal("Pessoa", alerta.Contexto?.PrimeiroNome);
+        Assert.Null(alerta.Contexto?.AgendamentoAtual);
         Assert.Empty(await Financeiro.CandidatosAsync(20,default));
         await new DadosPixMySqlRepository(fixture.ConnectionFactory,_protector).AdicionarAsync(new(c.Indicador.Id,TipoChavePix.Email,"ficticio@example.invalid"));
         Assert.Equal(new[]{cb.Id},await Financeiro.CandidatosAsync(20,default));

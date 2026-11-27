@@ -46,6 +46,32 @@ it('link válido não expõe proprietária e consentimento começa desmarcado', 
   expect(requests).toHaveLength(1)
   expect(requests[0].headers).toBeUndefined()
 })
+it('telefone permite colar, apagar e corrigir no meio sem perder dígitos', async () => {
+  const user = userEvent.setup()
+  montar('/indicar/ABCD1234')
+  const campo = await screen.findByLabelText<HTMLInputElement>('Telefone')
+  await user.click(campo)
+  await user.paste('79999999999')
+  expect(campo).toHaveValue('(79) 99999-9999')
+  campo.setSelectionRange(4, 4)
+  await user.keyboard('{Backspace}8')
+  expect(campo).toHaveValue('(78) 99999-9999')
+  campo.setSelectionRange(2, 2)
+  await user.keyboard('{Delete}9')
+  expect(campo).toHaveValue('(79) 99999-9999')
+  await user.clear(campo)
+  expect(campo).toHaveValue('')
+  expect(screen.getByText('+55', { exact: true })).toBeVisible()
+  expect(campo).toHaveAccessibleDescription('Brasil (+55). Informe o DDD e o número.')
+  await user.paste('(79) 3333-4444')
+  expect(campo).toHaveValue('(79) 3333-4444')
+})
+it('exige telefone com DDD quando o campo público está vazio', async () => {
+  montar('/indicar/ABCD1234')
+  await userEvent.click(await screen.findByRole('button', { name: 'Enviar indicação' }))
+  expect(await screen.findByText('Informe o telefone com DDD.')).toBeVisible()
+  expect(screen.getByText('+55', { exact: true })).toBeVisible()
+})
 it('link inválido não abre formulário ou dados privados', async () => {
   dados['/api/public/indicacoes/codigos/ABCD1234'] = { utilizavel: false }
   montar('/indicar/ABCD1234'); expect(await screen.findByRole('alert')).toHaveTextContent('Link indisponível')
@@ -61,7 +87,7 @@ it('submissão única retorna protocolo opaco sem guardar PII no armazenamento',
   await userEvent.dblClick(screen.getByRole('button', { name: 'Enviar indicação' }))
   expect(await screen.findByText('a'.repeat(64))).toBeInTheDocument()
   const posts = requests.filter(r => r.method === 'POST'); expect(posts).toHaveLength(1)
-  expect(posts[0].body).toMatchObject({ consentimento: true, versaoTermo: '2026-10-01', codigo: 'ABCD1234' })
+  expect(posts[0].body).toMatchObject({ consentimento: true, versaoTermo: '2026-10-01', codigo: 'ABCD1234', telefone: '5585999990000' })
   expect(new Headers(posts[0].headers).get('Idempotency-Key')).toMatch(/^[0-9a-f-]{36}$/)
   expect(JSON.stringify(localStorage)).not.toContain('Pessoa fictícia')
   expect(JSON.stringify(sessionStorage)).not.toContain('Pessoa fictícia')
@@ -127,7 +153,7 @@ it('portal exibe apenas listas próprias e máscaras sem menu administrativo', a
   montar('/minha-conta', sessao); await screen.findByText('••••00')
   expect(screen.getByText('••••••••')).toBeInTheDocument()
   expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument()
-  expect(requests.every(r => r.path.startsWith('/api/minha-conta') || r.path === '/api/notificacoes')).toBe(true)
+  expect(requests.every(r => r.path.startsWith('/api/minha-conta') || r.path.startsWith('/api/notificacoes'))).toBe(true)
   expect(document.body).toHaveTextContent('Cashback pago')
 })
 it('cópia utiliza link retornado pelo servidor', async () => {
@@ -144,6 +170,20 @@ it('Dados Pix começam vazios e invalidam somente o próprio cache', async () =>
   await waitFor(() => expect(requests.filter(r => r.path === '/api/minha-conta/dados-pix' && r.method === 'GET')).toHaveLength(2))
   expect(requests.find(r => r.method === 'PUT')?.body).toEqual({ tipoChavePix: 2, chavePix: 'novo@example.invalid' })
   expect(requests.filter(r => r.path === '/api/minha-conta/indicacoes')).toHaveLength(1)
+})
+it('contagem integral orienta a leitura em lote e é atualizada junto com a lista', async () => {
+  dados['/api/notificacoes/nao-lidas'] = { quantidade: 104 }
+  respostas['PATCH /api/notificacoes/lidas'] = () => {
+    dados['/api/notificacoes/nao-lidas'] = { quantidade: 0 }
+    dados['/api/notificacoes'] = []
+    return resposta(null, 204)
+  }
+  montar('/minha-conta', sessao)
+  expect(await screen.findByText('1 não lidas nesta lista · 104 no total')).toBeVisible()
+  expect(screen.getByText('Esta ação inclui notificações fora da lista exibida.')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Marcar todas como lidas' }))
+  expect(await screen.findByText('Nenhuma notificação.')).toBeVisible()
+  await waitFor(() => expect(screen.getByText(/0 no total/)).toBeVisible())
 })
 it('notificação marca somente a referência autenticada', async () => {
   montar('/minha-conta', sessao); await userEvent.click(await screen.findByRole('button', { name: 'Marcar como lida' }))

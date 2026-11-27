@@ -160,7 +160,7 @@ namespace Domain.Entities
             AtualizarDataAlteracao();
         }
 
-        public void AlterarTelefone(string novoTelefone)
+        public void AlterarTelefone(string? novoTelefone)
         {
             Telefone = novoTelefone;
             AtualizarDataAlteracao();

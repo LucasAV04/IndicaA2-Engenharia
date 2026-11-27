@@ -77,7 +77,7 @@ namespace Application.Services
             var indicacao = new Indicacao(
                 usuarioIndicador.Id,
                 dto.NomeIndicada,
-                dto.TelefoneIndicada,
+                global::Application.Jornada.TelefoneBrasileiro.Normalizar(dto.TelefoneIndicada)!,
                 codigoInformado);
 
             await _indicacaoRepository.AdicionarAsync(indicacao, cancellationToken);
@@ -113,7 +113,7 @@ namespace Application.Services
             var indicacao = new Indicacao(
                 usuarioIndicador.Id,
                 dto.NomeIndicada,
-                dto.TelefoneIndicada,
+                global::Application.Jornada.TelefoneBrasileiro.Normalizar(dto.TelefoneIndicada)!,
                 codigoIndicacao);
 
             await _indicacaoRepository.AdicionarAsync(indicacao, cancellationToken);

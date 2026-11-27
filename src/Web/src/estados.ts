@@ -10,9 +10,6 @@ export const estadosCobranca = ['Preparada', 'Criando', 'Ativa', 'Indeterminada'
 export const estadosEmail = ['Pendente', 'Processando', 'Enviado', 'Falha permanente', 'Indeterminado', 'Expirado'] as const
 export const operacoesCobranca = ['Criar cobrança', 'Consultar cobrança', 'Remover cobrança',
   'Consultar recebimento', 'Processar recebimento'] as const
-export const textosNotificacao = ['Vistoria vinculada ou agendada.', 'Pagamento da vistoria confirmado.',
-  'Cadastre Dados Pix para preparar o recebimento do cashback.', 'Cashback disponível.', 'Cashback pago com sucesso.',
-  'Falha financeira: revisão administrativa necessária.', 'Cobrança Pix exige revisão administrativa.'] as const
 
 export function rotulo(estados: Readonly<Partial<Record<number, string>>>, valor: number) {
   return Object.hasOwn(estados, valor) ? estados[valor] ?? estadoDesconhecido : estadoDesconhecido

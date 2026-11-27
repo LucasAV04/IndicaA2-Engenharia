@@ -1,0 +1,6 @@
+.notificacoes ul { list-style: none; padding: 0; }
+.notificacoes li { padding: .85rem; margin-block: .65rem; border: 1px solid #d3dbe4; border-radius: .5rem; overflow-wrap: anywhere; }
+.notificacoes li.notificacao-nao-lida { border-inline-start: .25rem solid #3a5a78; background: #f1f3f5; }
+.notificacoes h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.notificacoes li p { margin: .3rem 0; }
+.notificacoes li button { margin-top: .35rem; }

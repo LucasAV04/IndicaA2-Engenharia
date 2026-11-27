@@ -9,7 +9,8 @@ public sealed record ProtocoloIndicacao(string Protocolo);
 public sealed record IndicacaoPortal(string Nome, string TelefoneMascarado, StatusIndicacao Status, DateTime CriadaEm);
 public sealed record CashbackPortal(decimal Valor, StatusCashback Status, StatusPagamentoPix? SituacaoPix, DateTime CriadoEm);
 public sealed record PerfilPortal(string Nome, string Codigo, string Link);
-public sealed record NotificacaoResponse(Guid Id, TipoNotificacao Tipo, DateTime CriadaEm, DateTime? LidaEm);
+public sealed record ContextoNotificacao(string? PrimeiroNome, DateTime? AgendamentoAtual, bool VistoriaPropria);
+public sealed record NotificacaoResponse(Guid Id, TipoNotificacao Tipo, DateTime CriadaEm, DateTime? LidaEm, ContextoNotificacao? Contexto = null);
 public sealed record OrigemIndicacaoResponse(Guid Id, int Origem, string? VersaoTermo, DateTime? ConsentimentoEm);
 public sealed record IndicadoresJornada(long SemDadosPix, long DisponiveisSemOrdem, long PixPendente, long PixProcessando, long PixConcluido, long PixFalhou, long PixFalhaDefinitiva, long NaoLidas);
 public interface IJornadaPublicaStore

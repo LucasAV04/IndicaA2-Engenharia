@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, ApiError, readSession, saveSession } from './api'
 import { ErrorBox } from './components'
+import { calendarDate, utcDate } from './format'
+import { intervaloRelatorioValido } from './campos'
 import { estadosPorRelatorio, rotulo } from './estados'
 
 const tipos = ['Pagamentos recebidos', 'Cashbacks disponíveis', 'Cashbacks pagos',
@@ -13,7 +15,6 @@ type Resultado = { total: number; valorTotal: number | null; linhas: {
 }[] }
 
 const dinheiro = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
-const dataLocal = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
 
 function parametros(filtros: Filtros, pagina: number) {
   return new URLSearchParams({ ...Object.fromEntries(
@@ -27,6 +28,7 @@ export default function RelatoriosPage() {
   const [pagina, setPagina] = useState(1)
   const [exportando, setExportando] = useState(false)
   const [erro, setErro] = useState('')
+  const [erroPeriodo, setErroPeriodo] = useState('')
   const query = useQuery({
     queryKey: ['relatorios', aplicados, pagina],
     queryFn: ({ signal }) => api<Resultado>('/admin/relatorios?' + parametros(aplicados, pagina), { signal }),
@@ -62,6 +64,11 @@ export default function RelatoriosPage() {
     <h1>Relatórios</h1>
     <form className="panel" onSubmit={evento => {
       evento.preventDefault()
+      if (!intervaloRelatorioValido(form.inicio, form.fim)) {
+        setErroPeriodo('Informe um período válido de até 366 dias, com a data inicial anterior ou igual à final.')
+        return
+      }
+      setErroPeriodo('')
       setAplicados(form)
       setPagina(1)
     }}>
@@ -71,10 +78,10 @@ export default function RelatoriosPage() {
         </select>
       </div>
       <div className="field"><label htmlFor="rel-inicio">Data inicial (UTC)</label>
-        <input id="rel-inicio" type="date" value={form.inicio} onChange={e => setForm({ ...form, inicio: e.target.value })} />
+        <input id="rel-inicio" type="date" aria-describedby={erroPeriodo ? 'rel-periodo-erro' : undefined} aria-invalid={!!erroPeriodo} value={form.inicio} onChange={e => setForm({ ...form, inicio: e.target.value })} />
       </div>
       <div className="field"><label htmlFor="rel-fim">Data final (UTC)</label>
-        <input id="rel-fim" type="date" value={form.fim} onChange={e => setForm({ ...form, fim: e.target.value })} />
+        <input id="rel-fim" type="date" aria-describedby={erroPeriodo ? 'rel-periodo-erro' : undefined} aria-invalid={!!erroPeriodo} value={form.fim} onChange={e => setForm({ ...form, fim: e.target.value })} />
       </div>
       <div className="field"><label htmlFor="rel-status">Status</label>
         <select id="rel-status" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option value="">Todos</option>{Object.entries(estadosPorRelatorio[Number(form.tipo)]).map(([codigo, nome]) => <option key={codigo} value={codigo}>{nome}</option>)}</select>
@@ -82,10 +89,11 @@ export default function RelatoriosPage() {
       <div className="field"><label htmlFor="rel-tamanho">Registros por página</label>
         <input id="rel-tamanho" type="number" min="1" max="100" required value={form.tamanho} onChange={e => setForm({ ...form, tamanho: e.target.value })} />
       </div>
+      {erroPeriodo && <p id="rel-periodo-erro" role="alert">{erroPeriodo}</p>}
       <button type="submit">Aplicar filtros</button>
     </form>
     <section className="panel" aria-label="Resultado do relatório">
-      <p>Filtros aplicados — {tipos[Number(aplicados.tipo)]}, {aplicados.inicio || 'início padrão'} a {aplicados.fim || 'hoje'}, status {aplicados.status ? rotulo(estadosPorRelatorio[Number(aplicados.tipo)], Number(aplicados.status)) : 'todos'}.</p>
+      <p>Filtros aplicados — {tipos[Number(aplicados.tipo)]}, {aplicados.inicio ? calendarDate(aplicados.inicio) : 'início padrão'} a {aplicados.fim ? calendarDate(aplicados.fim) : 'hoje'}, status {aplicados.status ? rotulo(estadosPorRelatorio[Number(aplicados.tipo)], Number(aplicados.status)) : 'todos'}.</p>
       <button disabled={exportando || !query.data} onClick={() => void exportar()}>Exportar CSV</button>
       {erro && <p role="alert">{erro}</p>}
       {query.isPending && <p role="status">Carregando relatório…</p>}
@@ -96,7 +104,7 @@ export default function RelatoriosPage() {
           <caption>{tipos[Number(aplicados.tipo)]}</caption>
           <thead><tr><th>Referência</th><th>Data e hora</th><th>Status</th><th>Valor</th></tr></thead>
           <tbody>{query.data.linhas.map(linha => <tr key={linha.id}>
-            <td>{linha.id}</td><td>{dataLocal.format(new Date(linha.dataUtc))}</td>
+            <td>{linha.id}</td><td>{utcDate(linha.dataUtc)}</td>
             <td><span className="badge">{rotulo(estadosPorRelatorio[Number(aplicados.tipo)], linha.status)}</span></td><td>{linha.valor === null ? '—' : dinheiro.format(linha.valor)}</td>
           </tr>)}</tbody>
         </table></div> : <p>Nenhum registro neste período. Ajuste os filtros para consultar outras datas.</p>}

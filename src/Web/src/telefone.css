@@ -1,0 +1,14 @@
+.telefone-campo {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+}
+.telefone-campo > span {
+  flex: none;
+  font-weight: 600;
+}
+.telefone-campo > input {
+  flex: 1;
+  min-width: 0;
+}

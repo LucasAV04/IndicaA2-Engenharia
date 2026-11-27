@@ -103,3 +103,7 @@ A matriz cobre 320, 360, 390, 768, 1280 e 1440 px e verifica que a página não 
 ### Marca oficial no aceite
 
 O UiSmoke verifica se o Chromium decodifica a variante correta de origem local no login, nas áreas administrativa e da cliente e nas páginas públicas. Ele abre a sidebar compacta pelo teclado, verifica os favicons PNG, repete a verificação após recarregar a SPA e após reiniciar a API e falha diante de ativos ausentes ou erros de execução. Análises axe continuam cobrindo login, painel, portal, indicação e recuperação. O smoke não publica capturas nem traces.
+
+### Aceite de notificações e campos
+
+O Chromium cadastra Maria Indicadora Teste e Ana Indicada Teste, usa os formulários de telefone e e-mail, vincula a indicação e uma vistoria às 19:00 e verifica o contexto no portal de Maria. O teste confirma a persistência da leitura após recarga. A administração consulta a indicação e seu vínculo existente. O teste não habilita workers nem fornecedores financeiros. As notificações administrativas de cashback e cobrança são verificadas com os cenários de integração, pois o vínculo gera avisos apenas para clientes.

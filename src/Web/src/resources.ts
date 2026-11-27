@@ -11,7 +11,7 @@ export const resourceDependencies: Record<ResourceKey, ResourceKey[]> = {
   'pagamentos-pix': ['cashbacks', 'usuarios'],
 }
 export type Field = { name: string; label: string; type?: string; source?: ResourceKey; options?: string[]; optional?: boolean; onlyStatus?: number; min?: number }
-export type Operation = { label: string; method: string; path: (row?: Registro, values?: Record<string, string>) => string; fields?: Field[]; allowed?: (r: Registro) => boolean; confirm?: string; body?: (v: Record<string, string>, row?: Registro) => unknown }
+export type Operation = { label: string; method: string; path: (row?: Registro, values?: Record<string, string>) => string; fields?: Field[]; allowed?: (r: Registro) => boolean; confirm?: string; body?: (v: Record<string, string>, row?: Registro, telefone?: string | null) => unknown }
 export type Resource = { title: string; singular: string; description: string; statuses: readonly string[]; columns: { label: string; value: (r: Registro, lists: Partial<Record<ResourceKey, Registro[]>>) => string }[]; create: Operation; actions: Operation[] }
 export const nome = (lists: Partial<Record<ResourceKey, Registro[]>>, id?: string) => lists.usuarios?.find(u => u.id === id)?.nome || (id ? 'Usuário não disponível' : '—')
 const cancel = (key: ResourceKey, statuses: number[]): Operation => ({ label: 'Cancelar', method: 'PATCH', path: r => '/' + key + '/' + r!.id + '/cancelar', confirm: 'cancelamento', allowed: r => statuses.includes(r.status) })
@@ -22,7 +22,7 @@ export const resources: Record<ResourceKey, Resource> = {
     statuses: ['—', ...Object.values(estadosUsuario)],
     columns: [{ label: 'Nome', value: r => r.nome! }, { label: 'E-mail', value: r => r.email! }, { label: 'Telefone', value: r => r.telefone || '—' }, { label: 'Código de indicação', value: r => r.codigoIndicacao || '—' }],
     create: { label: 'Novo usuário', method: 'POST', path: () => '/usuarios', fields: [...userFields, { name: 'senha', label: 'Senha inicial', type: 'password' }] },
-    actions: [{ label: 'Editar', method: 'PUT', path: r => '/usuarios/' + r!.id, fields: userFields, body: (v, r) => ({ ...v, id: r!.id }) }],
+    actions: [{ label: 'Editar', method: 'PUT', path: r => '/usuarios/' + r!.id, fields: userFields, body: (v, r, telefone) => ({ ...v, id: r!.id, telefone }) }],
   },
   indicacoes: {
     title: 'Indicações', singular: 'indicação', description: 'Acompanhe a indicação desde o código até a vistoria concluída.',

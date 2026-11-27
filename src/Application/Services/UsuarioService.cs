@@ -1,4 +1,4 @@
-﻿using Application.DTOs.Usuario;
+using Application.DTOs.Usuario;
 using Application.Interfaces.Security;
 using Application.Interfaces.Services;
 using Application.Mapping;
@@ -69,6 +69,8 @@ public sealed class UsuarioService : IUsuarioService
             throw new UsuarioJaExisteException();
         }
 
+        ValidarEnderecoEmail(emailNormalizado);
+        var telefone = global::Application.Jornada.TelefoneBrasileiro.Normalizar(dto.Telefone, opcional: true);
         var senhaHash = _passwordHasher.HashPassword(dto.Senha);
 
         for (var tentativa = 0; tentativa < MaximoTentativasGeracaoCodigoIndicacao; tentativa++)
@@ -84,7 +86,7 @@ public sealed class UsuarioService : IUsuarioService
                 dto.Nome,
                 emailNormalizado,
                 senhaHash,
-                dto.Telefone,
+                telefone,
                 TipoUsuario.Usuario,
                 codigoIndicacao);
 
@@ -114,11 +116,24 @@ public sealed class UsuarioService : IUsuarioService
                 cancellationToken: cancellationToken))
             throw new UsuarioJaExisteException();
 
+        var telefone = string.Equals(dto.Telefone, usuario.Telefone, StringComparison.Ordinal)
+            ? usuario.Telefone
+            : global::Application.Jornada.TelefoneBrasileiro.Normalizar(dto.Telefone, opcional: true);
+        var emailAlterado = !string.Equals(usuario.Email, dto.Email, StringComparison.Ordinal);
+        if (emailAlterado) ValidarEnderecoEmail(dto.Email.Trim());
+
         usuario.AlterarNome(dto.Nome);
-        usuario.AlterarEmail(dto.Email);
-        usuario.AlterarTelefone(dto.Telefone);
+        if (emailAlterado) usuario.AlterarEmail(dto.Email);
+        usuario.AlterarTelefone(telefone);
 
         await _usuarioRepository.AtualizarAsync(usuario, cancellationToken);
+    }
+
+    private static void ValidarEnderecoEmail(string endereco)
+    {
+        if (endereco.Length > 254 || !System.Net.Mail.MailAddress.TryCreate(endereco, out var email)
+            || !string.Equals(email.Address, endereco, StringComparison.Ordinal))
+            throw new ArgumentException("Informe um e-mail válido com até 254 caracteres.");
     }
 
     public async Task AlterarSenhaAsync(AlterarSenhaUsuarioDto dto, CancellationToken cancellationToken = default)
